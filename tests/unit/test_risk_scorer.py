@@ -39,8 +39,7 @@ class TestScoreConflicts:
             make_conflict(ConflictSeverity.WARNING),
         ]
         score = _score_conflicts(conflicts)
-        assert score > 100.0  # 100 + 50*0.5 = 125, capped at 100
-        assert score <= 100.0  # But capped
+        assert score == 100.0  # 100 + 50*0.5 = 125, capped at 100
 
 
 class TestComputeRiskScore:

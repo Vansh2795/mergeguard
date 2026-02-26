@@ -158,7 +158,7 @@ class ConflictReport(BaseModel):
     risk_factors: dict[str, float] = Field(default_factory=dict)
     no_conflict_prs: list[int] = Field(default_factory=list)
     analysis_duration_ms: int = 0
-    analyzed_at: datetime = Field(default_factory=datetime.utcnow)
+    analyzed_at: datetime = Field(default_factory=lambda: datetime.now(tz=None))
 
     @property
     def has_critical(self) -> bool:
