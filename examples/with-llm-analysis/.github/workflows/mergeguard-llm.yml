@@ -1,0 +1,25 @@
+# MergeGuard with LLM-powered semantic analysis
+# Requires an Anthropic API key stored as a repository secret
+
+name: MergeGuard (with LLM)
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  pull-requests: write
+  statuses: write
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run MergeGuard with LLM analysis
+        uses: mergeguard/mergeguard@v0.1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          risk-threshold: "30"
+          max-open-prs: "25"

@@ -1,0 +1,55 @@
+# MergeGuard configuration for a monorepo
+# This example shows how to scope analysis and enforce module boundaries
+
+risk_threshold: 40
+check_regressions: true
+max_open_prs: 50
+decisions_log_depth: 100
+
+# LLM analysis for better behavioral conflict detection
+llm_enabled: false
+llm_model: "claude-sonnet-4-20250514"
+
+# Ignore generated/vendored files
+ignored_paths:
+  - "*.lock"
+  - "*.min.js"
+  - "*.min.css"
+  - "package-lock.json"
+  - "yarn.lock"
+  - "pnpm-lock.yaml"
+  - "vendor/**"
+  - "node_modules/**"
+  - "dist/**"
+  - "build/**"
+  - "*.generated.*"
+  - "__snapshots__/**"
+
+# Guardrail rules for module boundaries
+rules:
+  # Billing module must not import from auth directly
+  - name: "billing-auth-boundary"
+    pattern: "packages/billing/**"
+    cannot_import_from:
+      - "packages/auth/internal/**"
+    message: "Use the auth public API instead of internal modules"
+
+  # Prevent circular dependencies between core modules
+  - name: "core-no-circular"
+    pattern: "packages/core/**"
+    cannot_import_from:
+      - "packages/api/**"
+      - "packages/web/**"
+    message: "Core module must not depend on api or web packages"
+
+  # Limit AI-generated PR size
+  - name: "ai-pr-scope-limit"
+    when: "ai_authored"
+    max_files_changed: 15
+    max_lines_changed: 400
+    message: "AI-authored PRs should be small and focused for easier review"
+
+  # Enforce function size limits
+  - name: "no-god-functions"
+    max_function_lines: 80
+    message: "Consider breaking this function into smaller pieces"

@@ -1,0 +1,16 @@
+*.pyc
+__pycache__
+.venv
+dist
+*.egg-info
+.mergeguard-cache/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+htmlcov/
+coverage.xml
+.coverage
+*.so
+*.dylib
+.DS_Store
+.env

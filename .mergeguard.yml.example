@@ -1,0 +1,42 @@
+# MergeGuard Configuration
+# Place this file as .mergeguard.yml in your repository root.
+
+# Only post a comment if the risk score exceeds this threshold (0-100)
+risk_threshold: 50
+
+# Enable regression detection against recently merged PRs
+check_regressions: true
+
+# Maximum number of open PRs to analyze (performance limit)
+max_open_prs: 30
+
+# How many recently merged PRs to track for regression detection
+decisions_log_depth: 50
+
+# Enable LLM-powered semantic analysis (requires anthropic-api-key)
+llm_enabled: false
+llm_model: "claude-sonnet-4-20250514"
+
+# File patterns to ignore during analysis
+ignored_paths:
+  - "*.lock"
+  - "*.min.js"
+  - "*.min.css"
+  - "package-lock.json"
+  - "yarn.lock"
+  - "pnpm-lock.yaml"
+  - "poetry.lock"
+
+# Guardrail rules (V2)
+# rules:
+#   - name: "no-cross-module-imports"
+#     pattern: "src/billing/**"
+#     cannot_import_from:
+#       - "src/auth/**"
+#     message: "Billing module must not import from auth module directly"
+#
+#   - name: "ai-pr-size-limit"
+#     when: "ai_authored"
+#     max_files_changed: 20
+#     max_lines_changed: 500
+#     message: "AI-authored PRs are limited in scope for safety"

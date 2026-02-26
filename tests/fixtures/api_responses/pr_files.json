@@ -1,0 +1,9 @@
+[
+  {
+    "filename": "src/users/service.py",
+    "status": "modified",
+    "additions": 15,
+    "deletions": 5,
+    "patch": "@@ -45,7 +45,10 @@\n-    old line\n+    new line"
+  }
+]

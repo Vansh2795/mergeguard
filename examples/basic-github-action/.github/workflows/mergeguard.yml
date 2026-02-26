@@ -1,0 +1,22 @@
+# Basic MergeGuard GitHub Action setup
+# Add this to your repository to automatically analyze PRs for cross-PR conflicts
+
+name: MergeGuard
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  pull-requests: write
+  statuses: write
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run MergeGuard
+        uses: mergeguard/mergeguard@v0.1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}

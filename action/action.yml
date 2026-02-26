@@ -1,0 +1,42 @@
+name: "MergeGuard"
+description: "Cross-PR conflict detection for AI-heavy repositories"
+author: "MergeGuard"
+
+inputs:
+  github-token:
+    description: "GitHub token with PR read/write access"
+    required: true
+  anthropic-api-key:
+    description: "Anthropic API key for LLM-powered analysis (optional)"
+    required: false
+  risk-threshold:
+    description: "Only comment if risk score exceeds this value (0-100)"
+    default: "0"
+  max-open-prs:
+    description: "Maximum number of open PRs to analyze"
+    default: "20"
+  config-path:
+    description: "Path to .mergeguard.yml config file"
+    default: ".mergeguard.yml"
+
+outputs:
+  risk-score:
+    description: "The calculated risk score (0-100)"
+  conflict-count:
+    description: "Number of conflicts detected"
+  report-json:
+    description: "Full analysis report in JSON format"
+
+runs:
+  using: "docker"
+  image: "Dockerfile"
+  env:
+    GITHUB_TOKEN: ${{ inputs.github-token }}
+    ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+    MERGEGUARD_RISK_THRESHOLD: ${{ inputs.risk-threshold }}
+    MERGEGUARD_MAX_OPEN_PRS: ${{ inputs.max-open-prs }}
+    MERGEGUARD_CONFIG_PATH: ${{ inputs.config-path }}
+
+branding:
+  icon: "shield"
+  color: "blue"
