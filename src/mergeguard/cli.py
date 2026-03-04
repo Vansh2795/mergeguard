@@ -183,7 +183,7 @@ def main(ctx: click.Context, verbose: bool, platform: str, gitlab_url: str) -> N
 @click.option(
     "--format",
     "output_format",
-    type=click.Choice(["terminal", "json", "markdown"]),
+    type=click.Choice(["terminal", "json", "markdown", "sarif"]),
     default="terminal",
 )
 @click.option("--llm/--no-llm", default=False, help="Enable LLM-powered semantic analysis.")
@@ -237,6 +237,10 @@ def analyze(
         from mergeguard.output.github_comment import format_report
 
         click.echo(format_report(report, repo, platform=resolved_platform))
+    elif output_format == "sarif":
+        from mergeguard.output.sarif import format_sarif
+
+        click.echo(format_sarif(report))
 
     if post_comment and token:
         from mergeguard.output.github_comment import format_report
@@ -250,6 +254,12 @@ def analyze(
 @click.option("--token", "-t", envvar=["GITHUB_TOKEN", "GITLAB_TOKEN"])
 @click.option("--max-prs", type=int, default=None, help="Max open PRs to scan.")
 @click.option("--max-pr-age", type=int, default=None, help="Max PR age in days.")
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["terminal", "json"]),
+    default="terminal",
+)
 @click.pass_context
 def map(
     ctx: click.Context,
@@ -257,12 +267,14 @@ def map(
     token: str | None,
     max_prs: int | None,
     max_pr_age: int | None,
+    output_format: str,
 ) -> None:
     """Show the collision map of all open PRs."""
-    repo = _auto_detect_repo(repo)
-
+    import json as _json
     from collections import defaultdict
     from concurrent.futures import ThreadPoolExecutor
+
+    repo = _auto_detect_repo(repo)
 
     platform = ctx.obj.get("platform", "auto")
     gitlab_url = ctx.obj.get("gitlab_url", "https://gitlab.com")
@@ -282,32 +294,58 @@ def map(
         for cf in pr_info.changed_files:
             file_to_prs[cf.path].add(pr_info.number)
 
-    overlap_counts: dict[int, dict[int, int]] = defaultdict(lambda: defaultdict(int))
-    for _path, pr_numbers in file_to_prs.items():
+    overlap_files: dict[int, dict[int, set[str]]] = defaultdict(lambda: defaultdict(set))
+    for path, pr_numbers in file_to_prs.items():
         for a in pr_numbers:
             for b in pr_numbers:
                 if a != b:
-                    overlap_counts[a][b] += 1
+                    overlap_files[a][b].add(path)
 
-    table = Table(title=f"PR Collision Map \u2014 {repo}", show_lines=True)
-    table.add_column("PR", style="bold cyan")
-    for pr_info in prs:
-        table.add_column(f"#{pr_info.number}", justify="center")
+    if output_format == "json":
+        seen: set[tuple[int, int]] = set()
+        overlaps: list[dict[str, object]] = []
+        for a, partners in overlap_files.items():
+            for b, files in partners.items():
+                key = (min(a, b), max(a, b))
+                if key not in seen:
+                    seen.add(key)
+                    overlaps.append(
+                        {
+                            "pr_a": key[0],
+                            "pr_b": key[1],
+                            "shared_files": sorted(files),
+                        }
+                    )
+        click.echo(
+            _json.dumps(
+                {
+                    "repo": repo,
+                    "prs": [{"number": p.number, "title": p.title} for p in prs],
+                    "overlaps": overlaps,
+                },
+                indent=2,
+            )
+        )
+    else:
+        table = Table(title=f"PR Collision Map \u2014 {repo}", show_lines=True)
+        table.add_column("PR", style="bold cyan")
+        for pr_info in prs:
+            table.add_column(f"#{pr_info.number}", justify="center")
 
-    for i, pr_a in enumerate(prs):
-        row = [f"#{pr_a.number} {pr_a.title[:30]}"]
-        for j, pr_b in enumerate(prs):
-            if i == j:
-                row.append("\u2014")
-            else:
-                count = overlap_counts[pr_a.number].get(pr_b.number, 0)
-                if count > 0:
-                    row.append(f"[red]{count} file(s)[/red]")
+        for i, pr_a in enumerate(prs):
+            row = [f"#{pr_a.number} {pr_a.title[:30]}"]
+            for j, pr_b in enumerate(prs):
+                if i == j:
+                    row.append("\u2014")
                 else:
-                    row.append("[green]\u2713[/green]")
-        table.add_row(*row)
+                    count = len(overlap_files[pr_a.number].get(pr_b.number, set()))
+                    if count > 0:
+                        row.append(f"[red]{count} file(s)[/red]")
+                    else:
+                        row.append("[green]\u2713[/green]")
+            table.add_row(*row)
 
-    console.print(table)
+        console.print(table)
 
 
 @main.command()
