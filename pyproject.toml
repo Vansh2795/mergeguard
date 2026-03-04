@@ -1,5 +1,5 @@
 [project]
-name = "mergeguard"
+name = "py-mergeguard"
 version = "0.1.0"
 description = "Cross-PR intelligence for the agentic coding era"
 readme = "README.md"
