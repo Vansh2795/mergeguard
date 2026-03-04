@@ -7,7 +7,11 @@ from unittest.mock import MagicMock, patch
 import click
 import pytest
 
-from mergeguard.cli import _auto_detect_repo, _auto_detect_repo_and_pr
+from mergeguard.cli import (
+    _auto_detect_repo,
+    _auto_detect_repo_and_pr,
+    _detect_platform_from_remote,
+)
 from mergeguard.models import PRInfo
 
 
@@ -125,8 +129,68 @@ class TestAutoDetectRepoAndPR:
         mock_git.get_current_branch.return_value = "feature/auth"
 
         with patch("mergeguard.integrations.git_local.GitLocalClient", return_value=mock_git):
-            with pytest.raises(click.UsageError, match="GitHub token is required"):
+            with pytest.raises(click.UsageError, match="token is required"):
                 _auto_detect_repo_and_pr(None, None, None)
+
+
+class TestGitLabPlatformDetection:
+    def test_gitlab_remote_detected(self):
+        """GitLab remote URL should be detected as 'gitlab' platform."""
+        mock_git = MagicMock()
+        mock_git.detect_platform.return_value = "gitlab"
+
+        with patch("mergeguard.integrations.git_local.GitLocalClient", return_value=mock_git):
+            result = _detect_platform_from_remote()
+
+        assert result == "gitlab"
+
+    def test_github_remote_detected(self):
+        """GitHub remote URL should be detected as 'github' platform."""
+        mock_git = MagicMock()
+        mock_git.detect_platform.return_value = "github"
+
+        with patch("mergeguard.integrations.git_local.GitLocalClient", return_value=mock_git):
+            result = _detect_platform_from_remote()
+
+        assert result == "github"
+
+    def test_unknown_remote_defaults_to_github(self):
+        """Unknown remote should default to 'github'."""
+        mock_git = MagicMock()
+        mock_git.detect_platform.return_value = None
+
+        with patch("mergeguard.integrations.git_local.GitLocalClient", return_value=mock_git):
+            result = _detect_platform_from_remote()
+
+        assert result == "github"
+
+    def test_not_git_repo_defaults_to_github(self):
+        """When not in a git repo, default to 'github'."""
+        with patch(
+            "mergeguard.integrations.git_local.GitLocalClient",
+            side_effect=ValueError("Not a git repo"),
+        ):
+            result = _detect_platform_from_remote()
+
+        assert result == "github"
+
+    @patch("mergeguard.integrations.gitlab_client.GitLabClient")
+    def test_auto_detect_with_gitlab_platform(self, MockGLClient):
+        """When platform='gitlab', GitLabClient should be used for PR detection."""
+        mock_git = MagicMock()
+        mock_git.get_repo_full_name.return_value = "mygroup/myproject"
+        mock_git.get_current_branch.return_value = "feature/auth"
+
+        mock_gl = MagicMock()
+        mock_gl.get_open_prs.return_value = [_make_pr_info(10, "feature/auth")]
+        MockGLClient.return_value = mock_gl
+
+        with patch("mergeguard.integrations.git_local.GitLocalClient", return_value=mock_git):
+            repo, pr = _auto_detect_repo_and_pr(None, None, "token", platform="gitlab")
+
+        assert repo == "mygroup/myproject"
+        assert pr == 10
+        MockGLClient.assert_called_once_with("token", "mygroup/myproject")
 
 
 class TestAutoDetectRepo:

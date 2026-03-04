@@ -2,7 +2,7 @@
 from __future__ import annotations
 import pytest
 from datetime import datetime
-from mergeguard.output.github_comment import format_report
+from mergeguard.output.github_comment import format_report, _pr_link
 from mergeguard.models import (
     Conflict, ConflictReport, ConflictSeverity, ConflictType, PRInfo,
 )
@@ -116,3 +116,25 @@ class TestFormatReport:
         # (info-level <details> is separate and won't appear here)
         important_section = result.split("Conflicts with")[1] if "Conflicts with" in result else ""
         assert "<details>" not in important_section or "low-severity" in result
+
+
+class TestPRLink:
+    def test_github_link(self):
+        link = _pr_link("owner/repo", 42, "github")
+        assert link == "[#42](https://github.com/owner/repo/pull/42)"
+
+    def test_gitlab_link(self):
+        link = _pr_link("mygroup/myproject", 10, "gitlab")
+        assert link == "[!10](https://gitlab.com/mygroup/myproject/-/merge_requests/10)"
+
+
+class TestGitLabFormatReport:
+    def test_gitlab_report_contains_mr_links(self, sample_report):
+        result = format_report(sample_report, "mygroup/myproject", platform="gitlab")
+        assert "gitlab.com/mygroup/myproject/-/merge_requests/" in result
+        # No GitHub PR links (the footer MergeGuard project link is fine)
+        assert "github.com/mygroup/myproject/pull/" not in result
+
+    def test_gitlab_report_uses_exclamation_prefix(self, sample_report):
+        result = format_report(sample_report, "mygroup/myproject", platform="gitlab")
+        assert "[!43]" in result

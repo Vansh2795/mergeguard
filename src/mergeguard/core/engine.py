@@ -30,8 +30,8 @@ from mergeguard.core.conflict import classify_conflicts, compute_file_overlaps
 from mergeguard.core.guardrails import enforce_guardrails
 from mergeguard.core.regression import detect_regressions
 from mergeguard.core.risk_scorer import compute_risk_score
-from github import GithubException
 from mergeguard.integrations.github_client import GitHubClient
+from mergeguard.integrations.protocol import SCMClient, SCMError
 from mergeguard.storage.cache import AnalysisCache
 from mergeguard.storage.decisions_log import DecisionsLog
 from mergeguard.models import (
@@ -149,11 +149,16 @@ class MergeGuardEngine:
 
     def __init__(
         self,
-        token: str,
-        repo_full_name: str,
-        config: MergeGuardConfig,
+        token: str | None = None,
+        repo_full_name: str = "",
+        config: MergeGuardConfig = MergeGuardConfig(),
+        *,
+        client: SCMClient | None = None,
     ):
-        self._client = GitHubClient(token, repo_full_name)
+        if client is not None:
+            self._client = client
+        else:
+            self._client = GitHubClient(token, repo_full_name)
         self._config = config
         self._repo_full_name = repo_full_name
         self._symbol_index = SymbolIndex()
@@ -201,7 +206,7 @@ class MergeGuardEngine:
         )
         try:
             full_diff = self._client.get_pr_diff(pr.number)
-        except (httpx.HTTPError, GithubException):
+        except (httpx.HTTPError, SCMError, Exception):
             logger.warning(
                 "Failed to fetch full diff for PR #%d, skipping backfill",
                 pr.number, exc_info=True,
@@ -257,13 +262,14 @@ class MergeGuardEngine:
         logger.info("Comparing against %d open PRs", len(other_prs))
 
         # Step 2: Enrich with diff data and symbols
-        remaining = self._client.rate_limit_remaining
-        estimated_calls = len(other_prs) * 3
-        if remaining < estimated_calls:
-            logger.warning(
-                "Rate limit may be insufficient: %d remaining, ~%d needed",
-                remaining, estimated_calls,
-            )
+        if hasattr(self._client, "rate_limit_remaining"):
+            remaining = self._client.rate_limit_remaining
+            estimated_calls = len(other_prs) * 3
+            if remaining < estimated_calls:
+                logger.warning(
+                    "Rate limit may be insufficient: %d remaining, ~%d needed",
+                    remaining, estimated_calls,
+                )
 
         self._backfill_truncated_patches(target_pr)
         self._enrich_pr(target_pr)
@@ -760,7 +766,7 @@ class MergeGuardEngine:
             pr.changed_files = self._client.get_pr_files(pr.number)
             self._backfill_truncated_patches(pr)
             self._enrich_pr(pr)
-        except (httpx.HTTPError, GithubException):
+        except (httpx.HTTPError, SCMError, Exception):
             logger.warning("Failed to enrich PR #%d, skipping", pr.number, exc_info=True)
 
     def _apply_llm_analysis(

@@ -28,14 +28,23 @@ TYPE_LABELS = {
 }
 
 
-def format_report(report: ConflictReport, repo_full_name: str) -> str:
-    """Format a ConflictReport as a GitHub Markdown comment.
+def _pr_link(repo: str, number: int, platform: str = "github") -> str:
+    """Generate a clickable PR/MR link for the given platform."""
+    if platform == "gitlab":
+        return f"[!{number}](https://gitlab.com/{repo}/-/merge_requests/{number})"
+    return f"[#{number}](https://github.com/{repo}/pull/{number})"
+
+
+def format_report(
+    report: ConflictReport, repo_full_name: str, *, platform: str = "github"
+) -> str:
+    """Format a ConflictReport as a Markdown comment.
 
     Design principles:
     - Scannable: severity emoji + bold type makes it easy to triage
     - Actionable: every conflict includes a specific recommendation
     - Non-blocking: info-level conflicts are collapsed
-    - Linkable: PR references are clickable GitHub links
+    - Linkable: PR references are clickable links
     """
     lines: list[str] = []
 
@@ -64,7 +73,7 @@ def format_report(report: ConflictReport, repo_full_name: str) -> str:
         )
         for target_pr, conflicts_iter in grouped:
             conflicts_list = list(conflicts_iter)
-            pr_link = f"[#{target_pr}](https://github.com/{repo_full_name}/pull/{target_pr})"
+            link = _pr_link(repo_full_name, target_pr, platform)
             if len(conflicts_list) > 4:
                 # Collapse large groups
                 crit = sum(1 for c in conflicts_list if c.severity == ConflictSeverity.CRITICAL)
@@ -75,7 +84,7 @@ def format_report(report: ConflictReport, repo_full_name: str) -> str:
                 if warn:
                     parts.append(f"{warn} warning")
                 summary = ", ".join(parts)
-                lines.append(f"### Conflicts with {pr_link}")
+                lines.append(f"### Conflicts with {link}")
                 lines.append("")
                 lines.append("<details>")
                 lines.append(f"<summary>{summary} — expand for details</summary>")
@@ -86,7 +95,7 @@ def format_report(report: ConflictReport, repo_full_name: str) -> str:
                 lines.append("</details>")
                 lines.append("")
             else:
-                lines.append(f"### Conflicts with {pr_link}")
+                lines.append(f"### Conflicts with {link}")
                 lines.append("")
                 for conflict in conflicts_list:
                     lines.append(_format_conflict_compact(conflict, repo_full_name))
@@ -106,8 +115,8 @@ def format_report(report: ConflictReport, repo_full_name: str) -> str:
         )
         for target_pr, conflicts_iter in info_grouped:
             conflicts_list = list(conflicts_iter)
-            pr_link = f"[#{target_pr}](https://github.com/{repo_full_name}/pull/{target_pr})"
-            lines.append(f"#### {pr_link}")
+            link = _pr_link(repo_full_name, target_pr, platform)
+            lines.append(f"#### {link}")
             lines.append("")
             for conflict in conflicts_list:
                 lines.append(_format_conflict_compact(conflict, repo_full_name))
@@ -151,16 +160,15 @@ def format_report(report: ConflictReport, repo_full_name: str) -> str:
     return "\n".join(lines)
 
 
-def _format_conflict(conflict: Conflict, repo_full_name: str) -> str:
+def _format_conflict(
+    conflict: Conflict, repo_full_name: str, platform: str = "github"
+) -> str:
     emoji = SEVERITY_EMOJI[conflict.severity]
     type_label = TYPE_LABELS[conflict.conflict_type]
-    pr_link = (
-        f"[#{conflict.target_pr}]"
-        f"(https://github.com/{repo_full_name}/pull/{conflict.target_pr})"
-    )
+    link = _pr_link(repo_full_name, conflict.target_pr, platform)
 
     lines = [
-        f"### {emoji} {type_label} with {pr_link}",
+        f"### {emoji} {type_label} with {link}",
         f"**File:** `{conflict.file_path}`",
     ]
 

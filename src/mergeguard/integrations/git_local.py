@@ -32,7 +32,7 @@ class GitLocalClient:
             return None
 
     def get_repo_full_name(self) -> str | None:
-        """Extract owner/repo from the remote URL."""
+        """Extract owner/repo (or namespace/project) from the remote URL."""
         url = self.get_remote_url()
         if not url:
             return None
@@ -42,11 +42,23 @@ class GitLocalClient:
             parts = url.split(":")[-1]
             return parts.removesuffix(".git")
 
-        # Handle HTTPS URLs: https://github.com/owner/repo.git
-        if "github.com" in url:
-            parts = url.split("github.com/")[-1]
-            return parts.removesuffix(".git")
+        # Handle HTTPS URLs for GitHub and GitLab
+        for host in ("github.com", "gitlab.com"):
+            if host in url:
+                parts = url.split(f"{host}/")[-1]
+                return parts.removesuffix(".git")
 
+        return None
+
+    def detect_platform(self) -> str | None:
+        """Detect 'github' or 'gitlab' from the remote URL."""
+        url = self.get_remote_url()
+        if not url:
+            return None
+        if "github.com" in url:
+            return "github"
+        if "gitlab.com" in url:
+            return "gitlab"
         return None
 
     def get_diff(self, base: str, head: str = "HEAD") -> str:
