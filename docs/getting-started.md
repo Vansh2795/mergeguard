@@ -13,19 +13,19 @@ Get MergeGuard running in 5 minutes.
 ### Via pip
 
 ```bash
-pip install mergeguard
+pip install py-mergeguard
 ```
 
 ### Via uv (recommended)
 
 ```bash
-uv add mergeguard
+uv add py-mergeguard
 ```
 
 ### From source
 
 ```bash
-git clone https://github.com/mergeguard/mergeguard.git
+git clone https://github.com/Vansh2795/mergeguard.git
 cd mergeguard
 uv sync
 ```
@@ -46,7 +46,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: mergeguard/mergeguard@v0.1
+      - uses: Vansh2795/mergeguard@v0.1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 ```

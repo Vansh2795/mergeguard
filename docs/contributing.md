@@ -6,7 +6,7 @@ We welcome contributions! Here's how to get started.
 
 ```bash
 # Clone the repository
-git clone https://github.com/mergeguard/mergeguard.git
+git clone https://github.com/Vansh2795/mergeguard.git
 cd mergeguard
 
 # Install uv (if you haven't already)
@@ -78,7 +78,7 @@ uv run mypy src/
 
 ## Reporting Issues
 
-Please report issues at https://github.com/mergeguard/mergeguard/issues with:
+Please report issues at https://github.com/Vansh2795/mergeguard/issues with:
 - Steps to reproduce
 - Expected behavior
 - Actual behavior

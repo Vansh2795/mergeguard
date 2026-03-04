@@ -62,7 +62,7 @@
 | Q-6 | Cosmetic, can be added incrementally |
 | Q-7 | Cosmetic, not a code quality issue |
 
-All 214 tests pass (21 new tests added).
+All 256 tests pass (63 new tests added across phases 1-5 and subsequent fixes).
 
 ---
 

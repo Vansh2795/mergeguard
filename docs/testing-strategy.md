@@ -2,7 +2,7 @@
 
 > **Target repo:** `langchain-ai/langchain`
 > **Purpose:** Test MergeGuard against a real, large-scale open-source repository before public launch.
-> **Status:** 214 unit/integration tests pass offline. Live-repo runs verified (langchain PR #35457 analyzed successfully).
+> **Status:** 256 unit/integration tests pass offline. Live-repo runs verified (langchain PR #35457, mlflow PR #21273 analyzed successfully).
 
 ---
 
@@ -155,7 +155,7 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 ### Verification
 
 ```bash
-# All 214 existing tests must pass before proceeding
+# All 256 existing tests must pass before proceeding
 uv run pytest -v
 
 # Expected output:
@@ -178,7 +178,7 @@ uv run pytest -v
 # tests/unit/test_symbol_index.py .......                [ 85%]
 # tests/integration/test_engine_e2e.py ..................[ 95%]
 # tests/integration/test_github_client.py ............   [100%]
-# 214 passed in 0.XXs
+# 256 passed in 0.XXs
 ```
 
 ---
@@ -192,17 +192,17 @@ uv run pytest -v
 **Network:** None
 **Purpose:** Validate individual functions and classes in isolation.
 
-Currently covers (214 tests total including integration):
+Currently covers (256 tests total including integration):
 
 | Test file | Count | Covers |
 |-----------|-------|--------|
 | `test_conflict.py` | 57 | file overlaps, classify conflicts, duplication, class demotion, comment-only, caller/callee, PR duplication, test-file downgrade |
 | `test_ast_parser.py` | 24 | extract symbols, map diff to symbols, language detection, call graph, safe decode |
-| `test_engine_e2e.py` | 22 | signature detection, batch analysis, content cache, fork handling, parallel enrichment, guardrails, regression, LLM, analysis cache |
+| `test_engine_e2e.py` | 24 | signature detection, batch analysis, content cache, fork handling, parallel enrichment, guardrails, regression, LLM, analysis cache, inserted function detection |
 | `test_github_client.py` | 12 | rate limit tracking, fork detection, auth error propagation |
-| `test_engine.py` | 11 | enrich PR robustness, pattern deviation, module suffix matching, symbol diff, cache symlink rejection |
+| `test_engine.py` | 29 | enrich PR robustness, pattern deviation, module suffix matching, symbol diff, cache symlink rejection, transitive conflict detection, three-way symbol classification |
 | `test_risk_scorer.py` | 11 | score conflicts, compute risk score |
-| `test_dependency.py` | 10 | build dependency graph, dependency depth |
+| `test_dependency.py` | 13 | build dependency graph, dependency depth, imported names |
 | `test_patch_backfill.py` | 10 | extract file patches, backfill truncated patches |
 | `test_config.py` | 7 | config loading, max_prs override, skipped_files |
 | `test_github_comment.py` | 7 | report formatting, conflict grouping, collapse logic |
@@ -400,7 +400,7 @@ class TestLangChainE2E:
 
 | Metric | Target | Status |
 |--------|--------|--------|
-| Unit test pass rate | 100% (214/214) | **Achieved** |
+| Unit test pass rate | 100% (256/256) | **Achieved** |
 | Integration fixture pass rate | 100% | All recorded scenarios pass |
 | Live API fetch tests | 3/3 pass | Fetch PRs, files, content |
 | E2E `analyze` completion | Exit code 0 | **Achieved** — langchain PR #35457 |
@@ -466,12 +466,12 @@ class TestLangChainE2E:
 | #9 | `ignored_paths` never applied | P1 | **FIXED** — `fnmatch` filtering in engine |
 | #10 | LLM analyzer not wired | P1 | **FIXED** — wired into engine, gated by `llm_enabled` config |
 | #11 | No logging | P1 | **FIXED** — `logging.getLogger(__name__)` in key modules |
-| #12 | Transitive conflict detection | P2 | Open |
+| #12 | Transitive conflict detection | P2 | **FIXED** — `_detect_transitive_conflicts()` with BFS dependency traversal |
 | #13 | Regression detection not wired | P2 | **FIXED** — wired into engine, gated by `check_regressions` config |
 | #14 | `AnalysisCache` unused | P2 | **FIXED** — wired into engine, keyed by `(repo, pr, head_sha)` |
-| #15 | `--pr` auto-detection | P2 | Open |
+| #15 | `--pr` auto-detection | P2 | **FIXED** — `_auto_detect_repo_and_pr()` in cli.py |
 
-**13 of 15 gaps fixed. 2 remaining (#12 transitive conflicts, #15 PR auto-detection).**
+**All 15 gaps fixed.**
 
 ### Priority Legend
 
@@ -588,17 +588,15 @@ class TestLangChainE2E:
 
 ---
 
-### P2 — Feature Completeness (2 of 4 Open)
+### P2 — Feature Completeness (All Fixed)
 
 <a id="gap-12-transitive-conflict-detection"></a>
-#### Gap #12: Transitive Conflict Detection Not Implemented
+#### Gap #12: Transitive Conflict Detection — FIXED
 
 | | |
 |---|---|
-| **Model** | `ConflictType.TRANSITIVE` exists in `src/mergeguard/models.py` (line 30) |
-| **Problem** | The `TRANSITIVE` conflict type is defined but never created anywhere in the codebase. Transitive conflicts occur when PR A modifies module X, PR B modifies module Y, and Y imports X — so changes to X could break Y's assumptions even though the PRs touch different files. The `DependencyGraph` class exists and supports `get_dependents()`, but it's only used for `dependency_depth` scoring, not for conflict detection. |
-| **Fix** | After direct conflict detection, walk the dependency graph for each modified file. If another PR modifies a file that depends on a file modified by the target PR, create a TRANSITIVE conflict. |
-| **Affected scenarios** | Cluster 2 (core package changes affecting downstream packages) |
+| **File** | `src/mergeguard/core/engine.py` |
+| **Status** | **FIXED.** `_detect_transitive_conflicts()` method implemented with BFS dependency graph traversal. Detects when PR A modifies module X and PR B modifies module Y that imports X. Supports both forward and reverse direction detection, module name suffix matching, and deduplication. 12+ unit tests cover basic detection, deep chains, bidirectional edges, and imported symbol cross-referencing. |
 
 <a id="gap-13-regression-detection-not-wired"></a>
 #### Gap #13: Regression Detection Not Wired into Engine — FIXED
@@ -620,15 +618,12 @@ class TestLangChainE2E:
 | **Original problem** | `AnalysisCache` was a complete implementation but never imported or used by any other module. |
 
 <a id="gap-15-pr-auto-detection"></a>
-#### Gap #15: `--pr` Auto-Detection Not Implemented
+#### Gap #15: `--pr` Auto-Detection — FIXED
 
 | | |
 |---|---|
 | **File** | `src/mergeguard/cli.py` |
-| **Lines** | 21-22 |
-| **Problem** | The `--pr` option help text says "Defaults to current branch" but there is no auto-detection logic. If `--pr` is not provided, `engine.analyze_pr(None)` is called, which will fail because `GitHubClient.get_pr(None)` passes `None` to the GitHub API. |
-| **Fix** | If `--pr` is not provided, detect the current branch from `git rev-parse --abbrev-ref HEAD`, then query the GitHub API for an open PR with that head branch. If no matching PR is found, print an error message. |
-| **Affected scenarios** | Developer experience when running `mergeguard analyze` without specifying `--pr` |
+| **Status** | **FIXED.** `_auto_detect_repo_and_pr()` detects the current git branch via `git rev-parse --abbrev-ref HEAD`, queries the GitHub API for an open PR with that head branch, and uses the most recent match. Clear error messages when not in a git repo or no matching PR found. 11 unit tests in `test_cli_autodetect.py`. |
 
 ---
 

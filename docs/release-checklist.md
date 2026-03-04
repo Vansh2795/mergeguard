@@ -4,10 +4,10 @@
 
 ## Pre-Release Verification
 
-- [ ] All 214 tests pass (`uv run pytest -v`)
-- [ ] No import errors (`uv run python -c "import mergeguard"`)
-- [ ] CLI commands work (`uv run mergeguard --version`)
-- [ ] `uv run mergeguard analyze --help` shows all options
+- [x] All 256 tests pass (`uv run pytest -v`)
+- [x] No import errors (`uv run python -c "import mergeguard"`)
+- [x] CLI commands work (`uv run mergeguard --version`)
+- [x] `uv run mergeguard analyze --help` shows all options
 
 ---
 
@@ -50,7 +50,7 @@ Benchmarks: <15s for 10 PRs, <45s for 30 PRs, ~92 API calls per analysis.
 
 ## Code Quality
 
-- 214 tests (unit + integration + edge cases + concurrency + error recovery)
+- 256 tests (unit + integration + edge cases + concurrency + error recovery)
 - All Pydantic V2 models with strict validation
 - Logging in all key modules (`engine.py`, `github_client.py`, `conflict.py`, `dependency.py`, `diff_parser.py`)
 - Named constants for all scoring parameters (no magic numbers)
@@ -60,37 +60,35 @@ Benchmarks: <15s for 10 PRs, <45s for 30 PRs, ~92 API calls per analysis.
 
 ## Documentation
 
-- [ ] `docs/testing-strategy.md` test counts updated
-- [ ] `docs/code-audit.md` reflects all fixes
-- [ ] `docs/getting-started.md` installation instructions accurate
-- [ ] `docs/configuration.md` lists all config options
-- [ ] `README.md` feature list current
+- [x] `docs/testing-strategy.md` test counts updated
+- [x] `docs/code-audit.md` reflects all fixes
+- [x] `docs/getting-started.md` installation instructions accurate
+- [x] `docs/configuration.md` lists all config options
+- [x] `README.md` feature list current
 
 ---
 
 ## Build & Publish
 
-- [ ] Version in `pyproject.toml` is correct (`0.1.0`)
-- [ ] `uv build` succeeds
-- [ ] Package installs cleanly: `pip install dist/mergeguard-0.1.0-py3-none-any.whl`
-- [ ] Entry point works: `mergeguard --version` shows `0.1.0`
-- [ ] `uv publish` to PyPI (requires PyPI token)
+- [x] Version in `pyproject.toml` is correct (`0.1.0`)
+- [x] `uv build` succeeds
+- [x] Package installs cleanly: `pip install dist/py_mergeguard-0.1.0-py3-none-any.whl`
+- [x] Entry point works: `mergeguard --version` shows `0.1.0`
+- [x] `uv publish` to PyPI (published as `py-mergeguard`)
 
 ---
 
 ## Post-Release
 
-- [ ] Tag release: `git tag v0.1.0 && git push --tags`
-- [ ] Create GitHub release with changelog
-- [ ] Verify `pip install mergeguard` works from PyPI
-- [ ] Run smoke test against a public repo (e.g., `langchain-ai/langchain`)
+- [x] Tag release: `git tag v0.1.0 && git push --tags`
+- [x] Create GitHub release with changelog
+- [x] Verify `pip install py-mergeguard` works from PyPI
+- [x] Run smoke test against mlflow/mlflow (PR #21273 analyzed successfully)
 
 ---
 
 ## Known Limitations (v0.1.0)
 
-- Transitive conflict detection not implemented (Gap #12)
-- `--pr` auto-detection from current branch not implemented (Gap #15)
 - GitLab support is stub-only (`NotImplementedError`)
 - MCP server tools return `"not_implemented"`
 - React dashboard not started (Phase 3 Weeks 15-16)
