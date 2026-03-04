@@ -7,9 +7,12 @@ redundant AST parsing across multiple PR comparisons.
 from __future__ import annotations
 
 import threading
+from typing import TYPE_CHECKING
 
 from mergeguard.analysis.ast_parser import extract_symbols, extract_symbols_and_call_graph
-from mergeguard.models import Symbol
+
+if TYPE_CHECKING:
+    from mergeguard.models import Symbol
 
 
 class SymbolIndex:
@@ -18,7 +21,7 @@ class SymbolIndex:
     def __init__(self) -> None:
         # Cache: (file_path, ref) -> list[Symbol]
         self._cache: dict[tuple[str, str], list[Symbol]] = {}
-        self._cg_cache: dict[tuple, dict[str, set[str]]] = {}
+        self._cg_cache: dict[tuple[str, ...], dict[str, set[str]]] = {}
         self._lock = threading.Lock()
 
     def get_symbols(

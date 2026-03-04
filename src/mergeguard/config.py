@@ -7,6 +7,7 @@ MergeGuardConfig defaults when no config file is present.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from mergeguard.models import MergeGuardConfig
 
@@ -27,7 +28,7 @@ def load_config(config_path: str = ".mergeguard.yml") -> MergeGuardConfig:
         return MergeGuardConfig()
 
     try:
-        import yaml  # noqa: TCH002
+        import yaml  # type: ignore[import-untyped]  # noqa: TCH002
     except ImportError:
         # PyYAML is not a required dependency — fall back to basic parsing
         return _load_without_yaml(path)
@@ -49,7 +50,7 @@ def _load_without_yaml(path: Path) -> MergeGuardConfig:
     forward-compatible config files.
     """
     valid_fields = set(MergeGuardConfig.model_fields.keys())
-    config_dict: dict = {}
+    config_dict: dict[str, Any] = {}
     with open(path) as f:
         for line in f:
             line = line.strip()

@@ -15,7 +15,6 @@ from mergeguard.models import (
     PRInfo,
 )
 
-
 SAMPLE_PYTHON = """\
 def greet(name):
     return f"Hello, {name}"
@@ -43,9 +42,7 @@ def _make_pr(number: int, files: list[str]) -> PRInfo:
         created_at=datetime(2026, 1, 1),
         updated_at=datetime(2026, 1, 1),
     )
-    pr.changed_files = [
-        ChangedFile(path=f, status=FileChangeStatus.MODIFIED) for f in files
-    ]
+    pr.changed_files = [ChangedFile(path=f, status=FileChangeStatus.MODIFIED) for f in files]
     return pr
 
 
@@ -84,7 +81,9 @@ class TestThreadSafeSymbolIndex:
         def worker(ref: str):
             try:
                 symbols, call_graph = index.get_symbols_and_call_graph(
-                    "service.py", SAMPLE_PYTHON, ref=ref,
+                    "service.py",
+                    SAMPLE_PYTHON,
+                    ref=ref,
                 )
                 names = {s.name for s in symbols}
                 assert "greet" in names
@@ -150,7 +149,10 @@ class TestThreadSafeContentCache:
 
 
 class TestParallelFetchAndEnrichPR:
-    """Parallel _fetch_and_enrich_pr calls with overlapping files should not cause duplicate symbols."""
+    """Parallel _fetch_and_enrich_pr calls with overlapping files.
+
+    Should not cause duplicate symbols.
+    """
 
     def test_parallel_enrichment_no_duplicates(self):
         from mergeguard.core.engine import MergeGuardEngine
@@ -166,8 +168,12 @@ class TestParallelFetchAndEnrichPR:
             ChangedFile(
                 path="src/shared.py",
                 status=FileChangeStatus.MODIFIED,
-                additions=5, deletions=2,
-                patch="@@ -1,5 +1,8 @@\n def greet(name):\n-    return 'hi'\n+    return f'Hello, {name}'\n",
+                additions=5,
+                deletions=2,
+                patch=(
+                    "@@ -1,5 +1,8 @@\n def greet(name):\n"
+                    "-    return 'hi'\n+    return f'Hello, {name}'\n"
+                ),
             ),
         ]
         engine._client.get_file_content.return_value = SAMPLE_PYTHON

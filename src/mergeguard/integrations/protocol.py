@@ -6,9 +6,10 @@ enabling dependency injection in the engine.
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from mergeguard.models import ChangedFile, PRInfo
+if TYPE_CHECKING:
+    from mergeguard.models import ChangedFile, PRInfo
 
 
 class SCMError(Exception):
@@ -19,7 +20,9 @@ class SCMError(Exception):
 class SCMClient(Protocol):
     """Protocol for source-code management platform clients."""
 
-    def get_open_prs(self, max_count: int = 200, max_age_days: int | None = None) -> list[PRInfo]: ...
+    def get_open_prs(
+        self, max_count: int = 200, max_age_days: int | None = None
+    ) -> list[PRInfo]: ...
 
     def get_pr(self, number: int) -> PRInfo: ...
 

@@ -89,9 +89,7 @@ class DecisionsLog:
             )
         return decisions
 
-    def find_regressions(
-        self, pr_symbols: list[str], pr_files: list[str]
-    ) -> list[Decision]:
+    def find_regressions(self, pr_symbols: list[str], pr_files: list[str]) -> list[Decision]:
         """Check if the PR re-introduces something that was recently removed/changed.
 
         This compares the PR's symbols and files against recent REMOVAL and
@@ -106,10 +104,13 @@ class DecisionsLog:
                 if decision.entity in pr_symbols:
                     regressions.append(decision)
 
-            elif decision.decision_type == DecisionType.MIGRATION:
+            elif (
+                decision.decision_type == DecisionType.MIGRATION
+                and decision.file_path
+                and decision.file_path in pr_files
+            ):
                 # Check if the PR uses the old pattern
-                if decision.file_path and decision.file_path in pr_files:
-                    regressions.append(decision)
+                regressions.append(decision)
 
         return regressions
 

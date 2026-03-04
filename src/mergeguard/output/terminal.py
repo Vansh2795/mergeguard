@@ -6,11 +6,13 @@ tables for risk scores, and detailed conflict views.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from rich.console import Console
-from rich.panel import Panel
 from rich.table import Table
 
-from mergeguard.models import ConflictReport, ConflictSeverity
+if TYPE_CHECKING:
+    from mergeguard.models import ConflictReport
 
 console = Console()
 
@@ -33,7 +35,10 @@ def display_report(report: ConflictReport) -> None:
     for target_pr, conflicts_iter in groupby(sorted_conflicts, key=attrgetter("target_pr")):
         conflicts_list = list(conflicts_iter)
         if len(conflicts_list) > 4:
-            console.print(f"  [bold cyan]Conflicts with #{target_pr}[/bold cyan] ({len(conflicts_list)} conflicts)")
+            console.print(
+                f"  [bold cyan]Conflicts with #{target_pr}[/bold cyan] "
+                f"({len(conflicts_list)} conflicts)"
+            )
         else:
             console.print(f"  [bold cyan]Conflicts with #{target_pr}[/bold cyan]")
         for conflict in conflicts_list:
@@ -66,11 +71,7 @@ def display_dashboard(reports: list[ConflictReport], repo_name: str) -> None:
 
     for report in sorted(reports, key=lambda r: r.risk_score, reverse=True):
         risk_style = (
-            "red"
-            if report.risk_score >= 70
-            else "yellow"
-            if report.risk_score >= 40
-            else "green"
+            "red" if report.risk_score >= 70 else "yellow" if report.risk_score >= 40 else "green"
         )
         ai = "\U0001f916" if report.pr.ai_attribution.value.startswith("ai") else ""
         table.add_row(

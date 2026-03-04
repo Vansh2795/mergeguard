@@ -42,12 +42,12 @@ class LLMAnalyzer:
 
     def __init__(self, api_key: str, model: str = "claude-sonnet-4-20250514"):
         try:
-            from anthropic import Anthropic
+            from anthropic import Anthropic  # type: ignore[import-not-found]
         except ImportError:
             raise ImportError(
                 "The 'anthropic' package is required for LLM analysis. "
                 "Install it with: pip install 'mergeguard[llm]'"
-            )
+            ) from None
         self._client = Anthropic(api_key=api_key)
         self._model = model
 
@@ -95,9 +95,7 @@ class LLMAnalyzer:
 
         return Conflict(
             conflict_type=ConflictType.BEHAVIORAL,
-            severity=severity_map.get(
-                result.get("severity", "warning"), ConflictSeverity.WARNING
-            ),
+            severity=severity_map.get(result.get("severity", "warning"), ConflictSeverity.WARNING),
             source_pr=pr_a_number,
             target_pr=pr_b_number,
             file_path=file_path,
@@ -105,7 +103,5 @@ class LLMAnalyzer:
             description=result.get(
                 "explanation", "Potential behavioral conflict detected by AI analysis."
             ),
-            recommendation=result.get(
-                "recommendation", "Review both changes before merging."
-            ),
+            recommendation=result.get("recommendation", "Review both changes before merging."),
         )

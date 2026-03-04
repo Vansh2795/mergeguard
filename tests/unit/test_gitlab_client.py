@@ -1,14 +1,13 @@
 """Unit tests for GitLab client using respx to mock httpx."""
+
 from __future__ import annotations
 
 import httpx
 import pytest
 import respx
-from datetime import datetime, timezone
 
 from mergeguard.integrations.gitlab_client import GitLabClient
 from mergeguard.models import FileChangeStatus
-
 
 _BASE = "https://gitlab.com/api/v4/projects/mygroup%2Fmyproject"
 
@@ -76,9 +75,7 @@ class TestGetOpenPRs:
     @respx.mock
     def test_max_count_respected(self, client):
         mrs = [{**_SAMPLE_MR, "iid": i} for i in range(5)]
-        respx.get(f"{_BASE}/merge_requests").mock(
-            return_value=httpx.Response(200, json=mrs)
-        )
+        respx.get(f"{_BASE}/merge_requests").mock(return_value=httpx.Response(200, json=mrs))
         prs = client.get_open_prs(max_count=3)
         assert len(prs) == 3
 
@@ -163,12 +160,8 @@ class TestPostComment:
     @respx.mock
     def test_new_comment(self, client):
         notes_url = f"{_BASE}/merge_requests/10/notes"
-        respx.get(notes_url).mock(
-            return_value=httpx.Response(200, json=[])
-        )
-        respx.post(notes_url).mock(
-            return_value=httpx.Response(201, json={"id": 1})
-        )
+        respx.get(notes_url).mock(return_value=httpx.Response(200, json=[]))
+        respx.post(notes_url).mock(return_value=httpx.Response(201, json={"id": 1}))
         client.post_pr_comment(10, "Test report")
 
     @respx.mock
@@ -178,12 +171,8 @@ class TestPostComment:
             "id": 99,
             "body": "<!-- mergeguard-report -->\nOld report",
         }
-        respx.get(notes_url).mock(
-            return_value=httpx.Response(200, json=[existing_note])
-        )
-        respx.put(f"{notes_url}/99").mock(
-            return_value=httpx.Response(200, json={"id": 99})
-        )
+        respx.get(notes_url).mock(return_value=httpx.Response(200, json=[existing_note]))
+        respx.put(f"{notes_url}/99").mock(return_value=httpx.Response(200, json={"id": 99}))
         client.post_pr_comment(10, "Updated report")
 
 

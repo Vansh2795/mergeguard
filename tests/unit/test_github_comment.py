@@ -1,11 +1,17 @@
 """Tests for GitHub comment formatting."""
+
 from __future__ import annotations
-import pytest
+
 from datetime import datetime
-from mergeguard.output.github_comment import format_report, _pr_link
+
 from mergeguard.models import (
-    Conflict, ConflictReport, ConflictSeverity, ConflictType, PRInfo,
+    Conflict,
+    ConflictReport,
+    ConflictSeverity,
+    ConflictType,
+    PRInfo,
 )
+from mergeguard.output.github_comment import _pr_link, format_report
 
 
 class TestFormatReport:
@@ -29,30 +35,48 @@ class TestFormatReport:
     def test_grouped_output(self):
         """Conflicts should be grouped by target PR in the output."""
         pr = PRInfo(
-            number=1, title="Test PR", author="dev",
-            base_branch="main", head_branch="feat",
-            head_sha="abc", created_at=datetime(2026, 1, 1),
+            number=1,
+            title="Test PR",
+            author="dev",
+            base_branch="main",
+            head_branch="feat",
+            head_sha="abc",
+            created_at=datetime(2026, 1, 1),
             updated_at=datetime(2026, 1, 1),
         )
         conflicts = [
             Conflict(
-                conflict_type=ConflictType.HARD, severity=ConflictSeverity.CRITICAL,
-                source_pr=1, target_pr=10, file_path="a.py",
-                description="Conflict A", recommendation="Fix A",
+                conflict_type=ConflictType.HARD,
+                severity=ConflictSeverity.CRITICAL,
+                source_pr=1,
+                target_pr=10,
+                file_path="a.py",
+                description="Conflict A",
+                recommendation="Fix A",
             ),
             Conflict(
-                conflict_type=ConflictType.BEHAVIORAL, severity=ConflictSeverity.WARNING,
-                source_pr=1, target_pr=20, file_path="b.py",
-                description="Conflict B", recommendation="Fix B",
+                conflict_type=ConflictType.BEHAVIORAL,
+                severity=ConflictSeverity.WARNING,
+                source_pr=1,
+                target_pr=20,
+                file_path="b.py",
+                description="Conflict B",
+                recommendation="Fix B",
             ),
             Conflict(
-                conflict_type=ConflictType.HARD, severity=ConflictSeverity.WARNING,
-                source_pr=1, target_pr=10, file_path="c.py",
-                description="Conflict C", recommendation="Fix C",
+                conflict_type=ConflictType.HARD,
+                severity=ConflictSeverity.WARNING,
+                source_pr=1,
+                target_pr=10,
+                file_path="c.py",
+                description="Conflict C",
+                recommendation="Fix C",
             ),
         ]
         report = ConflictReport(
-            pr=pr, conflicts=conflicts, risk_score=60.0,
+            pr=pr,
+            conflicts=conflicts,
+            risk_score=60.0,
             analysis_duration_ms=100,
         )
         result = format_report(report, "owner/repo")
@@ -67,22 +91,31 @@ class TestFormatReport:
     def test_large_group_collapsed(self):
         """PR with 6 conflicts gets <details> wrapper."""
         pr = PRInfo(
-            number=1, title="Test PR", author="dev",
-            base_branch="main", head_branch="feat",
-            head_sha="abc", created_at=datetime(2026, 1, 1),
+            number=1,
+            title="Test PR",
+            author="dev",
+            base_branch="main",
+            head_branch="feat",
+            head_sha="abc",
+            created_at=datetime(2026, 1, 1),
             updated_at=datetime(2026, 1, 1),
         )
         conflicts = [
             Conflict(
                 conflict_type=ConflictType.BEHAVIORAL,
                 severity=ConflictSeverity.WARNING,
-                source_pr=1, target_pr=10, file_path=f"f{i}.py",
-                description=f"Conflict {i}", recommendation=f"Fix {i}",
+                source_pr=1,
+                target_pr=10,
+                file_path=f"f{i}.py",
+                description=f"Conflict {i}",
+                recommendation=f"Fix {i}",
             )
             for i in range(6)
         ]
         report = ConflictReport(
-            pr=pr, conflicts=conflicts, risk_score=50.0,
+            pr=pr,
+            conflicts=conflicts,
+            risk_score=50.0,
             analysis_duration_ms=100,
         )
         result = format_report(report, "owner/repo")
@@ -93,22 +126,31 @@ class TestFormatReport:
     def test_small_group_not_collapsed(self):
         """PR with 3 conflicts stays expanded (no <details>)."""
         pr = PRInfo(
-            number=1, title="Test PR", author="dev",
-            base_branch="main", head_branch="feat",
-            head_sha="abc", created_at=datetime(2026, 1, 1),
+            number=1,
+            title="Test PR",
+            author="dev",
+            base_branch="main",
+            head_branch="feat",
+            head_sha="abc",
+            created_at=datetime(2026, 1, 1),
             updated_at=datetime(2026, 1, 1),
         )
         conflicts = [
             Conflict(
                 conflict_type=ConflictType.BEHAVIORAL,
                 severity=ConflictSeverity.WARNING,
-                source_pr=1, target_pr=10, file_path=f"f{i}.py",
-                description=f"Conflict {i}", recommendation=f"Fix {i}",
+                source_pr=1,
+                target_pr=10,
+                file_path=f"f{i}.py",
+                description=f"Conflict {i}",
+                recommendation=f"Fix {i}",
             )
             for i in range(3)
         ]
         report = ConflictReport(
-            pr=pr, conflicts=conflicts, risk_score=30.0,
+            pr=pr,
+            conflicts=conflicts,
+            risk_score=30.0,
             analysis_duration_ms=100,
         )
         result = format_report(report, "owner/repo")

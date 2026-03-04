@@ -1,7 +1,8 @@
 """Tests for diff_parser module."""
+
 from __future__ import annotations
-import pytest
-from mergeguard.analysis.diff_parser import parse_unified_diff, FileDiff, DiffHunk
+
+from mergeguard.analysis.diff_parser import parse_unified_diff
 
 
 class TestParseUnifiedDiff:

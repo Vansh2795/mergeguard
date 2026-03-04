@@ -1,10 +1,10 @@
 """Tests for configuration loading."""
+
 from __future__ import annotations
 
 import json
 from datetime import datetime
 
-import pytest
 from mergeguard.config import load_config
 from mergeguard.models import MergeGuardConfig, PRInfo
 
@@ -55,9 +55,13 @@ class TestPRInfoSkippedFiles:
 
     def _make_pr(self):
         return PRInfo(
-            number=1, title="Test", author="dev",
-            base_branch="main", head_branch="feat",
-            head_sha="abc", created_at=datetime(2026, 1, 1),
+            number=1,
+            title="Test",
+            author="dev",
+            base_branch="main",
+            head_branch="feat",
+            head_sha="abc",
+            created_at=datetime(2026, 1, 1),
             updated_at=datetime(2026, 1, 1),
         )
 

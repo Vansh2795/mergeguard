@@ -60,18 +60,25 @@ class TestPRWithOnlyDeletedFiles:
 
     def test_only_deleted_files(self):
         engine = _make_engine()
-        pr = _make_pr(1, [
-            ChangedFile(
-                path="src/old.py", status=FileChangeStatus.REMOVED,
-                additions=0, deletions=10,
-                patch="@@ -1,10 +0,0 @@\n-old code",
-            ),
-            ChangedFile(
-                path="src/legacy.py", status=FileChangeStatus.REMOVED,
-                additions=0, deletions=25,
-                patch="@@ -1,25 +0,0 @@\n-more old code",
-            ),
-        ])
+        pr = _make_pr(
+            1,
+            [
+                ChangedFile(
+                    path="src/old.py",
+                    status=FileChangeStatus.REMOVED,
+                    additions=0,
+                    deletions=10,
+                    patch="@@ -1,10 +0,0 @@\n-old code",
+                ),
+                ChangedFile(
+                    path="src/legacy.py",
+                    status=FileChangeStatus.REMOVED,
+                    additions=0,
+                    deletions=25,
+                    patch="@@ -1,25 +0,0 @@\n-more old code",
+                ),
+            ],
+        )
         engine._enrich_pr(pr)
         assert len(pr.changed_symbols) == 0
 
@@ -81,16 +88,19 @@ class TestPRWithOnlyBinaryFiles:
 
     def test_only_binary_files(self):
         engine = _make_engine()
-        engine._get_file_content_cached = MagicMock(
-            return_value="header\x00binary_data_here"
+        engine._get_file_content_cached = MagicMock(return_value="header\x00binary_data_here")
+        pr = _make_pr(
+            1,
+            [
+                ChangedFile(
+                    path="assets/image.png",
+                    status=FileChangeStatus.MODIFIED,
+                    additions=1,
+                    deletions=1,
+                    patch="@@ -1,3 +1,3 @@\n-old\n+new",
+                ),
+            ],
         )
-        pr = _make_pr(1, [
-            ChangedFile(
-                path="assets/image.png", status=FileChangeStatus.MODIFIED,
-                additions=1, deletions=1,
-                patch="@@ -1,3 +1,3 @@\n-old\n+new",
-            ),
-        ])
         engine._enrich_pr(pr)
         assert len(pr.changed_symbols) == 0
         assert "assets/image.png" in pr.skipped_files
@@ -108,18 +118,25 @@ class TestPRWithAllFilesFilteredByIgnoredPaths:
             re.compile(fnmatch.translate("package-lock.json")),
             re.compile(fnmatch.translate("*.min.js")),
         ]
-        pr = _make_pr(1, [
-            ChangedFile(
-                path="package-lock.json", status=FileChangeStatus.MODIFIED,
-                additions=100, deletions=50,
-                patch="@@ -1,3 +1,3 @@\n-old\n+new",
-            ),
-            ChangedFile(
-                path="dist/bundle.min.js", status=FileChangeStatus.MODIFIED,
-                additions=500, deletions=200,
-                patch="@@ -1,3 +1,3 @@\n-old\n+new",
-            ),
-        ])
+        pr = _make_pr(
+            1,
+            [
+                ChangedFile(
+                    path="package-lock.json",
+                    status=FileChangeStatus.MODIFIED,
+                    additions=100,
+                    deletions=50,
+                    patch="@@ -1,3 +1,3 @@\n-old\n+new",
+                ),
+                ChangedFile(
+                    path="dist/bundle.min.js",
+                    status=FileChangeStatus.MODIFIED,
+                    additions=500,
+                    deletions=200,
+                    patch="@@ -1,3 +1,3 @@\n-old\n+new",
+                ),
+            ],
+        )
         engine._enrich_pr(pr)
         assert len(pr.changed_symbols) == 0
         assert len(pr.changed_files) == 0
@@ -131,12 +148,17 @@ class TestEmptyFileContentFromAPI:
     def test_empty_content_skipped(self):
         engine = _make_engine()
         engine._get_file_content_cached = MagicMock(return_value="")
-        pr = _make_pr(1, [
-            ChangedFile(
-                path="src/empty.py", status=FileChangeStatus.MODIFIED,
-                additions=1, deletions=0,
-                patch="@@ -1,3 +1,3 @@\n-old\n+new",
-            ),
-        ])
+        pr = _make_pr(
+            1,
+            [
+                ChangedFile(
+                    path="src/empty.py",
+                    status=FileChangeStatus.MODIFIED,
+                    additions=1,
+                    deletions=0,
+                    patch="@@ -1,3 +1,3 @@\n-old\n+new",
+                ),
+            ],
+        )
         engine._enrich_pr(pr)
         assert len(pr.changed_symbols) == 0

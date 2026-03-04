@@ -35,9 +35,7 @@ def _pr_link(repo: str, number: int, platform: str = "github") -> str:
     return f"[#{number}](https://github.com/{repo}/pull/{number})"
 
 
-def format_report(
-    report: ConflictReport, repo_full_name: str, *, platform: str = "github"
-) -> str:
+def format_report(report: ConflictReport, repo_full_name: str, *, platform: str = "github") -> str:
     """Format a ConflictReport as a Markdown comment.
 
     Design principles:
@@ -134,7 +132,8 @@ def format_report(
     if report.pr.skipped_files:
         lines.append("<details>")
         lines.append(
-            f"<summary>\u26a0\ufe0f {len(report.pr.skipped_files)} file(s) skipped (no patch data)</summary>"
+            f"<summary>\u26a0\ufe0f {len(report.pr.skipped_files)} file(s) skipped "
+            f"(no patch data)</summary>"
         )
         lines.append("")
         for path in report.pr.skipped_files:
@@ -145,9 +144,7 @@ def format_report(
 
     # No conflicts at all
     if not report.conflicts:
-        lines.append(
-            "\u2705 **No cross-PR conflicts detected.** This PR is clear to review."
-        )
+        lines.append("\u2705 **No cross-PR conflicts detected.** This PR is clear to review.")
         lines.append("")
 
     # Footer
@@ -160,9 +157,7 @@ def format_report(
     return "\n".join(lines)
 
 
-def _format_conflict(
-    conflict: Conflict, repo_full_name: str, platform: str = "github"
-) -> str:
+def _format_conflict(conflict: Conflict, repo_full_name: str, platform: str = "github") -> str:
     emoji = SEVERITY_EMOJI[conflict.severity]
     type_label = TYPE_LABELS[conflict.conflict_type]
     link = _pr_link(repo_full_name, conflict.target_pr, platform)

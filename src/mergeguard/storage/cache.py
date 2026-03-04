@@ -25,7 +25,7 @@ class AnalysisCache:
             raise ValueError(f"Cache directory is a symlink: {self._cache_dir}")
         self._cache_dir.mkdir(parents=True, exist_ok=True)
 
-    def get(self, key: str) -> dict | None:
+    def get(self, key: str) -> dict[str, object] | None:
         """Retrieve a cached value by key.
 
         Returns None if the key is not in the cache.
@@ -42,7 +42,7 @@ class AnalysisCache:
         except (json.JSONDecodeError, OSError):
             return None
 
-    def set(self, key: str, value: dict) -> None:
+    def set(self, key: str, value: dict[str, object]) -> None:
         """Store a value in the cache."""
         path = self._key_to_path(key)
         tmp_path = path.with_suffix(".tmp")

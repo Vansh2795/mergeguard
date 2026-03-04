@@ -4,16 +4,19 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 
 import httpx
-from github import Auth, GithubException, Github, UnknownObjectException
+from github import Auth, Github, GithubException, UnknownObjectException
 from github.GithubRetry import GithubRetry
-from github.PullRequest import PullRequest as GHPullRequest
+
+from mergeguard.models import ChangedFile, FileChangeStatus, PRInfo
 
 logger = logging.getLogger(__name__)
 
-from mergeguard.models import ChangedFile, FileChangeStatus, PRInfo
+if TYPE_CHECKING:
+    from github.PullRequest import PullRequest as GHPullRequest
 
 
 class GitHubClient:
@@ -43,20 +46,28 @@ class GitHubClient:
             max_age_days: Only return PRs updated within this many days.
                 When None, no age filtering is applied.
         """
-        logger.debug("Fetching open PRs (max %d, max_age_days=%s) from %s",
-                      max_count, max_age_days, self._repo.full_name)
+        logger.debug(
+            "Fetching open PRs (max %d, max_age_days=%s) from %s",
+            max_count,
+            max_age_days,
+            self._repo.full_name,
+        )
         pulls = self._repo.get_pulls(state="open", sort="updated", direction="desc")
 
         cutoff = None
         if max_age_days is not None:
-            cutoff = datetime.now(timezone.utc) - timedelta(days=max_age_days)
+            cutoff = datetime.now(UTC) - timedelta(days=max_age_days)
 
         result: list[PRInfo] = []
         for i, pr in enumerate(pulls):
             if i >= max_count:
                 break
             # PyGithub returns naive datetimes in UTC
-            if cutoff is not None and pr.updated_at.replace(tzinfo=timezone.utc) < cutoff:
+            if (
+                cutoff is not None
+                and pr.updated_at is not None
+                and pr.updated_at.replace(tzinfo=UTC) < cutoff
+            ):
                 break  # PRs are sorted by updated desc — all remaining are older
             result.append(self._pr_to_info(pr))
         return result
@@ -89,10 +100,13 @@ class GitHubClient:
         """Fetch the full unified diff of a PR."""
         logger.debug("Fetching diff for PR #%d", pr_number)
         url = f"https://api.github.com/repos/{self._repo.full_name}/pulls/{pr_number}"
-        resp = self._http.get(url, headers={
-            "Accept": "application/vnd.github.v3.diff",
-            "Authorization": f"token {self._token}",
-        })
+        resp = self._http.get(
+            url,
+            headers={
+                "Accept": "application/vnd.github.v3.diff",
+                "Authorization": f"token {self._token}",
+            },
+        )
         resp.raise_for_status()
         self._check_httpx_rate_limit(resp)
         return resp.text
@@ -163,6 +177,9 @@ class GitHubClient:
         except Exception:
             is_fork = True  # Conservative: assume fork if we can't tell
 
+        now = datetime.now(UTC)
+        created = pr.created_at if pr.created_at is not None else now
+        updated = pr.updated_at if pr.updated_at is not None else now
         return PRInfo(
             number=pr.number,
             title=pr.title,
@@ -171,8 +188,8 @@ class GitHubClient:
             head_branch=pr.head.ref,
             head_sha=pr.head.sha,
             is_fork=is_fork,
-            created_at=pr.created_at,
-            updated_at=pr.updated_at,
+            created_at=created,
+            updated_at=updated,
             labels=[label.name for label in pr.labels],
             description=pr.body or "",
         )

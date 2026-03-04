@@ -9,11 +9,11 @@ from __future__ import annotations
 import logging
 import time
 import urllib.parse
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import httpx
 
-from mergeguard.integrations.protocol import SCMError
 from mergeguard.models import ChangedFile, FileChangeStatus, PRInfo
 
 logger = logging.getLogger(__name__)
@@ -51,13 +51,13 @@ class GitLabClient:
 
     # ── Public API (SCMClient protocol) ──
 
-    def get_open_prs(
-        self, max_count: int = 200, max_age_days: int | None = None
-    ) -> list[PRInfo]:
+    def get_open_prs(self, max_count: int = 200, max_age_days: int | None = None) -> list[PRInfo]:
         """Fetch open merge requests with metadata."""
         logger.debug(
             "Fetching open MRs (max %d, max_age_days=%s) from %s",
-            max_count, max_age_days, self._project_path,
+            max_count,
+            max_age_days,
+            self._project_path,
         )
         params: dict[str, str | int] = {
             "state": "opened",
@@ -66,7 +66,7 @@ class GitLabClient:
             "per_page": min(max_count, _PER_PAGE),
         }
         if max_age_days is not None:
-            cutoff = datetime.now(timezone.utc) - timedelta(days=max_age_days)
+            cutoff = datetime.now(UTC) - timedelta(days=max_age_days)
             params["updated_after"] = cutoff.strftime("%Y-%m-%dT%H:%M:%SZ")
 
         result: list[PRInfo] = []
@@ -183,15 +183,16 @@ class GitLabClient:
                 if wait > 0:
                     logger.warning(
                         "Rate limit low (%s remaining), sleeping %ds",
-                        remaining, wait,
+                        remaining,
+                        wait,
                     )
                     time.sleep(min(wait, 300))
 
-    def _get_all_diffs(self, mr_iid: int) -> list[dict]:
+    def _get_all_diffs(self, mr_iid: int) -> list[dict[str, Any]]:
         """Fetch all diff entries for an MR, handling pagination."""
         url = f"{self._base_url}/merge_requests/{mr_iid}/diffs"
         params: dict[str, str | int] = {"per_page": _PER_PAGE}
-        all_diffs: list[dict] = []
+        all_diffs: list[dict[str, Any]] = []
 
         while True:
             resp = self._get(url, params=params)
@@ -204,7 +205,7 @@ class GitLabClient:
 
         return all_diffs
 
-    def _mr_to_info(self, mr: dict) -> PRInfo:
+    def _mr_to_info(self, mr: dict[str, Any]) -> PRInfo:
         """Convert a GitLab MR JSON dict to PRInfo."""
         is_fork = mr.get("source_project_id") != mr.get("target_project_id")
 
@@ -228,7 +229,7 @@ class GitLabClient:
         )
 
     @staticmethod
-    def _diff_to_changed_file(d: dict) -> ChangedFile:
+    def _diff_to_changed_file(d: dict[str, Any]) -> ChangedFile:
         """Convert a GitLab diff entry to ChangedFile."""
         if d.get("new_file"):
             status = FileChangeStatus.ADDED
@@ -240,8 +241,16 @@ class GitLabClient:
             status = FileChangeStatus.MODIFIED
 
         diff_text = d.get("diff", "")
-        additions = sum(1 for line in diff_text.splitlines() if line.startswith("+") and not line.startswith("+++"))
-        deletions = sum(1 for line in diff_text.splitlines() if line.startswith("-") and not line.startswith("---"))
+        additions = sum(
+            1
+            for line in diff_text.splitlines()
+            if line.startswith("+") and not line.startswith("+++")
+        )
+        deletions = sum(
+            1
+            for line in diff_text.splitlines()
+            if line.startswith("-") and not line.startswith("---")
+        )
 
         # Extract patch (hunk headers + diff lines, without the diff --git header)
         patch = _extract_patch_from_diff(diff_text) if diff_text else None

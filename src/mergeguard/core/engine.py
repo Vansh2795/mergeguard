@@ -15,7 +15,6 @@ import sqlite3
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
 from pathlib import PurePosixPath
 
 import httpx
@@ -32,9 +31,8 @@ from mergeguard.core.regression import detect_regressions
 from mergeguard.core.risk_scorer import compute_risk_score
 from mergeguard.integrations.github_client import GitHubClient
 from mergeguard.integrations.protocol import SCMClient, SCMError
-from mergeguard.storage.cache import AnalysisCache
-from mergeguard.storage.decisions_log import DecisionsLog
 from mergeguard.models import (
+    ChangedFile,
     ChangedSymbol,
     Conflict,
     ConflictReport,
@@ -45,6 +43,8 @@ from mergeguard.models import (
     PRInfo,
     Symbol,
 )
+from mergeguard.storage.cache import AnalysisCache
+from mergeguard.storage.decisions_log import DecisionsLog
 
 logger = logging.getLogger(__name__)
 
@@ -86,14 +86,9 @@ def _extract_symbol_diff_head(file_diff: FileDiff, symbol: Symbol) -> str | None
     return "\n".join(lines) if lines else None
 
 
-def _symbol_overlaps_ranges(
-    symbol: Symbol, ranges: list[tuple[int, int]]
-) -> bool:
+def _symbol_overlaps_ranges(symbol: Symbol, ranges: list[tuple[int, int]]) -> bool:
     """Check if a symbol's line span overlaps any of the given ranges."""
-    return any(
-        symbol.start_line <= end and start <= symbol.end_line
-        for start, end in ranges
-    )
+    return any(symbol.start_line <= end and start <= symbol.end_line for start, end in ranges)
 
 
 def _symbol_has_removals(file_diff: FileDiff, symbol: Symbol) -> bool:
@@ -151,22 +146,22 @@ class MergeGuardEngine:
         self,
         token: str | None = None,
         repo_full_name: str = "",
-        config: MergeGuardConfig = MergeGuardConfig(),
+        config: MergeGuardConfig | None = None,
         *,
         client: SCMClient | None = None,
     ):
         if client is not None:
             self._client = client
         else:
+            assert token is not None, "token is required when no client is provided"
             self._client = GitHubClient(token, repo_full_name)
-        self._config = config
+        self._config = config if config is not None else MergeGuardConfig()
         self._repo_full_name = repo_full_name
         self._symbol_index = SymbolIndex()
         self._content_cache: dict[tuple[str, str], str | None] = {}
         self._cache_lock = threading.Lock()
         self._ignore_res = [
-            _re.compile(fnmatch.translate(pat))
-            for pat in self._config.ignored_paths
+            _re.compile(fnmatch.translate(pat)) for pat in self._config.ignored_paths
         ]
 
     def _get_file_content_cached(self, path: str, ref: str) -> str | None:
@@ -194,7 +189,8 @@ class MergeGuardEngine:
         patches back to the ChangedFile objects.
         """
         missing = [
-            cf for cf in pr.changed_files
+            cf
+            for cf in pr.changed_files
             if cf.patch is None and cf.status != FileChangeStatus.REMOVED
         ]
         if not missing:
@@ -202,14 +198,16 @@ class MergeGuardEngine:
 
         logger.debug(
             "PR #%d has %d file(s) with truncated patches, fetching full diff",
-            pr.number, len(missing),
+            pr.number,
+            len(missing),
         )
         try:
             full_diff = self._client.get_pr_diff(pr.number)
         except (httpx.HTTPError, SCMError, Exception):
             logger.warning(
                 "Failed to fetch full diff for PR #%d, skipping backfill",
-                pr.number, exc_info=True,
+                pr.number,
+                exc_info=True,
             )
             return
 
@@ -243,9 +241,7 @@ class MergeGuardEngine:
         cache_key = ""
         try:
             cache = AnalysisCache()
-            cache_key = cache.make_key(
-                self._repo_full_name, str(pr_number), target_pr.head_sha
-            )
+            cache_key = cache.make_key(self._repo_full_name, str(pr_number), target_pr.head_sha)
             cached = cache.get(cache_key)
             if cached is not None:
                 logger.info("Cache hit for PR #%d", pr_number)
@@ -268,7 +264,8 @@ class MergeGuardEngine:
             if remaining < estimated_calls:
                 logger.warning(
                     "Rate limit may be insufficient: %d remaining, ~%d needed",
-                    remaining, estimated_calls,
+                    remaining,
+                    estimated_calls,
                 )
 
         self._backfill_truncated_patches(target_pr)
@@ -285,14 +282,13 @@ class MergeGuardEngine:
         # Step 4: Detect conflicts
         prs_excluding_target = [p for p in other_prs if p.number != pr_number]
         all_conflicts, no_conflict_prs = self._detect_all_conflicts(
-            target_pr, prs_excluding_target,
+            target_pr,
+            prs_excluding_target,
         )
 
         # Step 4d: LLM semantic analysis for behavioral conflicts
         if self._config.llm_enabled:
-            all_conflicts = self._apply_llm_analysis(
-                target_pr, other_prs, all_conflicts
-            )
+            all_conflicts = self._apply_llm_analysis(target_pr, other_prs, all_conflicts)
 
         # Step 5: Compute risk factors
         dependency_depth = self._compute_dependency_depth(target_pr)
@@ -311,7 +307,9 @@ class MergeGuardEngine:
         elapsed_ms = int((time.monotonic() - start_time) * 1000)
         logger.info(
             "Found %d conflicts (risk: %.0f/100) in %dms",
-            len(all_conflicts), risk_score, elapsed_ms,
+            len(all_conflicts),
+            risk_score,
+            elapsed_ms,
         )
 
         report = ConflictReport(
@@ -364,7 +362,9 @@ class MergeGuardEngine:
             other_prs = [p for p in all_prs if p.number != target_pr.number]
 
             all_conflicts, no_conflict_prs = self._detect_all_conflicts(
-                target_pr, other_prs, decisions_log=decisions_log,
+                target_pr,
+                other_prs,
+                decisions_log=decisions_log,
             )
 
             dep_depth = self._compute_dependency_depth(target_pr)
@@ -482,8 +482,7 @@ class MergeGuardEngine:
         """
         # 1. Filter upstream_pr.changed_symbols to those in upstream_file
         file_symbols = [
-            cs for cs in upstream_pr.changed_symbols
-            if cs.symbol.file_path == upstream_file
+            cs for cs in upstream_pr.changed_symbols if cs.symbol.file_path == upstream_file
         ]
 
         # 2. Format each as `name` (type[, signature changed])
@@ -535,7 +534,9 @@ class MergeGuardEngine:
         existing_pairs: set[int] = set()
         for c in existing_conflicts:
             if c.conflict_type in (
-                ConflictType.HARD, ConflictType.BEHAVIORAL, ConflictType.INTERFACE,
+                ConflictType.HARD,
+                ConflictType.BEHAVIORAL,
+                ConflictType.INTERFACE,
             ):
                 existing_pairs.add(c.target_pr)
 
@@ -561,10 +562,15 @@ class MergeGuardEngine:
                             break
                 if hit:
                     upstream_file = self._find_upstream_file(
-                        cf.path, target_pr, graph,
+                        cf.path,
+                        target_pr,
+                        graph,
                     )
                     changed_syms, imported_syms = self._build_transitive_detail(
-                        cf.path, target_pr, upstream_file, graph,
+                        cf.path,
+                        target_pr,
+                        upstream_file,
+                        graph,
                     )
 
                     desc = (
@@ -626,7 +632,10 @@ class MergeGuardEngine:
                             linking_file = ocf.path
                             break
                     changed_syms_b, imported_syms_b = self._build_transitive_detail(
-                        cf.path, other_pr, linking_file, graph,
+                        cf.path,
+                        other_pr,
+                        linking_file,
+                        graph,
                     )
 
                     desc_b = (
@@ -664,9 +673,7 @@ class MergeGuardEngine:
 
         Normalizes total line changes so that CHURN_MAX_LINES+ lines = max churn (1.0).
         """
-        total_changes = sum(
-            cf.additions + cf.deletions for cf in pr.changed_files
-        )
+        total_changes = sum(cf.additions + cf.deletions for cf in pr.changed_files)
         return min(1.0, total_changes / CHURN_MAX_LINES)
 
     def _compute_pattern_deviation(self, pr: PRInfo) -> float:
@@ -729,7 +736,9 @@ class MergeGuardEngine:
 
         # Transitive conflict detection
         transitive = self._detect_transitive_conflicts(
-            target_pr, other_prs, all_conflicts,
+            target_pr,
+            other_prs,
+            all_conflicts,
         )
         all_conflicts.extend(transitive)
         transitive_prs = {c.target_pr for c in transitive}
@@ -753,7 +762,8 @@ class MergeGuardEngine:
             except (OSError, sqlite3.Error):
                 logger.debug(
                     "Regression detection failed for PR #%d",
-                    target_pr.number, exc_info=True,
+                    target_pr.number,
+                    exc_info=True,
                 )
             if own_log:
                 decisions_log.close()
@@ -784,9 +794,7 @@ class MergeGuardEngine:
         try:
             from mergeguard.integrations.llm_analyzer import LLMAnalyzer
         except ImportError:
-            logger.warning(
-                "LLM analysis enabled but 'anthropic' package not installed"
-            )
+            logger.warning("LLM analysis enabled but 'anthropic' package not installed")
             return conflicts
 
         try:
@@ -807,12 +815,8 @@ class MergeGuardEngine:
             if not other_pr:
                 continue
 
-            source_diff = self._get_symbol_diff(
-                target_pr, conflict.symbol_name, conflict.file_path
-            )
-            target_diff = self._get_symbol_diff(
-                other_pr, conflict.symbol_name, conflict.file_path
-            )
+            source_diff = self._get_symbol_diff(target_pr, conflict.symbol_name, conflict.file_path)
+            target_diff = self._get_symbol_diff(other_pr, conflict.symbol_name, conflict.file_path)
             if not source_diff or not target_diff:
                 continue
 
@@ -843,9 +847,7 @@ class MergeGuardEngine:
 
         return conflicts
 
-    def _get_symbol_diff(
-        self, pr: PRInfo, symbol_name: str, file_path: str
-    ) -> str | None:
+    def _get_symbol_diff(self, pr: PRInfo, symbol_name: str, file_path: str) -> str | None:
         """Find the raw diff for a specific symbol in a PR."""
         for cs in pr.changed_symbols:
             if cs.symbol.name == symbol_name and cs.symbol.file_path == file_path:
@@ -853,7 +855,9 @@ class MergeGuardEngine:
         return None
 
     def _parse_file_diff(
-        self, changed_file, pr: PRInfo,
+        self,
+        changed_file: ChangedFile,
+        pr: PRInfo,
     ) -> tuple[list[FileDiff], list[tuple[int, int]]] | None:
         """Parse a changed file's patch into structured diffs and modified ranges."""
         if not changed_file.patch:
@@ -864,8 +868,7 @@ class MergeGuardEngine:
         diff_text = (
             f"diff --git a/{changed_file.path} b/{changed_file.path}\n"
             f"--- a/{changed_file.path}\n"
-            f"+++ b/{changed_file.path}\n"
-            + changed_file.patch
+            f"+++ b/{changed_file.path}\n" + changed_file.patch
         )
         file_diffs = parse_unified_diff(diff_text)
         if not file_diffs:
@@ -876,7 +879,11 @@ class MergeGuardEngine:
         return file_diffs, modified_ranges
 
     def _fetch_and_validate_content(
-        self, path: str, ref: str, max_size: int, pr: PRInfo,
+        self,
+        path: str,
+        ref: str,
+        max_size: int,
+        pr: PRInfo,
     ) -> str | None:
         """Fetch file content, rejecting large and binary files."""
         content = self._get_file_content_cached(path, ref)
@@ -885,7 +892,8 @@ class MergeGuardEngine:
         if len(content) > max_size:
             logger.warning(
                 "Skipping %s (%.0fKB exceeds size limit)",
-                path, len(content) / 1024,
+                path,
+                len(content) / 1024,
             )
             pr.skipped_files.append(path)
             return None
@@ -898,14 +906,16 @@ class MergeGuardEngine:
     def _build_changed_symbols(
         self,
         pr: PRInfo,
-        changed_file,
+        changed_file: ChangedFile,
         file_diffs: list[FileDiff],
         modified_ranges: list[tuple[int, int]],
         content: str,
     ) -> list[ChangedSymbol]:
         """Extract changed symbols, call graph, and signature changes for a file."""
         base_symbols, call_graph = self._symbol_index.get_symbols_and_call_graph(
-            changed_file.path, content, pr.base_branch,
+            changed_file.path,
+            content,
+            pr.base_branch,
         )
 
         # Populate intra-file call graph as symbol dependencies
@@ -932,7 +942,8 @@ class MergeGuardEngine:
             return result
 
         head_content = self._get_file_content_cached(
-            changed_file.path, pr.head_branch,
+            changed_file.path,
+            pr.head_branch,
         )
         if not head_content:
             # No HEAD content available — fall back to BASE-only
@@ -951,7 +962,9 @@ class MergeGuardEngine:
             return result
 
         head_symbols, head_call_graph = self._symbol_index.get_symbols_and_call_graph(
-            changed_file.path, head_content, pr.head_branch,
+            changed_file.path,
+            head_content,
+            pr.head_branch,
         )
 
         # Three-way classification: compare BASE vs HEAD symbols by (name, parent)
@@ -1007,7 +1020,8 @@ class MergeGuardEngine:
                     change_type = "modified_signature"
                     logger.debug(
                         "Signature change detected: %s in %s",
-                        head_sym.name, changed_file.path,
+                        head_sym.name,
+                        changed_file.path,
                     )
                 # Carry over call graph from BASE (already populated)
                 head_sym.dependencies = base_sym.dependencies
@@ -1027,8 +1041,7 @@ class MergeGuardEngine:
         """Enrich a PR with diff data and changed symbols."""
         # Filter out ignored paths before any API calls (pre-compiled patterns)
         pr.changed_files = [
-            cf for cf in pr.changed_files
-            if not any(pat.match(cf.path) for pat in self._ignore_res)
+            cf for cf in pr.changed_files if not any(pat.match(cf.path) for pat in self._ignore_res)
         ]
 
         for changed_file in pr.changed_files:
@@ -1039,11 +1052,18 @@ class MergeGuardEngine:
                 continue
             file_diffs, modified_ranges = parsed
             content = self._fetch_and_validate_content(
-                changed_file.path, pr.base_branch, MAX_FILE_SIZE, pr,
+                changed_file.path,
+                pr.base_branch,
+                MAX_FILE_SIZE,
+                pr,
             )
             if content is None:
                 continue
             new_symbols = self._build_changed_symbols(
-                pr, changed_file, file_diffs, modified_ranges, content,
+                pr,
+                changed_file,
+                file_diffs,
+                modified_ranges,
+                content,
             )
             pr.changed_symbols.extend(new_symbols)

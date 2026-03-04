@@ -1,16 +1,22 @@
 """Tests for AI attribution detection module."""
+
 from __future__ import annotations
-import pytest
-from mergeguard.analysis.attribution import detect_attribution
-from mergeguard.models import PRInfo, AIAttribution, ChangedFile, FileChangeStatus
+
 from datetime import datetime
+
+from mergeguard.analysis.attribution import detect_attribution
+from mergeguard.models import AIAttribution, ChangedFile, FileChangeStatus, PRInfo
 
 
 def make_pr(**kwargs):
     defaults = dict(
-        number=1, title="Test PR", author="dev",
-        base_branch="main", head_branch="feature",
-        head_sha="abc", created_at=datetime(2026, 1, 1),
+        number=1,
+        title="Test PR",
+        author="dev",
+        base_branch="main",
+        head_branch="feature",
+        head_sha="abc",
+        created_at=datetime(2026, 1, 1),
         updated_at=datetime(2026, 1, 1),
     )
     defaults.update(kwargs)

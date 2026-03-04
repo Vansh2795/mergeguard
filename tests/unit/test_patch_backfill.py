@@ -1,11 +1,11 @@
 """Tests for patch backfill logic."""
+
 from __future__ import annotations
 
 from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import httpx
-import pytest
 
 from mergeguard.core.engine import MergeGuardEngine, _extract_file_patches
 from mergeguard.models import (
@@ -118,10 +118,12 @@ class TestBackfillTruncatedPatches:
     def test_all_patches_present_no_fetch(self):
         """When all files have patches, no API call should be made."""
         engine = self._make_engine()
-        pr = _make_pr(files=[
-            ChangedFile(path="a.py", status=FileChangeStatus.MODIFIED, patch="@@ ...\n+ok"),
-            ChangedFile(path="b.py", status=FileChangeStatus.MODIFIED, patch="@@ ...\n+ok"),
-        ])
+        pr = _make_pr(
+            files=[
+                ChangedFile(path="a.py", status=FileChangeStatus.MODIFIED, patch="@@ ...\n+ok"),
+                ChangedFile(path="b.py", status=FileChangeStatus.MODIFIED, patch="@@ ...\n+ok"),
+            ]
+        )
         engine._backfill_truncated_patches(pr)
         engine._client.get_pr_diff.assert_not_called()
 
@@ -141,9 +143,11 @@ class TestBackfillTruncatedPatches:
     def test_deleted_file_skipped(self):
         """REMOVED files should not trigger backfill."""
         engine = self._make_engine()
-        pr = _make_pr(files=[
-            ChangedFile(path="gone.py", status=FileChangeStatus.REMOVED, patch=None),
-        ])
+        pr = _make_pr(
+            files=[
+                ChangedFile(path="gone.py", status=FileChangeStatus.REMOVED, patch=None),
+            ]
+        )
         engine._backfill_truncated_patches(pr)
         engine._client.get_pr_diff.assert_not_called()
 

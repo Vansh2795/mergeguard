@@ -101,25 +101,22 @@ class DependencyGraph:
                 elif dep == file_path:
                     logger.debug(
                         "Circular dependency detected: %s ↔ %s",
-                        file_path, current,
+                        file_path,
+                        current,
                     )
         return max_depth
 
 
 # ── Import extraction patterns ──
 
-PYTHON_FROM_IMPORT = re.compile(
-    r"^\s*from\s+([\w.]+)\s+import\s+(.+?)(?:\s*#.*)?$", re.MULTILINE
-)
+PYTHON_FROM_IMPORT = re.compile(r"^\s*from\s+([\w.]+)\s+import\s+(.+?)(?:\s*#.*)?$", re.MULTILINE)
 PYTHON_IMPORT_MODULE = re.compile(r"^\s*import\s+([\w.]+)", re.MULTILINE)
 
 JS_IMPORT = re.compile(
     r"""(?:import\s+.*?\s+from\s+['"](.+?)['"]|require\s*\(\s*['"](.+?)['"]\s*\))""",
     re.MULTILINE,
 )
-JS_NAMED_IMPORT = re.compile(
-    r"""import\s+\{([^}]+)\}\s+from\s+['"](.+?)['"]""", re.MULTILINE
-)
+JS_NAMED_IMPORT = re.compile(r"""import\s+\{([^}]+)\}\s+from\s+['"](.+?)['"]""", re.MULTILINE)
 
 GO_IMPORT = re.compile(r'"([\w./]+)"')
 
@@ -140,7 +137,8 @@ def extract_imports(source_code: str, file_path: str) -> list[str]:
 
 
 def extract_imports_with_names(
-    source_code: str, file_path: str,
+    source_code: str,
+    file_path: str,
 ) -> list[tuple[str, list[str]]]:
     """Extract import targets with specific imported names.
 

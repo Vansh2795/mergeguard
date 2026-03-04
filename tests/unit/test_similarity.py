@@ -1,8 +1,10 @@
 """Tests for similarity analysis module."""
+
 from __future__ import annotations
-import pytest
-from mergeguard.analysis.similarity import jaccard_similarity, symbol_name_similarity, detect_potential_duplications
-from mergeguard.models import Symbol, SymbolType
+
+from mergeguard.analysis.similarity import (
+    jaccard_similarity,
+)
 
 
 class TestJaccardSimilarity:

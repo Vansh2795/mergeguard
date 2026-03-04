@@ -5,7 +5,6 @@ from __future__ import annotations
 from mergeguard.analysis.symbol_index import SymbolIndex
 from mergeguard.models import SymbolType
 
-
 SAMPLE_PYTHON = """\
 def greet(name):
     return f"Hello, {name}"

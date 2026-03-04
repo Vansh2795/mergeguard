@@ -1,34 +1,42 @@
 """Tests for engine module."""
+
 from __future__ import annotations
 
 import threading
+from datetime import datetime
 from unittest.mock import MagicMock, patch
 
-from mergeguard.core.engine import (
-    _extract_symbol_diff,
-    _symbol_overlaps_ranges,
-    _symbol_has_removals,
-    MergeGuardEngine,
-)
-from mergeguard.analysis.diff_parser import FileDiff, DiffHunk
 from mergeguard.analysis.dependency import DependencyGraph, ImportEdge
-from mergeguard.models import (
-    ChangedFile, ChangedSymbol, Conflict, ConflictSeverity, ConflictType,
-    FileChangeStatus, PRInfo, Symbol, SymbolType,
+from mergeguard.analysis.diff_parser import DiffHunk, FileDiff
+from mergeguard.core.engine import (
+    MergeGuardEngine,
+    _extract_symbol_diff,
 )
-from datetime import datetime
+from mergeguard.models import (
+    ChangedFile,
+    ChangedSymbol,
+    Conflict,
+    ConflictSeverity,
+    ConflictType,
+    FileChangeStatus,
+    PRInfo,
+    Symbol,
+    SymbolType,
+)
 
 
 def _make_pr(number, files):
     pr = PRInfo(
-        number=number, title=f"PR {number}", author="dev",
-        base_branch="main", head_branch=f"branch-{number}",
-        head_sha=f"sha{number}", created_at=datetime(2026, 1, 1),
+        number=number,
+        title=f"PR {number}",
+        author="dev",
+        base_branch="main",
+        head_branch=f"branch-{number}",
+        head_sha=f"sha{number}",
+        created_at=datetime(2026, 1, 1),
         updated_at=datetime(2026, 1, 1),
     )
-    pr.changed_files = [
-        ChangedFile(path=f, status=FileChangeStatus.MODIFIED) for f in files
-    ]
+    pr.changed_files = [ChangedFile(path=f, status=FileChangeStatus.MODIFIED) for f in files]
     return pr
 
 
@@ -36,7 +44,10 @@ class TestModuleSuffixMatching:
     """P2: _compute_dependency_depth should try all module name suffixes."""
 
     def test_module_suffix_matching(self):
-        """Depth is found when the file path has a repo prefix that doesn't match the import module name."""
+        """Depth is found when the file path has a repo prefix.
+
+        The prefix doesn't match the import module name.
+        """
         pr = _make_pr(1, ["libs/partners/openai/langchain_openai/chat_models/base.py"])
 
         # Mock a dependency graph whose _reverse dict uses short module names
@@ -53,6 +64,7 @@ class TestModuleSuffixMatching:
         # Mock the engine to test _compute_dependency_depth
         with patch("mergeguard.core.engine.build_dependency_graph", return_value=mock_graph):
             from mergeguard.core.engine import MergeGuardEngine
+
             engine = MergeGuardEngine.__new__(MergeGuardEngine)
             engine._content_cache = {}
             engine._cache_lock = __import__("threading").Lock()
@@ -80,6 +92,7 @@ class TestModuleSuffixMatching:
 
         with patch("mergeguard.core.engine.build_dependency_graph", return_value=mock_graph):
             from mergeguard.core.engine import MergeGuardEngine
+
             engine = MergeGuardEngine.__new__(MergeGuardEngine)
             engine._content_cache = {}
             engine._cache_lock = __import__("threading").Lock()
@@ -95,17 +108,26 @@ class TestExtractSymbolDiff:
 
     def test_extracts_lines_within_range(self):
         symbol = Symbol(
-            name="func", symbol_type=SymbolType.FUNCTION,
-            file_path="test.py", start_line=10, end_line=20,
+            name="func",
+            symbol_type=SymbolType.FUNCTION,
+            file_path="test.py",
+            start_line=10,
+            end_line=20,
         )
         file_diff = FileDiff(
-            path="test.py", old_path=None,
-            hunks=[DiffHunk(
-                old_start=10, old_count=5, new_start=10, new_count=6,
-                added_lines=[(12, "    new_line"), (25, "    outside")],
-                removed_lines=[(11, "    old_line")],
-                context_lines=[],
-            )],
+            path="test.py",
+            old_path=None,
+            hunks=[
+                DiffHunk(
+                    old_start=10,
+                    old_count=5,
+                    new_start=10,
+                    new_count=6,
+                    added_lines=[(12, "    new_line"), (25, "    outside")],
+                    removed_lines=[(11, "    old_line")],
+                    context_lines=[],
+                )
+            ],
         )
         result = _extract_symbol_diff(file_diff, symbol)
         assert "+    new_line" in result
@@ -114,17 +136,26 @@ class TestExtractSymbolDiff:
 
     def test_returns_none_when_no_overlap(self):
         symbol = Symbol(
-            name="func", symbol_type=SymbolType.FUNCTION,
-            file_path="test.py", start_line=100, end_line=110,
+            name="func",
+            symbol_type=SymbolType.FUNCTION,
+            file_path="test.py",
+            start_line=100,
+            end_line=110,
         )
         file_diff = FileDiff(
-            path="test.py", old_path=None,
-            hunks=[DiffHunk(
-                old_start=10, old_count=5, new_start=10, new_count=6,
-                added_lines=[(12, "    line")],
-                removed_lines=[],
-                context_lines=[],
-            )],
+            path="test.py",
+            old_path=None,
+            hunks=[
+                DiffHunk(
+                    old_start=10,
+                    old_count=5,
+                    new_start=10,
+                    new_count=6,
+                    added_lines=[(12, "    line")],
+                    removed_lines=[],
+                    context_lines=[],
+                )
+            ],
         )
         result = _extract_symbol_diff(file_diff, symbol)
         assert result is None
@@ -135,8 +166,10 @@ class TestPatternDeviation:
 
     def _make_engine(self, base_symbols):
         """Create a minimal engine with mocked symbol index."""
-        from mergeguard.core.engine import MergeGuardEngine
         import threading
+
+        from mergeguard.core.engine import MergeGuardEngine
+
         engine = MergeGuardEngine.__new__(MergeGuardEngine)
         engine._content_cache = {}
         engine._cache_lock = threading.Lock()
@@ -148,19 +181,35 @@ class TestPatternDeviation:
     def test_pattern_deviation_zero_for_existing_symbols(self):
         """PR modifies existing functions → deviation = 0.0."""
         base_symbols = [
-            Symbol(name="func_a", symbol_type=SymbolType.FUNCTION,
-                   file_path="src/core.py", start_line=1, end_line=10),
-            Symbol(name="func_b", symbol_type=SymbolType.FUNCTION,
-                   file_path="src/core.py", start_line=20, end_line=30),
+            Symbol(
+                name="func_a",
+                symbol_type=SymbolType.FUNCTION,
+                file_path="src/core.py",
+                start_line=1,
+                end_line=10,
+            ),
+            Symbol(
+                name="func_b",
+                symbol_type=SymbolType.FUNCTION,
+                file_path="src/core.py",
+                start_line=20,
+                end_line=30,
+            ),
         ]
         engine = self._make_engine(base_symbols)
 
         pr = _make_pr(1, ["src/core.py"])
         pr.changed_symbols = [
             ChangedSymbol(
-                symbol=Symbol(name="func_a", symbol_type=SymbolType.FUNCTION,
-                              file_path="src/core.py", start_line=1, end_line=10),
-                change_type="modified_body", diff_lines=(5, 8),
+                symbol=Symbol(
+                    name="func_a",
+                    symbol_type=SymbolType.FUNCTION,
+                    file_path="src/core.py",
+                    start_line=1,
+                    end_line=10,
+                ),
+                change_type="modified_body",
+                diff_lines=(5, 8),
             ),
         ]
         assert engine._compute_pattern_deviation(pr) == 0.0
@@ -168,19 +217,35 @@ class TestPatternDeviation:
     def test_pattern_deviation_high_for_novel_symbols(self):
         """PR adds new function with unusual name → deviation > 0."""
         base_symbols = [
-            Symbol(name="process_data", symbol_type=SymbolType.FUNCTION,
-                   file_path="src/core.py", start_line=1, end_line=10),
-            Symbol(name="validate_input", symbol_type=SymbolType.FUNCTION,
-                   file_path="src/core.py", start_line=20, end_line=30),
+            Symbol(
+                name="process_data",
+                symbol_type=SymbolType.FUNCTION,
+                file_path="src/core.py",
+                start_line=1,
+                end_line=10,
+            ),
+            Symbol(
+                name="validate_input",
+                symbol_type=SymbolType.FUNCTION,
+                file_path="src/core.py",
+                start_line=20,
+                end_line=30,
+            ),
         ]
         engine = self._make_engine(base_symbols)
 
         pr = _make_pr(1, ["src/core.py"])
         pr.changed_symbols = [
             ChangedSymbol(
-                symbol=Symbol(name="xyzzy_quirk", symbol_type=SymbolType.FUNCTION,
-                              file_path="src/core.py", start_line=40, end_line=50),
-                change_type="added", diff_lines=(40, 50),
+                symbol=Symbol(
+                    name="xyzzy_quirk",
+                    symbol_type=SymbolType.FUNCTION,
+                    file_path="src/core.py",
+                    start_line=40,
+                    end_line=50,
+                ),
+                change_type="added",
+                diff_lines=(40, 50),
             ),
         ]
         deviation = engine._compute_pattern_deviation(pr)
@@ -193,6 +258,7 @@ class TestCacheSymlinkRejection:
     def test_symlink_cache_dir_raises(self, tmp_path):
         """AnalysisCache should refuse to use a symlinked directory."""
         import pytest
+
         from mergeguard.storage.cache import AnalysisCache
 
         real_dir = tmp_path / "real"
@@ -216,8 +282,10 @@ class TestEnrichPRRobustness:
     """Tests for binary/large file skipping in _enrich_pr."""
 
     def _make_engine(self):
-        from mergeguard.core.engine import MergeGuardEngine
         import threading
+
+        from mergeguard.core.engine import MergeGuardEngine
+
         engine = MergeGuardEngine.__new__(MergeGuardEngine)
         engine._content_cache = {}
         engine._cache_lock = threading.Lock()
@@ -288,14 +356,23 @@ class TestTransitiveConflictDetection:
         return graph
 
     def test_basic_transitive_detected(self):
-        """PR1 modifies models.py, PR2 modifies views.py which imports models — 1 TRANSITIVE WARNING."""
+        """PR1 modifies models.py, PR2 modifies views.py which imports models.
+
+        Expect 1 TRANSITIVE WARNING.
+        """
         engine = self._make_engine()
         target = _make_pr(1, ["src/models.py"])
         target.changed_symbols = [
             ChangedSymbol(
-                symbol=Symbol(name="User", symbol_type=SymbolType.CLASS,
-                              file_path="src/models.py", start_line=1, end_line=10),
-                change_type="modified_signature", diff_lines=(1, 10),
+                symbol=Symbol(
+                    name="User",
+                    symbol_type=SymbolType.CLASS,
+                    file_path="src/models.py",
+                    start_line=1,
+                    end_line=10,
+                ),
+                change_type="modified_signature",
+                diff_lines=(1, 10),
             ),
         ]
         other = _make_pr(2, ["src/views.py"])
@@ -339,7 +416,8 @@ class TestTransitiveConflictDetection:
             Conflict(
                 conflict_type=ConflictType.HARD,
                 severity=ConflictSeverity.CRITICAL,
-                source_pr=1, target_pr=2,
+                source_pr=1,
+                target_pr=2,
                 file_path="src/models.py",
                 description="direct conflict",
                 recommendation="coordinate",
@@ -379,10 +457,12 @@ class TestTransitiveConflictDetection:
 
         graph = self._make_graph([("src/views.py", "models")])
 
-        with patch("mergeguard.core.engine.build_dependency_graph", return_value=graph):
-            with patch("mergeguard.core.engine.compute_file_overlaps", return_value={}):
-                with patch("mergeguard.core.engine.classify_conflicts", return_value=[]):
-                    conflicts, no_conflict = engine._detect_all_conflicts(target, [other])
+        with (
+            patch("mergeguard.core.engine.build_dependency_graph", return_value=graph),
+            patch("mergeguard.core.engine.compute_file_overlaps", return_value={}),
+            patch("mergeguard.core.engine.classify_conflicts", return_value=[]),
+        ):
+            conflicts, no_conflict = engine._detect_all_conflicts(target, [other])
 
         transitive = [c for c in conflicts if c.conflict_type == ConflictType.TRANSITIVE]
         assert len(transitive) == 1
@@ -409,11 +489,13 @@ class TestTransitiveConflictDetection:
         pr3 = _make_pr(3, ["src/b.py"])
         pr4 = _make_pr(4, ["src/c.py"])
 
-        graph = self._make_graph([
-            ("src/a.py", "utils"),
-            ("src/b.py", "utils"),
-            ("src/c.py", "utils"),
-        ])
+        graph = self._make_graph(
+            [
+                ("src/a.py", "utils"),
+                ("src/b.py", "utils"),
+                ("src/c.py", "utils"),
+            ]
+        )
 
         with patch("mergeguard.core.engine.build_dependency_graph", return_value=graph):
             result = engine._detect_transitive_conflicts(target, [pr2, pr3, pr4], [])
@@ -423,15 +505,24 @@ class TestTransitiveConflictDetection:
         assert target_prs == {2, 3, 4}
 
     def test_reverse_direction_detected(self):
-        """Target modifies views.py which imports models, other modifies models.py — detected via reverse check."""
+        """Target modifies views.py which imports models.
+
+        Other modifies models.py -- detected via reverse check.
+        """
         engine = self._make_engine()
         target = _make_pr(1, ["src/views.py"])
         other = _make_pr(2, ["src/models.py"])
         other.changed_symbols = [
             ChangedSymbol(
-                symbol=Symbol(name="User", symbol_type=SymbolType.CLASS,
-                              file_path="src/models.py", start_line=1, end_line=10),
-                change_type="modified_body", diff_lines=(1, 10),
+                symbol=Symbol(
+                    name="User",
+                    symbol_type=SymbolType.CLASS,
+                    file_path="src/models.py",
+                    start_line=1,
+                    end_line=10,
+                ),
+                change_type="modified_body",
+                diff_lines=(1, 10),
             ),
         ]
 
@@ -456,10 +547,12 @@ class TestTransitiveConflictDetection:
         other = _make_pr(2, ["src/b.py"])
 
         # a.py imports b and b imports a — both directions have a dependency
-        graph = self._make_graph([
-            ("src/a.py", "src/b.py"),
-            ("src/b.py", "src/a.py"),
-        ])
+        graph = self._make_graph(
+            [
+                ("src/a.py", "src/b.py"),
+                ("src/b.py", "src/a.py"),
+            ]
+        )
 
         with patch("mergeguard.core.engine.build_dependency_graph", return_value=graph):
             result = engine._detect_transitive_conflicts(target, [other], [])
@@ -478,10 +571,12 @@ class TestTransitiveConflictDetection:
 
         # a.py imports src/b.py, b.py imports src/c.py
         # BFS from src/c.py: reverse[src/c.py] = {src/b.py}, reverse[src/b.py] = {src/a.py}
-        graph = self._make_graph([
-            ("src/a.py", "src/b.py"),
-            ("src/b.py", "src/c.py"),
-        ])
+        graph = self._make_graph(
+            [
+                ("src/a.py", "src/b.py"),
+                ("src/b.py", "src/c.py"),
+            ]
+        )
 
         with patch("mergeguard.core.engine.build_dependency_graph", return_value=graph):
             result = engine._detect_transitive_conflicts(target, [other], [])
@@ -495,22 +590,36 @@ class TestTransitiveConflictDetection:
         target = _make_pr(1, ["src/models.py"])
         target.changed_symbols = [
             ChangedSymbol(
-                symbol=Symbol(name="User", symbol_type=SymbolType.CLASS,
-                              file_path="src/models.py", start_line=1, end_line=10),
-                change_type="modified_signature", diff_lines=(1, 10),
+                symbol=Symbol(
+                    name="User",
+                    symbol_type=SymbolType.CLASS,
+                    file_path="src/models.py",
+                    start_line=1,
+                    end_line=10,
+                ),
+                change_type="modified_signature",
+                diff_lines=(1, 10),
             ),
             ChangedSymbol(
-                symbol=Symbol(name="process_data", symbol_type=SymbolType.FUNCTION,
-                              file_path="src/models.py", start_line=20, end_line=30),
-                change_type="modified_body", diff_lines=(20, 30),
+                symbol=Symbol(
+                    name="process_data",
+                    symbol_type=SymbolType.FUNCTION,
+                    file_path="src/models.py",
+                    start_line=20,
+                    end_line=30,
+                ),
+                change_type="modified_body",
+                diff_lines=(20, 30),
             ),
         ]
         other = _make_pr(2, ["src/views.py"])
 
         # views.py imports User from models
-        graph = self._make_graph([
-            ("src/views.py", "models", ["User"]),
-        ])
+        graph = self._make_graph(
+            [
+                ("src/views.py", "models", ["User"]),
+            ]
+        )
 
         with patch("mergeguard.core.engine.build_dependency_graph", return_value=graph):
             result = engine._detect_transitive_conflicts(target, [other], [])
@@ -533,9 +642,15 @@ class TestTransitiveConflictDetection:
         target = _make_pr(1, ["src/models.py"])
         target.changed_symbols = [
             ChangedSymbol(
-                symbol=Symbol(name="User", symbol_type=SymbolType.CLASS,
-                              file_path="src/models.py", start_line=1, end_line=10),
-                change_type="modified_body", diff_lines=(1, 10),
+                symbol=Symbol(
+                    name="User",
+                    symbol_type=SymbolType.CLASS,
+                    file_path="src/models.py",
+                    start_line=1,
+                    end_line=10,
+                ),
+                change_type="modified_body",
+                diff_lines=(1, 10),
             ),
         ]
         other = _make_pr(2, ["src/views.py"])
@@ -569,9 +684,13 @@ class TestBuildChangedSymbols:
 
     def _make_symbol(self, name, start, end, sig=None, parent=None, file_path="test.py"):
         return Symbol(
-            name=name, symbol_type=SymbolType.FUNCTION,
-            file_path=file_path, start_line=start, end_line=end,
-            signature=sig, parent=parent,
+            name=name,
+            symbol_type=SymbolType.FUNCTION,
+            file_path=file_path,
+            start_line=start,
+            end_line=end,
+            signature=sig,
+            parent=parent,
         )
 
     def test_new_function_before_existing_is_added(self):
@@ -585,7 +704,7 @@ class TestBuildChangedSymbols:
         existing_head = self._make_symbol("existing_func", 20, 30, sig="def existing_func():")
 
         engine._symbol_index.get_symbols_and_call_graph.side_effect = [
-            ([base_sym], {}),          # BASE call
+            ([base_sym], {}),  # BASE call
             ([new_sym, existing_head], {}),  # HEAD call
         ]
         engine._get_file_content_cached = MagicMock(return_value="head content")
@@ -595,18 +714,28 @@ class TestBuildChangedSymbols:
 
         # Diff adds lines 10-15 in HEAD (where new_func is)
         file_diff = FileDiff(
-            path="test.py", old_path=None,
-            hunks=[DiffHunk(
-                old_start=10, old_count=0, new_start=10, new_count=6,
-                added_lines=[(i, f"    line{i}") for i in range(10, 16)],
-                removed_lines=[],
-                context_lines=[],
-            )],
+            path="test.py",
+            old_path=None,
+            hunks=[
+                DiffHunk(
+                    old_start=10,
+                    old_count=0,
+                    new_start=10,
+                    new_count=6,
+                    added_lines=[(i, f"    line{i}") for i in range(10, 16)],
+                    removed_lines=[],
+                    context_lines=[],
+                )
+            ],
         )
         modified_ranges = [(10, 15)]
 
         result = engine._build_changed_symbols(
-            pr, changed_file, [file_diff], modified_ranges, "base content",
+            pr,
+            changed_file,
+            [file_diff],
+            modified_ranges,
+            "base content",
         )
 
         names = {cs.symbol.name for cs in result}
@@ -634,18 +763,28 @@ class TestBuildChangedSymbols:
         changed_file = pr.changed_files[0]
 
         file_diff = FileDiff(
-            path="test.py", old_path=None,
-            hunks=[DiffHunk(
-                old_start=14, old_count=1, new_start=14, new_count=2,
-                added_lines=[(14, "    new_line"), (15, "    another")],
-                removed_lines=[(14, "    old_line")],
-                context_lines=[],
-            )],
+            path="test.py",
+            old_path=None,
+            hunks=[
+                DiffHunk(
+                    old_start=14,
+                    old_count=1,
+                    new_start=14,
+                    new_count=2,
+                    added_lines=[(14, "    new_line"), (15, "    another")],
+                    removed_lines=[(14, "    old_line")],
+                    context_lines=[],
+                )
+            ],
         )
         modified_ranges = [(14, 15)]
 
         result = engine._build_changed_symbols(
-            pr, changed_file, [file_diff], modified_ranges, "base content",
+            pr,
+            changed_file,
+            [file_diff],
+            modified_ranges,
+            "base content",
         )
 
         assert len(result) == 1
@@ -671,18 +810,28 @@ class TestBuildChangedSymbols:
         changed_file = pr.changed_files[0]
 
         file_diff = FileDiff(
-            path="test.py", old_path=None,
-            hunks=[DiffHunk(
-                old_start=10, old_count=1, new_start=10, new_count=1,
-                added_lines=[(10, "def func(a, b):")],
-                removed_lines=[(10, "def func(a):")],
-                context_lines=[],
-            )],
+            path="test.py",
+            old_path=None,
+            hunks=[
+                DiffHunk(
+                    old_start=10,
+                    old_count=1,
+                    new_start=10,
+                    new_count=1,
+                    added_lines=[(10, "def func(a, b):")],
+                    removed_lines=[(10, "def func(a):")],
+                    context_lines=[],
+                )
+            ],
         )
         modified_ranges = [(10, 10)]
 
         result = engine._build_changed_symbols(
-            pr, changed_file, [file_diff], modified_ranges, "base content",
+            pr,
+            changed_file,
+            [file_diff],
+            modified_ranges,
+            "base content",
         )
 
         assert len(result) == 1
@@ -706,18 +855,28 @@ class TestBuildChangedSymbols:
         changed_file = pr.changed_files[0]
 
         file_diff = FileDiff(
-            path="test.py", old_path=None,
-            hunks=[DiffHunk(
-                old_start=10, old_count=11, new_start=10, new_count=0,
-                added_lines=[],
-                removed_lines=[(i, f"    line{i}") for i in range(10, 21)],
-                context_lines=[],
-            )],
+            path="test.py",
+            old_path=None,
+            hunks=[
+                DiffHunk(
+                    old_start=10,
+                    old_count=11,
+                    new_start=10,
+                    new_count=0,
+                    added_lines=[],
+                    removed_lines=[(i, f"    line{i}") for i in range(10, 21)],
+                    context_lines=[],
+                )
+            ],
         )
         modified_ranges = []  # No added lines
 
         result = engine._build_changed_symbols(
-            pr, changed_file, [file_diff], modified_ranges, "base content",
+            pr,
+            changed_file,
+            [file_diff],
+            modified_ranges,
+            "base content",
         )
 
         assert len(result) == 1
@@ -748,18 +907,28 @@ class TestBuildChangedSymbols:
 
         # Diff adds lines 6-9 in HEAD (new_func insertion)
         file_diff = FileDiff(
-            path="test.py", old_path=None,
-            hunks=[DiffHunk(
-                old_start=6, old_count=0, new_start=6, new_count=4,
-                added_lines=[(i, f"    line{i}") for i in range(6, 10)],
-                removed_lines=[],
-                context_lines=[],
-            )],
+            path="test.py",
+            old_path=None,
+            hunks=[
+                DiffHunk(
+                    old_start=6,
+                    old_count=0,
+                    new_start=6,
+                    new_count=4,
+                    added_lines=[(i, f"    line{i}") for i in range(6, 10)],
+                    removed_lines=[],
+                    context_lines=[],
+                )
+            ],
         )
         modified_ranges = [(6, 9)]
 
         result = engine._build_changed_symbols(
-            pr, changed_file, [file_diff], modified_ranges, "base content",
+            pr,
+            changed_file,
+            [file_diff],
+            modified_ranges,
+            "base content",
         )
 
         names = {cs.symbol.name for cs in result}
@@ -776,7 +945,8 @@ class TestBuildChangedSymbols:
         base_sym = self._make_symbol("func", 10, 20, sig="def func():")
 
         engine._symbol_index.get_symbols_and_call_graph.return_value = (
-            [base_sym], {"func": {"helper"}},
+            [base_sym],
+            {"func": {"helper"}},
         )
 
         pr = _make_pr(1, ["test.py"])
@@ -784,18 +954,28 @@ class TestBuildChangedSymbols:
         changed_file = pr.changed_files[0]
 
         file_diff = FileDiff(
-            path="test.py", old_path=None,
-            hunks=[DiffHunk(
-                old_start=14, old_count=1, new_start=14, new_count=2,
-                added_lines=[(14, "    new_line"), (15, "    another")],
-                removed_lines=[(14, "    old_line")],
-                context_lines=[],
-            )],
+            path="test.py",
+            old_path=None,
+            hunks=[
+                DiffHunk(
+                    old_start=14,
+                    old_count=1,
+                    new_start=14,
+                    new_count=2,
+                    added_lines=[(14, "    new_line"), (15, "    another")],
+                    removed_lines=[(14, "    old_line")],
+                    context_lines=[],
+                )
+            ],
         )
         modified_ranges = [(14, 15)]
 
         result = engine._build_changed_symbols(
-            pr, changed_file, [file_diff], modified_ranges, "base content",
+            pr,
+            changed_file,
+            [file_diff],
+            modified_ranges,
+            "base content",
         )
 
         assert len(result) == 1

@@ -6,6 +6,8 @@ deliberately removed or migrated in recently merged PRs.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from mergeguard.models import (
     Conflict,
     ConflictSeverity,
@@ -13,7 +15,9 @@ from mergeguard.models import (
     Decision,
     PRInfo,
 )
-from mergeguard.storage.decisions_log import DecisionsLog
+
+if TYPE_CHECKING:
+    from mergeguard.storage.decisions_log import DecisionsLog
 
 
 def detect_regressions(

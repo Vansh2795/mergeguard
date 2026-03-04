@@ -20,16 +20,16 @@ DEFAULT_WEIGHTS = {
 }
 
 # ── Scoring constants ──
-DEPENDENCY_DEPTH_MULTIPLIER = 15.0   # Points per dependency level
-CONFLICTING_PR_MULTIPLIER = 4.0      # Points per conflicting PR
-AI_CONFIRMED_PENALTY = 40.0          # Score penalty for confirmed AI PRs
-AI_SUSPECTED_PENALTY = 20.0          # Score penalty for suspected AI PRs
+DEPENDENCY_DEPTH_MULTIPLIER = 15.0  # Points per dependency level
+CONFLICTING_PR_MULTIPLIER = 4.0  # Points per conflicting PR
+AI_CONFIRMED_PENALTY = 40.0  # Score penalty for confirmed AI PRs
+AI_SUSPECTED_PENALTY = 20.0  # Score penalty for suspected AI PRs
 CRITICAL_SEVERITY_SCORE = 100.0
 WARNING_SEVERITY_SCORE = 50.0
 INFO_SEVERITY_SCORE = 15.0
-DIMINISHING_RETURN_BASE = 0.5        # Exponent base for diminishing returns
-CONCENTRATION_FLOOR = 0.6            # Min discount for concentrated criticals
-CONCENTRATION_VARIABLE = 0.4         # Variable portion of concentration discount
+DIMINISHING_RETURN_BASE = 0.5  # Exponent base for diminishing returns
+CONCENTRATION_FLOOR = 0.6  # Min discount for concentrated criticals
+CONCENTRATION_VARIABLE = 0.4  # Variable portion of concentration discount
 
 
 def compute_risk_score(

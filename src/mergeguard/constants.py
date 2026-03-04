@@ -37,8 +37,21 @@ DEFAULT_RISK_WEIGHTS = {
 
 # Supported file extensions for AST parsing
 SUPPORTED_EXTENSIONS = {
-    ".py", ".js", ".jsx", ".ts", ".tsx", ".go", ".rs",
-    ".java", ".rb", ".php", ".c", ".cpp", ".cs", ".swift", ".kt",
+    ".py",
+    ".js",
+    ".jsx",
+    ".ts",
+    ".tsx",
+    ".go",
+    ".rs",
+    ".java",
+    ".rb",
+    ".php",
+    ".c",
+    ".cpp",
+    ".cs",
+    ".swift",
+    ".kt",
 }
 
 # File patterns to always ignore

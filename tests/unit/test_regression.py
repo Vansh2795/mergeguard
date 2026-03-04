@@ -1,4 +1,5 @@
 """Tests for regression detection module."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -78,7 +79,9 @@ class TestDetectRegressions:
         pr = _make_pr(
             50,
             changed_symbols=[_make_changed_symbol("legacy_auth_handler", "src/auth/legacy.py")],
-            changed_files=[ChangedFile(path="src/auth/legacy.py", status=FileChangeStatus.MODIFIED)],
+            changed_files=[
+                ChangedFile(path="src/auth/legacy.py", status=FileChangeStatus.MODIFIED)
+            ],
         )
 
         regressions = detect_regressions(pr, log)

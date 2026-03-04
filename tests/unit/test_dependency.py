@@ -1,4 +1,5 @@
 """Tests for dependency graph building and depth computation."""
+
 from __future__ import annotations
 
 from mergeguard.analysis.dependency import (
@@ -13,11 +14,7 @@ from mergeguard.analysis.dependency import (
 class TestBuildDependencyGraph:
     def test_python_imports(self):
         """build_dependency_graph extracts Python imports and builds edges."""
-        source = (
-            "from utils import helper\n"
-            "import os\n"
-            "from models import User\n"
-        )
+        source = "from utils import helper\nimport os\nfrom models import User\n"
         graph = build_dependency_graph([("app.py", source)])
         assert len(graph.edges) == 3
         targets = {e.target_file for e in graph.edges}
@@ -46,7 +43,11 @@ class TestBuildDependencyGraph:
 
     def test_js_imports(self):
         """build_dependency_graph handles JavaScript imports."""
-        source = "import React from 'react';\nimport { useState } from 'react';\nimport axios from 'axios';\n"
+        source = (
+            "import React from 'react';\n"
+            "import { useState } from 'react';\n"
+            "import axios from 'axios';\n"
+        )
         graph = build_dependency_graph([("app.tsx", source)])
         assert len(graph.edges) == 2
         targets = {e.target_file for e in graph.edges}
@@ -143,11 +144,13 @@ class TestImportedNames:
     def test_get_imported_names_lookup(self):
         """DependencyGraph.get_imported_names returns correct names."""
         graph = DependencyGraph()
-        graph.add_edge(ImportEdge(
-            source_file="views.py",
-            target_file="models",
-            imported_names=["User", "Admin"],
-        ))
+        graph.add_edge(
+            ImportEdge(
+                source_file="views.py",
+                target_file="models",
+                imported_names=["User", "Admin"],
+            )
+        )
         assert graph.get_imported_names("views.py", "models") == ["User", "Admin"]
         assert graph.get_imported_names("views.py", "other") == []
         assert graph.get_imported_names("other.py", "models") == []

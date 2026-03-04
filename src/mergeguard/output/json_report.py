@@ -6,11 +6,12 @@ custom dashboards, and programmatic consumption.
 
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from mergeguard.models import ConflictReport
+if TYPE_CHECKING:
+    from mergeguard.models import ConflictReport
 
 
 def format_json_report(report: ConflictReport, pretty: bool = True) -> str:
@@ -52,15 +53,18 @@ def write_github_action_outputs(report: ConflictReport) -> None:
             f.write(f"risk_score={report.risk_score:.0f}\n")
             f.write(f"conflict_count={len(report.conflicts)}\n")
     else:
-        for name, value in [("score", f"{report.risk_score:.0f}"),
-                            ("conflicts", str(len(report.conflicts)))]:
-            fd = os.open(f"/tmp/mergeguard-{name}.txt",
-                         os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        for name, value in [
+            ("score", f"{report.risk_score:.0f}"),
+            ("conflicts", str(len(report.conflicts))),
+        ]:
+            fd = os.open(
+                f"/tmp/mergeguard-{name}.txt", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600
+            )
             with os.fdopen(fd, "w") as f:
                 f.write(value)
 
 
-def format_summary(report: ConflictReport) -> dict:
+def format_summary(report: ConflictReport) -> dict[str, object]:
     """Create a summary dict suitable for CI status descriptions.
 
     Returns:

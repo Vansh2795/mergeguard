@@ -3,15 +3,20 @@
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING, Any, cast
 
-from tree_sitter import Node
 from tree_sitter_language_pack import get_parser
 
 from mergeguard.models import Symbol, SymbolType
 
+if TYPE_CHECKING:
+    from tree_sitter import Node
 
-def _safe_decode(node_text: bytes) -> str:
+
+def _safe_decode(node_text: bytes | None) -> str:
     """Decode tree-sitter node text, replacing invalid bytes."""
+    if node_text is None:
+        return ""
     return node_text.decode("utf-8", errors="replace")
 
 
@@ -108,7 +113,7 @@ def extract_symbols(source_code: str, file_path: str) -> list[Symbol]:
         return []
 
     try:
-        parser = get_parser(language_name)
+        parser = get_parser(cast("Any", language_name))
     except Exception:
         return _fallback_extract(source_code, file_path)
 
@@ -160,8 +165,13 @@ def _walk_tree(
         # Recurse into class body with this class as parent
         for child in node.children:
             _walk_tree(
-                child, symbols, file_path, language,
-                func_types, class_types, method_types,
+                child,
+                symbols,
+                file_path,
+                language,
+                func_types,
+                class_types,
+                method_types,
                 parent_class=name,
             )
         return
@@ -170,10 +180,7 @@ def _walk_tree(
         name = _get_name(node)
         if name:
             # If inside a class, it's a method
-            if parent_class is not None:
-                sym_type = SymbolType.METHOD
-            else:
-                sym_type = SymbolType.FUNCTION
+            sym_type = SymbolType.METHOD if parent_class is not None else SymbolType.FUNCTION
             symbols.append(
                 Symbol(
                     name=name,
@@ -188,8 +195,13 @@ def _walk_tree(
         # Still recurse for nested functions/classes
         for child in node.children:
             _walk_tree(
-                child, symbols, file_path, language,
-                func_types, class_types, method_types,
+                child,
+                symbols,
+                file_path,
+                language,
+                func_types,
+                class_types,
+                method_types,
                 parent_class=parent_class,
             )
         return
@@ -229,8 +241,13 @@ def _walk_tree(
     # Recurse into children
     for child in node.children:
         _walk_tree(
-            child, symbols, file_path, language,
-            func_types, class_types, method_types,
+            child,
+            symbols,
+            file_path,
+            language,
+            func_types,
+            class_types,
+            method_types,
             parent_class=parent_class,
         )
 
@@ -263,7 +280,7 @@ def extract_call_graph(source_code: str, file_path: str) -> dict[str, set[str]]:
         return {}
 
     try:
-        parser = get_parser(language_name)
+        parser = get_parser(cast("Any", language_name))
     except Exception:
         return {}
 
@@ -282,15 +299,21 @@ def extract_call_graph(source_code: str, file_path: str) -> dict[str, set[str]]:
     # Second pass: for each function/method, find calls within its body
     call_graph: dict[str, set[str]] = {}
     _collect_calls(
-        tree.root_node, call_graph, local_symbols,
-        func_types, class_types, call_node_type, language_name,
+        tree.root_node,
+        call_graph,
+        local_symbols,
+        func_types,
+        class_types,
+        call_node_type,
+        language_name,
     )
 
     return call_graph
 
 
 def extract_symbols_and_call_graph(
-    source_code: str, file_path: str,
+    source_code: str,
+    file_path: str,
 ) -> tuple[list[Symbol], dict[str, set[str]]]:
     """Parse source once and extract both symbols and call graph."""
     language_name = detect_language(file_path)
@@ -298,7 +321,7 @@ def extract_symbols_and_call_graph(
         return [], {}
 
     try:
-        parser = get_parser(language_name)
+        parser = get_parser(cast("Any", language_name))
     except Exception:
         return _fallback_extract(source_code, file_path), {}
 
@@ -310,8 +333,14 @@ def extract_symbols_and_call_graph(
     class_types = CLASS_NODE_TYPES.get(language_name, set())
     method_types = METHOD_NODE_TYPES.get(language_name, set())
     _walk_tree(
-        tree.root_node, symbols, file_path, language_name,
-        func_types, class_types, method_types, parent_class=None,
+        tree.root_node,
+        symbols,
+        file_path,
+        language_name,
+        func_types,
+        class_types,
+        method_types,
+        parent_class=None,
     )
 
     # Extract call graph (reuses the same parsed tree)
@@ -321,8 +350,13 @@ def extract_symbols_and_call_graph(
         local_symbols: set[str] = set()
         _collect_defined_names(tree.root_node, local_symbols, func_types, class_types)
         _collect_calls(
-            tree.root_node, call_graph, local_symbols,
-            func_types, class_types, call_node_type, language_name,
+            tree.root_node,
+            call_graph,
+            local_symbols,
+            func_types,
+            class_types,
+            call_node_type,
+            language_name,
         )
 
     return symbols, call_graph
@@ -361,9 +395,14 @@ def _collect_calls(
             call_graph.setdefault(name, set())
             for child in node.children:
                 _collect_calls(
-                    child, call_graph, local_symbols,
-                    func_types, class_types, call_node_type,
-                    language, current_func=name,
+                    child,
+                    call_graph,
+                    local_symbols,
+                    func_types,
+                    class_types,
+                    call_node_type,
+                    language,
+                    current_func=name,
                 )
             return
 
@@ -371,9 +410,14 @@ def _collect_calls(
         # Recurse into class body but don't set current_func
         for child in node.children:
             _collect_calls(
-                child, call_graph, local_symbols,
-                func_types, class_types, call_node_type,
-                language, current_func=current_func,
+                child,
+                call_graph,
+                local_symbols,
+                func_types,
+                class_types,
+                call_node_type,
+                language,
+                current_func=current_func,
             )
         return
 
@@ -384,9 +428,14 @@ def _collect_calls(
 
     for child in node.children:
         _collect_calls(
-            child, call_graph, local_symbols,
-            func_types, class_types, call_node_type,
-            language, current_func=current_func,
+            child,
+            call_graph,
+            local_symbols,
+            func_types,
+            class_types,
+            call_node_type,
+            language,
+            current_func=current_func,
         )
 
 

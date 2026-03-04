@@ -2,15 +2,24 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
-from datetime import datetime
 
 from mergeguard.models import (
-    PRInfo, ChangedFile, ChangedSymbol, Symbol, Conflict, ConflictReport,
-    ConflictSeverity, ConflictType, SymbolType, FileChangeStatus,
-    AIAttribution, MergeGuardConfig, Decision, DecisionType, DecisionsEntry,
+    ChangedFile,
+    Conflict,
+    ConflictReport,
+    ConflictSeverity,
+    ConflictType,
+    Decision,
+    DecisionType,
+    FileChangeStatus,
+    MergeGuardConfig,
+    PRInfo,
+    Symbol,
+    SymbolType,
 )
 
 

@@ -1,4 +1,5 @@
 """End-to-end integration tests for the MergeGuard engine."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -50,8 +51,18 @@ def validate_input(data):
     return True
 """
 
-PATCH_OVERLAPPING = "@@ -1,5 +1,6 @@\n def process_data(items):\n     result = []\n     for item in items:\n-        result.append(item * 2)\n+        result.append(item * 3)\n+        print(item)\n     return result\n"
-PATCH_NON_OVERLAPPING = "@@ -7,4 +7,5 @@\n def validate_input(data):\n     if not data:\n         raise ValueError(\"empty\")\n+    print(\"validating\")\n     return True\n"
+PATCH_OVERLAPPING = (
+    "@@ -1,5 +1,6 @@\n def process_data(items):\n"
+    "     result = []\n     for item in items:\n"
+    "-        result.append(item * 2)\n"
+    "+        result.append(item * 3)\n"
+    "+        print(item)\n     return result\n"
+)
+PATCH_NON_OVERLAPPING = (
+    "@@ -7,4 +7,5 @@\n def validate_input(data):\n"
+    '     if not data:\n         raise ValueError("empty")\n'
+    '+    print("validating")\n     return True\n'
+)
 
 # Source code for insertion test: BASE has only validate_input
 PYTHON_SOURCE_INSERT_BASE = """\
@@ -73,29 +84,40 @@ def validate_input(data):
 """
 
 # Patch that inserts new_helper before validate_input
-PATCH_INSERT_BEFORE = "@@ -1,4 +1,7 @@\n+def new_helper(x):\n+    return x + 1\n+\n def validate_input(data):\n     if not data:\n         raise ValueError(\"empty\")\n     return True\n"
+PATCH_INSERT_BEFORE = (
+    "@@ -1,4 +1,7 @@\n+def new_helper(x):\n"
+    "+    return x + 1\n+\n def validate_input(data):\n"
+    '     if not data:\n         raise ValueError("empty")\n'
+    "     return True\n"
+)
 
 
 class TestEngineE2E:
     @patch("mergeguard.core.engine.GitHubClient")
-    def test_full_analysis_pipeline(self, MockClientClass):
+    def test_full_analysis_pipeline(self, mock_client_class):
         """Test the complete analysis pipeline with mock data."""
         mock_client = MagicMock()
-        MockClientClass.return_value = mock_client
+        mock_client_class.return_value = mock_client
 
         target_pr = _make_pr(1, "Add feature", "alice")
         other_pr = _make_pr(2, "Fix bug", "bob")
 
         target_files = [
             ChangedFile(
-                path="src/app.py", status=FileChangeStatus.MODIFIED,
-                additions=5, deletions=2, patch=PATCH_OVERLAPPING,
+                path="src/app.py",
+                status=FileChangeStatus.MODIFIED,
+                additions=5,
+                deletions=2,
+                patch=PATCH_OVERLAPPING,
             )
         ]
         other_files = [
             ChangedFile(
-                path="src/app.py", status=FileChangeStatus.MODIFIED,
-                additions=3, deletions=1, patch=PATCH_OVERLAPPING,
+                path="src/app.py",
+                status=FileChangeStatus.MODIFIED,
+                additions=3,
+                deletions=1,
+                patch=PATCH_OVERLAPPING,
             )
         ]
 
@@ -115,24 +137,30 @@ class TestEngineE2E:
         assert report.analysis_duration_ms > 0
 
     @patch("mergeguard.core.engine.GitHubClient")
-    def test_analysis_with_no_conflicts(self, MockClientClass):
+    def test_analysis_with_no_conflicts(self, mock_client_class):
         """Two PRs that modify completely different files should have no conflicts."""
         mock_client = MagicMock()
-        MockClientClass.return_value = mock_client
+        mock_client_class.return_value = mock_client
 
         target_pr = _make_pr(10, "Add auth")
         other_pr = _make_pr(11, "Add logging")
 
         target_files = [
             ChangedFile(
-                path="src/auth.py", status=FileChangeStatus.MODIFIED,
-                additions=10, deletions=0, patch=PATCH_OVERLAPPING,
+                path="src/auth.py",
+                status=FileChangeStatus.MODIFIED,
+                additions=10,
+                deletions=0,
+                patch=PATCH_OVERLAPPING,
             )
         ]
         other_files = [
             ChangedFile(
-                path="src/logging.py", status=FileChangeStatus.MODIFIED,
-                additions=5, deletions=0, patch=PATCH_NON_OVERLAPPING,
+                path="src/logging.py",
+                status=FileChangeStatus.MODIFIED,
+                additions=5,
+                deletions=0,
+                patch=PATCH_NON_OVERLAPPING,
             )
         ]
 
@@ -151,17 +179,20 @@ class TestEngineE2E:
         assert 11 in report.no_conflict_prs
 
     @patch("mergeguard.core.engine.GitHubClient")
-    def test_analysis_with_critical_conflict(self, MockClientClass):
+    def test_analysis_with_critical_conflict(self, mock_client_class):
         """Two PRs modifying the same function should produce a conflict."""
         mock_client = MagicMock()
-        MockClientClass.return_value = mock_client
+        mock_client_class.return_value = mock_client
 
         target_pr = _make_pr(20, "Optimize process_data")
         other_pr = _make_pr(21, "Refactor process_data")
 
         shared_file = ChangedFile(
-            path="src/app.py", status=FileChangeStatus.MODIFIED,
-            additions=5, deletions=2, patch=PATCH_OVERLAPPING,
+            path="src/app.py",
+            status=FileChangeStatus.MODIFIED,
+            additions=5,
+            deletions=2,
+            patch=PATCH_OVERLAPPING,
         )
 
         mock_client.get_pr.return_value = target_pr
@@ -180,11 +211,11 @@ class TestEngineE2E:
         assert report.risk_score > 0
 
     @patch("mergeguard.core.engine.GitHubClient")
-    def test_risk_factors_contain_nonzero_blast_radius_and_churn(self, MockClientClass):
+    def test_risk_factors_contain_nonzero_blast_radius_and_churn(self, mock_client_class):
         """Risk factors should contain non-zero blast_radius and churn_risk
         when changed files have additions/deletions and imports."""
         mock_client = MagicMock()
-        MockClientClass.return_value = mock_client
+        mock_client_class.return_value = mock_client
 
         target_pr = _make_pr(30, "Add helpers")
         other_pr = _make_pr(31, "Other work")
@@ -192,18 +223,27 @@ class TestEngineE2E:
         # Two files: src/app.py imports src/utils.py, so utils has a dependent
         target_files = [
             ChangedFile(
-                path="src/app.py", status=FileChangeStatus.MODIFIED,
-                additions=100, deletions=50, patch=PATCH_OVERLAPPING,
+                path="src/app.py",
+                status=FileChangeStatus.MODIFIED,
+                additions=100,
+                deletions=50,
+                patch=PATCH_OVERLAPPING,
             ),
             ChangedFile(
-                path="src/utils.py", status=FileChangeStatus.MODIFIED,
-                additions=10, deletions=5, patch=PATCH_NON_OVERLAPPING,
+                path="src/utils.py",
+                status=FileChangeStatus.MODIFIED,
+                additions=10,
+                deletions=5,
+                patch=PATCH_NON_OVERLAPPING,
             ),
         ]
         other_files = [
             ChangedFile(
-                path="src/other.py", status=FileChangeStatus.MODIFIED,
-                additions=5, deletions=0, patch=PATCH_NON_OVERLAPPING,
+                path="src/other.py",
+                status=FileChangeStatus.MODIFIED,
+                additions=5,
+                deletions=0,
+                patch=PATCH_NON_OVERLAPPING,
             )
         ]
 
@@ -248,18 +288,21 @@ class TestEngineE2E:
         assert report.risk_factors["blast_radius"] > 0
 
     @patch("mergeguard.core.engine.GitHubClient")
-    def test_dependency_depth_computed(self, MockClientClass):
+    def test_dependency_depth_computed(self, mock_client_class):
         """Verify dependency depth is actually computed from file contents."""
         mock_client = MagicMock()
-        MockClientClass.return_value = mock_client
+        mock_client_class.return_value = mock_client
 
         target_pr = _make_pr(40, "Deep deps")
         other_pr = _make_pr(41, "Other")
 
         target_files = [
             ChangedFile(
-                path="src/deep.py", status=FileChangeStatus.MODIFIED,
-                additions=5, deletions=0, patch=PATCH_OVERLAPPING,
+                path="src/deep.py",
+                status=FileChangeStatus.MODIFIED,
+                additions=5,
+                deletions=0,
+                patch=PATCH_OVERLAPPING,
             )
         ]
 
@@ -278,22 +321,28 @@ class TestEngineE2E:
         assert "blast_radius" in report.risk_factors
 
     @patch("mergeguard.core.engine.GitHubClient")
-    def test_ignored_paths_are_filtered(self, MockClientClass):
+    def test_ignored_paths_are_filtered(self, mock_client_class):
         """Files matching ignored_paths should be filtered out before analysis."""
         mock_client = MagicMock()
-        MockClientClass.return_value = mock_client
+        mock_client_class.return_value = mock_client
 
         target_pr = _make_pr(50, "Update deps")
         other_pr = _make_pr(51, "Other")
 
         target_files = [
             ChangedFile(
-                path="poetry.lock", status=FileChangeStatus.MODIFIED,
-                additions=500, deletions=400, patch=PATCH_OVERLAPPING,
+                path="poetry.lock",
+                status=FileChangeStatus.MODIFIED,
+                additions=500,
+                deletions=400,
+                patch=PATCH_OVERLAPPING,
             ),
             ChangedFile(
-                path="src/app.py", status=FileChangeStatus.MODIFIED,
-                additions=5, deletions=2, patch=PATCH_OVERLAPPING,
+                path="src/app.py",
+                status=FileChangeStatus.MODIFIED,
+                additions=5,
+                deletions=2,
+                patch=PATCH_OVERLAPPING,
             ),
         ]
 
@@ -314,18 +363,21 @@ class TestEngineE2E:
         assert "src/app.py" in remaining_paths
 
     @patch("mergeguard.core.engine.GitHubClient")
-    def test_signature_change_detected(self, MockClientClass):
+    def test_signature_change_detected(self, mock_client_class):
         """When a function signature changes between base and head, it should be detected."""
         mock_client = MagicMock()
-        MockClientClass.return_value = mock_client
+        mock_client_class.return_value = mock_client
 
         target_pr = _make_pr(60, "Change signature")
         other_pr = _make_pr(61, "Other")
 
         target_files = [
             ChangedFile(
-                path="src/app.py", status=FileChangeStatus.MODIFIED,
-                additions=5, deletions=2, patch=PATCH_OVERLAPPING,
+                path="src/app.py",
+                status=FileChangeStatus.MODIFIED,
+                additions=5,
+                deletions=2,
+                patch=PATCH_OVERLAPPING,
             )
         ]
 
@@ -363,30 +415,35 @@ class TestEngineE2E:
 
         # Should detect signature change for process_data
         sig_changes = [
-            cs for cs in report.pr.changed_symbols
-            if cs.change_type == "modified_signature"
+            cs for cs in report.pr.changed_symbols if cs.change_type == "modified_signature"
         ]
         assert len(sig_changes) >= 1
 
     @patch("mergeguard.core.engine.GitHubClient")
-    def test_batch_analysis_enriches_each_pr_once(self, MockClientClass):
+    def test_batch_analysis_enriches_each_pr_once(self, mock_client_class):
         """analyze_all_open_prs should call get_pr_files once per PR, not N times."""
         mock_client = MagicMock()
-        MockClientClass.return_value = mock_client
+        mock_client_class.return_value = mock_client
 
         pr1 = _make_pr(70, "PR A")
         pr2 = _make_pr(71, "PR B")
 
         files_a = [
             ChangedFile(
-                path="src/a.py", status=FileChangeStatus.MODIFIED,
-                additions=5, deletions=0, patch=PATCH_OVERLAPPING,
+                path="src/a.py",
+                status=FileChangeStatus.MODIFIED,
+                additions=5,
+                deletions=0,
+                patch=PATCH_OVERLAPPING,
             )
         ]
         files_b = [
             ChangedFile(
-                path="src/b.py", status=FileChangeStatus.MODIFIED,
-                additions=5, deletions=0, patch=PATCH_NON_OVERLAPPING,
+                path="src/b.py",
+                status=FileChangeStatus.MODIFIED,
+                additions=5,
+                deletions=0,
+                patch=PATCH_NON_OVERLAPPING,
             )
         ]
 
@@ -405,18 +462,21 @@ class TestEngineE2E:
         assert mock_client.get_pr_files.call_count == 2
 
     @patch("mergeguard.core.engine.GitHubClient")
-    def test_content_cache_avoids_duplicate_calls(self, MockClientClass):
+    def test_content_cache_avoids_duplicate_calls(self, mock_client_class):
         """Content cache should prevent duplicate get_file_content calls for same path+ref."""
         mock_client = MagicMock()
-        MockClientClass.return_value = mock_client
+        mock_client_class.return_value = mock_client
 
         target_pr = _make_pr(80, "Cache test")
         other_pr = _make_pr(81, "Other")
 
         target_files = [
             ChangedFile(
-                path="src/app.py", status=FileChangeStatus.MODIFIED,
-                additions=5, deletions=2, patch=PATCH_OVERLAPPING,
+                path="src/app.py",
+                status=FileChangeStatus.MODIFIED,
+                additions=5,
+                deletions=2,
+                patch=PATCH_OVERLAPPING,
             )
         ]
 
@@ -429,19 +489,18 @@ class TestEngineE2E:
         engine = MergeGuardEngine(
             token="fake", repo_full_name="owner/repo", config=MergeGuardConfig()
         )
-        report = engine.analyze_pr(80)
+        engine.analyze_pr(80)
 
         # Count calls for the same path+ref — should be at most 1 per unique (path, ref)
         calls = mock_client.get_file_content.call_args_list
         unique_calls = set((c[0][0], c[0][1]) for c in calls)
         assert len(unique_calls) == len(calls)
 
-
     @patch("mergeguard.core.engine.GitHubClient")
-    def test_fork_pr_skips_head_content_fetch(self, MockClientClass):
+    def test_fork_pr_skips_head_content_fetch(self, mock_client_class):
         """A fork PR should not trigger get_file_content calls for its head branch."""
         mock_client = MagicMock()
-        MockClientClass.return_value = mock_client
+        mock_client_class.return_value = mock_client
 
         target_pr = _make_pr(90, "Fork PR")
         target_pr.is_fork = True
@@ -449,8 +508,11 @@ class TestEngineE2E:
 
         target_files = [
             ChangedFile(
-                path="src/app.py", status=FileChangeStatus.MODIFIED,
-                additions=5, deletions=2, patch=PATCH_OVERLAPPING,
+                path="src/app.py",
+                status=FileChangeStatus.MODIFIED,
+                additions=5,
+                deletions=2,
+                patch=PATCH_OVERLAPPING,
             )
         ]
 
@@ -463,19 +525,19 @@ class TestEngineE2E:
         engine = MergeGuardEngine(
             token="fake", repo_full_name="owner/repo", config=MergeGuardConfig()
         )
-        report = engine.analyze_pr(90)
+        engine.analyze_pr(90)
 
         # get_file_content should never be called with the fork's head branch
         for call in mock_client.get_file_content.call_args_list:
-            assert call[0][1] != f"feature/90", (
+            assert call[0][1] != "feature/90", (
                 f"Should not fetch head branch content for fork PR, but got call: {call}"
             )
 
     @patch("mergeguard.core.engine.GitHubClient")
-    def test_parallel_enrichment_handles_failure(self, MockClientClass):
+    def test_parallel_enrichment_handles_failure(self, mock_client_class):
         """If one PR's get_pr_files raises, analysis should still complete for others."""
         mock_client = MagicMock()
-        MockClientClass.return_value = mock_client
+        mock_client_class.return_value = mock_client
 
         target_pr = _make_pr(100, "Target")
         good_pr = _make_pr(101, "Good PR")
@@ -483,14 +545,20 @@ class TestEngineE2E:
 
         target_files = [
             ChangedFile(
-                path="src/app.py", status=FileChangeStatus.MODIFIED,
-                additions=5, deletions=2, patch=PATCH_OVERLAPPING,
+                path="src/app.py",
+                status=FileChangeStatus.MODIFIED,
+                additions=5,
+                deletions=2,
+                patch=PATCH_OVERLAPPING,
             )
         ]
         good_files = [
             ChangedFile(
-                path="src/app.py", status=FileChangeStatus.MODIFIED,
-                additions=3, deletions=1, patch=PATCH_OVERLAPPING,
+                path="src/app.py",
+                status=FileChangeStatus.MODIFIED,
+                additions=3,
+                deletions=1,
+                patch=PATCH_OVERLAPPING,
             )
         ]
 
@@ -519,11 +587,11 @@ class TestEngineE2E:
 
 class TestTransitiveConflictE2E:
     @patch("mergeguard.core.engine.GitHubClient")
-    def test_transitive_conflict_in_report(self, MockClientClass):
+    def test_transitive_conflict_in_report(self, mock_client_class):
         """Full pipeline: transitive conflict appears in report when PRs touch
         different files connected by imports."""
         mock_client = MagicMock()
-        MockClientClass.return_value = mock_client
+        mock_client_class.return_value = mock_client
 
         target_pr = _make_pr(200, "Update models")
         other_pr = _make_pr(201, "Update views")
@@ -531,14 +599,20 @@ class TestTransitiveConflictE2E:
         # target modifies models.py, other modifies views.py
         target_files = [
             ChangedFile(
-                path="src/models.py", status=FileChangeStatus.MODIFIED,
-                additions=5, deletions=2, patch=PATCH_OVERLAPPING,
+                path="src/models.py",
+                status=FileChangeStatus.MODIFIED,
+                additions=5,
+                deletions=2,
+                patch=PATCH_OVERLAPPING,
             )
         ]
         other_files = [
             ChangedFile(
-                path="src/views.py", status=FileChangeStatus.MODIFIED,
-                additions=3, deletions=1, patch=PATCH_NON_OVERLAPPING,
+                path="src/views.py",
+                status=FileChangeStatus.MODIFIED,
+                additions=3,
+                deletions=1,
+                patch=PATCH_NON_OVERLAPPING,
             )
         ]
 
@@ -575,15 +649,13 @@ class TestTransitiveConflictE2E:
         mock_client.rate_limit_remaining = 5000
 
         engine = MergeGuardEngine(
-            token="fake", repo_full_name="owner/repo",
+            token="fake",
+            repo_full_name="owner/repo",
             config=MergeGuardConfig(check_regressions=False),
         )
         report = engine.analyze_pr(200)
 
-        transitive = [
-            c for c in report.conflicts
-            if c.conflict_type == ConflictType.TRANSITIVE
-        ]
+        transitive = [c for c in report.conflicts if c.conflict_type == ConflictType.TRANSITIVE]
         assert len(transitive) == 1
         assert transitive[0].target_pr == 201
         assert transitive[0].severity == ConflictSeverity.WARNING
@@ -603,8 +675,11 @@ class TestTransitiveConflictE2E:
 class TestFindOverlappingRange:
     def _make_symbol(self, start, end):
         return Symbol(
-            name="test_fn", symbol_type=SymbolType.FUNCTION,
-            file_path="test.py", start_line=start, end_line=end,
+            name="test_fn",
+            symbol_type=SymbolType.FUNCTION,
+            file_path="test.py",
+            start_line=start,
+            end_line=end,
         )
 
     def test_finds_overlapping_range(self):
@@ -624,26 +699,35 @@ class TestFindOverlappingRange:
 
 class TestGuardrailsWiring:
     @patch("mergeguard.core.engine.GitHubClient")
-    def test_guardrail_violations_included_in_report(self, MockClientClass):
+    def test_guardrail_violations_included_in_report(self, mock_client_class):
         """When config has rules, guardrail violations should appear in conflicts."""
         mock_client = MagicMock()
-        MockClientClass.return_value = mock_client
+        mock_client_class.return_value = mock_client
 
         target_pr = _make_pr(110, "Large PR")
         other_pr = _make_pr(111, "Other")
 
         target_files = [
             ChangedFile(
-                path="src/a.py", status=FileChangeStatus.MODIFIED,
-                additions=5, deletions=2, patch=PATCH_OVERLAPPING,
+                path="src/a.py",
+                status=FileChangeStatus.MODIFIED,
+                additions=5,
+                deletions=2,
+                patch=PATCH_OVERLAPPING,
             ),
             ChangedFile(
-                path="src/b.py", status=FileChangeStatus.MODIFIED,
-                additions=5, deletions=2, patch=PATCH_NON_OVERLAPPING,
+                path="src/b.py",
+                status=FileChangeStatus.MODIFIED,
+                additions=5,
+                deletions=2,
+                patch=PATCH_NON_OVERLAPPING,
             ),
             ChangedFile(
-                path="src/c.py", status=FileChangeStatus.MODIFIED,
-                additions=5, deletions=2, patch=PATCH_OVERLAPPING,
+                path="src/c.py",
+                status=FileChangeStatus.MODIFIED,
+                additions=5,
+                deletions=2,
+                patch=PATCH_OVERLAPPING,
             ),
         ]
 
@@ -667,10 +751,10 @@ class TestGuardrailsWiring:
         assert "size-limit" in guardrail_conflicts[0].description
 
     @patch("mergeguard.core.engine.GitHubClient")
-    def test_no_guardrail_violations_when_rules_empty(self, MockClientClass):
+    def test_no_guardrail_violations_when_rules_empty(self, mock_client_class):
         """No guardrail violations when config has no rules."""
         mock_client = MagicMock()
-        MockClientClass.return_value = mock_client
+        mock_client_class.return_value = mock_client
 
         target_pr = _make_pr(112, "Normal PR")
         other_pr = _make_pr(113, "Other")
@@ -678,8 +762,11 @@ class TestGuardrailsWiring:
         mock_client.get_pr.return_value = target_pr
         mock_client.get_pr_files.return_value = [
             ChangedFile(
-                path="src/app.py", status=FileChangeStatus.MODIFIED,
-                additions=5, deletions=2, patch=PATCH_OVERLAPPING,
+                path="src/app.py",
+                status=FileChangeStatus.MODIFIED,
+                additions=5,
+                deletions=2,
+                patch=PATCH_OVERLAPPING,
             )
         ]
         mock_client.get_open_prs.return_value = [target_pr, other_pr]
@@ -698,10 +785,10 @@ class TestGuardrailsWiring:
 
 class TestRegressionDetectionWiring:
     @patch("mergeguard.core.engine.GitHubClient")
-    def test_regression_conflicts_included(self, MockClientClass, _no_filesystem_side_effects):
+    def test_regression_conflicts_included(self, mock_client_class, _no_filesystem_side_effects):
         """Regression conflicts should appear in the report when check_regressions is on."""
         mock_client = MagicMock()
-        MockClientClass.return_value = mock_client
+        mock_client_class.return_value = mock_client
 
         # Set up the DecisionsLog mock (provided by autouse fixture via engine patch)
         # to return a regression when detect_regressions runs
@@ -716,15 +803,20 @@ class TestRegressionDetectionWiring:
             recommendation="Check if intentional",
         )
 
-        with patch("mergeguard.core.engine.detect_regressions", return_value=[regression_conflict]) as mock_detect:
+        with patch(
+            "mergeguard.core.engine.detect_regressions", return_value=[regression_conflict]
+        ) as mock_detect:
             target_pr = _make_pr(120, "Regression PR")
             other_pr = _make_pr(121, "Other")
 
             mock_client.get_pr.return_value = target_pr
             mock_client.get_pr_files.return_value = [
                 ChangedFile(
-                    path="src/app.py", status=FileChangeStatus.MODIFIED,
-                    additions=5, deletions=2, patch=PATCH_OVERLAPPING,
+                    path="src/app.py",
+                    status=FileChangeStatus.MODIFIED,
+                    additions=5,
+                    deletions=2,
+                    patch=PATCH_OVERLAPPING,
                 )
             ]
             mock_client.get_open_prs.return_value = [target_pr, other_pr]
@@ -742,10 +834,10 @@ class TestRegressionDetectionWiring:
         assert len(regression_conflicts) >= 1
 
     @patch("mergeguard.core.engine.GitHubClient")
-    def test_regression_skipped_when_disabled(self, MockClientClass):
+    def test_regression_skipped_when_disabled(self, mock_client_class):
         """No regression detection when check_regressions is False."""
         mock_client = MagicMock()
-        MockClientClass.return_value = mock_client
+        mock_client_class.return_value = mock_client
 
         target_pr = _make_pr(122, "Normal PR")
         other_pr = _make_pr(123, "Other")
@@ -753,8 +845,11 @@ class TestRegressionDetectionWiring:
         mock_client.get_pr.return_value = target_pr
         mock_client.get_pr_files.return_value = [
             ChangedFile(
-                path="src/app.py", status=FileChangeStatus.MODIFIED,
-                additions=5, deletions=2, patch=PATCH_OVERLAPPING,
+                path="src/app.py",
+                status=FileChangeStatus.MODIFIED,
+                additions=5,
+                deletions=2,
+                patch=PATCH_OVERLAPPING,
             )
         ]
         mock_client.get_open_prs.return_value = [target_pr, other_pr]
@@ -776,22 +871,25 @@ class TestLLMAnalysisWiring:
     @patch.dict("os.environ", {"ANTHROPIC_API_KEY": "sk-test-key"})
     @patch("mergeguard.integrations.llm_analyzer.LLMAnalyzer")
     @patch("mergeguard.core.engine.GitHubClient")
-    def test_llm_refines_behavioral_conflicts(self, MockClientClass, MockLLM):
+    def test_llm_refines_behavioral_conflicts(self, mock_client_class, mock_llm):
         """LLM should be called for behavioral conflicts and can downgrade severity."""
         mock_client = MagicMock()
-        MockClientClass.return_value = mock_client
+        mock_client_class.return_value = mock_client
 
         # LLM says changes are compatible → returns None
         mock_llm_instance = MagicMock()
         mock_llm_instance.analyze_behavioral_conflict.return_value = None
-        MockLLM.return_value = mock_llm_instance
+        mock_llm.return_value = mock_llm_instance
 
         target_pr = _make_pr(130, "Feature A")
         other_pr = _make_pr(131, "Feature B")
 
         shared_file = ChangedFile(
-            path="src/app.py", status=FileChangeStatus.MODIFIED,
-            additions=5, deletions=2, patch=PATCH_OVERLAPPING,
+            path="src/app.py",
+            status=FileChangeStatus.MODIFIED,
+            additions=5,
+            deletions=2,
+            patch=PATCH_OVERLAPPING,
         )
 
         mock_client.get_pr.return_value = target_pr
@@ -813,10 +911,10 @@ class TestLLMAnalysisWiring:
                 assert c.severity == ConflictSeverity.INFO
 
     @patch("mergeguard.core.engine.GitHubClient")
-    def test_llm_skipped_when_disabled(self, MockClientClass):
+    def test_llm_skipped_when_disabled(self, mock_client_class):
         """LLM analysis should not run when llm_enabled is False."""
         mock_client = MagicMock()
-        MockClientClass.return_value = mock_client
+        mock_client_class.return_value = mock_client
 
         target_pr = _make_pr(132, "Feature")
         other_pr = _make_pr(133, "Other")
@@ -824,8 +922,11 @@ class TestLLMAnalysisWiring:
         mock_client.get_pr.return_value = target_pr
         mock_client.get_pr_files.return_value = [
             ChangedFile(
-                path="src/app.py", status=FileChangeStatus.MODIFIED,
-                additions=5, deletions=2, patch=PATCH_OVERLAPPING,
+                path="src/app.py",
+                status=FileChangeStatus.MODIFIED,
+                additions=5,
+                deletions=2,
+                patch=PATCH_OVERLAPPING,
             )
         ]
         mock_client.get_open_prs.return_value = [target_pr, other_pr]
@@ -842,10 +943,10 @@ class TestLLMAnalysisWiring:
 
 class TestAnalysisCacheWiring:
     @patch("mergeguard.core.engine.GitHubClient")
-    def test_cache_hit_returns_cached_report(self, MockClientClass):
+    def test_cache_hit_returns_cached_report(self, mock_client_class):
         """When cache has a result, it should be returned without full analysis."""
         mock_client = MagicMock()
-        MockClientClass.return_value = mock_client
+        mock_client_class.return_value = mock_client
 
         target_pr = _make_pr(140, "Cached PR")
         mock_client.get_pr.return_value = target_pr
@@ -876,10 +977,10 @@ class TestAnalysisCacheWiring:
         mock_client.get_open_prs.assert_not_called()
 
     @patch("mergeguard.core.engine.GitHubClient")
-    def test_cache_miss_runs_full_analysis(self, MockClientClass):
+    def test_cache_miss_runs_full_analysis(self, mock_client_class):
         """When cache misses, full analysis runs and result is cached."""
         mock_client = MagicMock()
-        MockClientClass.return_value = mock_client
+        mock_client_class.return_value = mock_client
 
         target_pr = _make_pr(142, "Uncached PR")
         other_pr = _make_pr(143, "Other")
@@ -887,8 +988,11 @@ class TestAnalysisCacheWiring:
         mock_client.get_pr.return_value = target_pr
         mock_client.get_pr_files.return_value = [
             ChangedFile(
-                path="src/app.py", status=FileChangeStatus.MODIFIED,
-                additions=5, deletions=2, patch=PATCH_OVERLAPPING,
+                path="src/app.py",
+                status=FileChangeStatus.MODIFIED,
+                additions=5,
+                deletions=2,
+                patch=PATCH_OVERLAPPING,
             )
         ]
         mock_client.get_open_prs.return_value = [target_pr, other_pr]
@@ -903,7 +1007,7 @@ class TestAnalysisCacheWiring:
         with patch("mergeguard.core.engine.AnalysisCache", return_value=mock_cache_instance):
             config = MergeGuardConfig(check_regressions=False)
             engine = MergeGuardEngine(token="fake", repo_full_name="owner/repo", config=config)
-            report = engine.analyze_pr(142)
+            engine.analyze_pr(142)
 
         # Full analysis should have run
         mock_client.get_open_prs.assert_called_once()
@@ -915,20 +1019,23 @@ class TestInsertedFunctionDetection:
     """E2E: new function inserted before existing one is detected as 'added'."""
 
     @patch("mergeguard.core.engine.GitHubClient")
-    def test_inserted_function_detected_as_added(self, MockClientClass):
+    def test_inserted_function_detected_as_added(self, mock_client_class):
         """When a new function is inserted before an existing one,
         the new function should be 'added' and the existing one should
         NOT be misreported as 'modified_body'."""
         mock_client = MagicMock()
-        MockClientClass.return_value = mock_client
+        mock_client_class.return_value = mock_client
 
         target_pr = _make_pr(200, "Insert helper function", "alice")
         other_pr = _make_pr(201, "Other PR", "bob")
 
         target_files = [
             ChangedFile(
-                path="src/utils.py", status=FileChangeStatus.MODIFIED,
-                additions=3, deletions=0, patch=PATCH_INSERT_BEFORE,
+                path="src/utils.py",
+                status=FileChangeStatus.MODIFIED,
+                additions=3,
+                deletions=0,
+                patch=PATCH_INSERT_BEFORE,
             )
         ]
         other_files = []
@@ -947,7 +1054,9 @@ class TestInsertedFunctionDetection:
 
         config = MergeGuardConfig(check_regressions=False)
         engine = MergeGuardEngine(
-            token="fake", repo_full_name="owner/repo", config=config,
+            token="fake",
+            repo_full_name="owner/repo",
+            config=config,
         )
         report = engine.analyze_pr(200)
 
@@ -958,16 +1067,11 @@ class TestInsertedFunctionDetection:
         )
 
         # It should be classified as "added"
-        new_helper_cs = [
-            cs for cs in report.pr.changed_symbols if cs.symbol.name == "new_helper"
-        ]
+        new_helper_cs = [cs for cs in report.pr.changed_symbols if cs.symbol.name == "new_helper"]
         assert new_helper_cs[0].change_type == "added"
 
         # The existing function should NOT be misreported
-        validate_cs = [
-            cs for cs in report.pr.changed_symbols
-            if cs.symbol.name == "validate_input"
-        ]
+        validate_cs = [cs for cs in report.pr.changed_symbols if cs.symbol.name == "validate_input"]
         assert len(validate_cs) == 0, (
             f"validate_input should not appear in changed symbols, "
             f"but found with change_type={validate_cs[0].change_type if validate_cs else 'N/A'}"

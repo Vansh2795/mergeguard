@@ -5,8 +5,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-logger = logging.getLogger(__name__)
-
 from mergeguard.analysis.similarity import detect_potential_duplications
 from mergeguard.models import (
     ChangedSymbol,
@@ -18,6 +16,7 @@ from mergeguard.models import (
     SymbolType,
 )
 
+logger = logging.getLogger(__name__)
 
 _TEST_DIR_SEGMENTS = {"tests", "test", "__tests__", "spec"}
 _TEST_FILE_PATTERNS = ("test_", "_test.", ".test.", ".spec.", "_spec.")
@@ -114,7 +113,9 @@ def classify_conflicts(
     conflicts: list[Conflict] = []
     logger.debug(
         "Classifying conflicts between PR #%d and PR #%d (%d file overlaps)",
-        target_pr.number, other_pr.number, len(file_overlaps),
+        target_pr.number,
+        other_pr.number,
+        len(file_overlaps),
     )
 
     target_cs_map = _build_cs_map(target_pr)
@@ -174,12 +175,10 @@ def classify_conflicts(
                     )
                 else:
                     description = (
-                        f"Both PRs modify `{overlap.file_path}` "
-                        f"at overlapping line ranges."
+                        f"Both PRs modify `{overlap.file_path}` at overlapping line ranges."
                     )
                     recommendation = (
-                        "Review both changes for compatibility. "
-                        "Consider merging one PR first."
+                        "Review both changes for compatibility. Consider merging one PR first."
                     )
                 conflicts.append(
                     Conflict(
@@ -194,8 +193,9 @@ def classify_conflicts(
                 )
         else:
             # Same file, different lines — check for behavioral conflicts
-            _check_behavioral_conflict(target_pr, other_pr, overlap, conflicts, is_test,
-                                       target_cs_map, other_cs_map)
+            _check_behavioral_conflict(
+                target_pr, other_pr, overlap, conflicts, is_test, target_cs_map, other_cs_map
+            )
 
     # Check for interface conflicts
     _check_interface_conflicts(target_pr, other_pr, conflicts)
@@ -239,13 +239,15 @@ def _is_comment_only_change(raw_diff: str | None, file_path: str) -> bool:
 
 def _build_cs_map(pr: PRInfo) -> dict[tuple[str, str], ChangedSymbol]:
     """Build a (file_path, symbol_name) → ChangedSymbol lookup dict."""
-    return {
-        (cs.symbol.file_path, cs.symbol.name): cs for cs in pr.changed_symbols
-    }
+    return {(cs.symbol.file_path, cs.symbol.name): cs for cs in pr.changed_symbols}
 
 
-def _find_changed_symbol(pr: PRInfo, file_path: str, symbol_name: str,
-                          cs_map: dict[tuple[str, str], ChangedSymbol] | None = None) -> ChangedSymbol | None:
+def _find_changed_symbol(
+    pr: PRInfo,
+    file_path: str,
+    symbol_name: str,
+    cs_map: dict[tuple[str, str], ChangedSymbol] | None = None,
+) -> ChangedSymbol | None:
     """Find a ChangedSymbol object by name in a PR's changed_symbols."""
     if cs_map is not None:
         return cs_map.get((file_path, symbol_name))
@@ -282,20 +284,27 @@ def _check_behavioral_conflict(
         # Check if both sides are comment-only changes
         target_cs = _find_changed_symbol(target_pr, overlap.file_path, symbol_name, target_cs_map)
         other_cs = _find_changed_symbol(other_pr, overlap.file_path, symbol_name, other_cs_map)
-        if (target_cs and other_cs
-                and _is_comment_only_change(target_cs.raw_diff, overlap.file_path)
-                and _is_comment_only_change(other_cs.raw_diff, overlap.file_path)):
+        if (
+            target_cs
+            and other_cs
+            and _is_comment_only_change(target_cs.raw_diff, overlap.file_path)
+            and _is_comment_only_change(other_cs.raw_diff, overlap.file_path)
+        ):
             continue  # Both sides are comment-only, skip
 
         severity = base_severity
         is_class = target_cs and target_cs.symbol.symbol_type == SymbolType.CLASS
         if is_class:
             severity = ConflictSeverity.INFO  # Class-level: method conflicts capture real risk
-        elif severity == ConflictSeverity.WARNING:
+        elif (
+            severity == ConflictSeverity.WARNING
+            and target_cs
+            and target_cs.symbol.parent
+            and target_cs.symbol.parent in shared_symbols
+        ):
             # Demote methods whose parent class is also a shared symbol —
             # the class-level conflict already covers this risk.
-            if target_cs and target_cs.symbol.parent and target_cs.symbol.parent in shared_symbols:
-                severity = ConflictSeverity.INFO
+            severity = ConflictSeverity.INFO
 
         conflicts.append(
             Conflict(
@@ -310,10 +319,7 @@ def _check_behavioral_conflict(
                     f"`{overlap.file_path}` at different lines. "
                     f"Changes may interact unexpectedly."
                 ),
-                recommendation=(
-                    "Review both changes to ensure they are "
-                    "semantically compatible."
-                ),
+                recommendation=("Review both changes to ensure they are semantically compatible."),
             )
         )
 
@@ -345,35 +351,45 @@ def _check_behavioral_conflict(
                 # Stable interface = low interaction risk.
                 if cc_severity == ConflictSeverity.WARNING:
                     if t_calls_o:
-                        callee_cs = _find_changed_symbol(other_pr, overlap.file_path, callee, other_cs_map)
+                        callee_cs = _find_changed_symbol(
+                            other_pr, overlap.file_path, callee, other_cs_map
+                        )
                     else:
-                        callee_cs = _find_changed_symbol(target_pr, overlap.file_path, callee, target_cs_map)
+                        callee_cs = _find_changed_symbol(
+                            target_pr, overlap.file_path, callee, target_cs_map
+                        )
                     if callee_cs and callee_cs.change_type != "modified_signature":
                         cc_severity = ConflictSeverity.INFO
 
-                conflicts.append(Conflict(
-                    conflict_type=ConflictType.BEHAVIORAL,
-                    severity=cc_severity,
-                    source_pr=target_pr.number,
-                    target_pr=other_pr.number,
-                    file_path=overlap.file_path,
-                    symbol_name=f"{caller} \u2192 {callee}",
-                    description=(
-                        f"`{caller}` calls `{callee}` in `{overlap.file_path}`. "
-                        f"PR #{target_pr.number} modifies one while "
-                        f"PR #{other_pr.number} modifies the other. "
-                        f"Changes may interact unexpectedly."
-                    ),
-                    recommendation=(
-                        "Test both changes together before merging. "
-                        "The caller/callee relationship means changes "
-                        "in one function may affect the other's behavior."
-                    ),
-                ))
+                conflicts.append(
+                    Conflict(
+                        conflict_type=ConflictType.BEHAVIORAL,
+                        severity=cc_severity,
+                        source_pr=target_pr.number,
+                        target_pr=other_pr.number,
+                        file_path=overlap.file_path,
+                        symbol_name=f"{caller} \u2192 {callee}",
+                        description=(
+                            f"`{caller}` calls `{callee}` in `{overlap.file_path}`. "
+                            f"PR #{target_pr.number} modifies one while "
+                            f"PR #{other_pr.number} modifies the other. "
+                            f"Changes may interact unexpectedly."
+                        ),
+                        recommendation=(
+                            "Test both changes together before merging. "
+                            "The caller/callee relationship means changes "
+                            "in one function may affect the other's behavior."
+                        ),
+                    )
+                )
 
 
-def _find_symbol(pr: PRInfo, file_path: str, symbol_name: str,
-                  cs_map: dict[tuple[str, str], ChangedSymbol] | None = None) -> Symbol | None:
+def _find_symbol(
+    pr: PRInfo,
+    file_path: str,
+    symbol_name: str,
+    cs_map: dict[tuple[str, str], ChangedSymbol] | None = None,
+) -> Symbol | None:
     """Find a Symbol object by name in a PR's changed_symbols."""
     if cs_map is not None:
         cs = cs_map.get((file_path, symbol_name))
@@ -433,9 +449,13 @@ def _check_duplication_conflicts(
         return
 
     # Build change_type lookups to filter out modify-modify pairs
-    target_ct = {(cs.symbol.file_path, cs.symbol.name): cs.change_type for cs in target_pr.changed_symbols}
-    other_ct = {(cs.symbol.file_path, cs.symbol.name): cs.change_type for cs in other_pr.changed_symbols}
-    _MODIFY = {"modified_body", "modified_signature"}
+    target_ct = {
+        (cs.symbol.file_path, cs.symbol.name): cs.change_type for cs in target_pr.changed_symbols
+    }
+    other_ct = {
+        (cs.symbol.file_path, cs.symbol.name): cs.change_type for cs in other_pr.changed_symbols
+    }
+    _modify = {"modified_body", "modified_signature"}
 
     duplications = detect_potential_duplications(target_symbols, other_symbols)
     seen_pairs: set[tuple[str, str]] = set()
@@ -444,8 +464,10 @@ def _check_duplication_conflicts(
         if new_sym.file_path == other_sym.file_path and new_sym.name == other_sym.name:
             continue
         # Skip when both sides modify existing code (not new additions)
-        if target_ct.get((new_sym.file_path, new_sym.name)) in _MODIFY \
-                and other_ct.get((other_sym.file_path, other_sym.name)) in _MODIFY:
+        if (
+            target_ct.get((new_sym.file_path, new_sym.name)) in _modify
+            and other_ct.get((other_sym.file_path, other_sym.name)) in _modify
+        ):
             continue
         pair_key = (new_sym.name, other_sym.name)
         if pair_key in seen_pairs:
@@ -499,9 +521,7 @@ def _check_pr_duplication(
         return
 
     # Title similarity
-    title_sim = SequenceMatcher(
-        None, target_pr.title.lower(), other_pr.title.lower()
-    ).ratio()
+    title_sim = SequenceMatcher(None, target_pr.title.lower(), other_pr.title.lower()).ratio()
 
     # Description similarity (if both have descriptions)
     desc_sim = 0.0
@@ -551,9 +571,7 @@ def _get_modified_ranges(pr: PRInfo, file_path: str) -> list[tuple[int, int]]:
         if cf.path == file_path and cf.patch:
             from mergeguard.analysis.diff_parser import parse_unified_diff
 
-            file_diffs = parse_unified_diff(
-                f"diff --git a/{cf.path} b/{cf.path}\n{cf.patch}"
-            )
+            file_diffs = parse_unified_diff(f"diff --git a/{cf.path} b/{cf.path}\n{cf.patch}")
             if file_diffs:
                 return file_diffs[0].all_modified_line_ranges
     return []

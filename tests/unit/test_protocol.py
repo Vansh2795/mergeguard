@@ -1,4 +1,5 @@
 """Tests that both clients satisfy the SCMClient protocol."""
+
 from __future__ import annotations
 
 from mergeguard.integrations.protocol import SCMClient

@@ -6,7 +6,10 @@ implement similar functionality independently.
 
 from __future__ import annotations
 
-from mergeguard.models import Symbol
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from mergeguard.models import Symbol
 
 
 def jaccard_similarity(set_a: set[str], set_b: set[str]) -> float:

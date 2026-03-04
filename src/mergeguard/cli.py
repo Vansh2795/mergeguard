@@ -4,11 +4,16 @@ from __future__ import annotations
 
 import logging
 import re as _re
+from typing import TYPE_CHECKING
 
 import click
 from rich.console import Console
 from rich.logging import RichHandler
 from rich.table import Table
+
+if TYPE_CHECKING:
+    from mergeguard.integrations.protocol import SCMClient
+    from mergeguard.models import ConflictReport, PRInfo
 
 console = Console(stderr=True)
 
@@ -27,8 +32,12 @@ def _detect_platform_from_remote() -> str:
         return "github"
 
 
-def _create_client(platform: str, token: str, repo: str, gitlab_url: str):
+def _create_client(platform: str, token: str | None, repo: str, gitlab_url: str) -> SCMClient:
     """Create the appropriate SCM client based on platform."""
+    if token is None:
+        raise click.UsageError(
+            "A token is required. Provide --token or set GITHUB_TOKEN / GITLAB_TOKEN."
+        )
     if platform == "auto":
         platform = _detect_platform_from_remote()
     if platform == "gitlab":
@@ -41,7 +50,9 @@ def _create_client(platform: str, token: str, repo: str, gitlab_url: str):
         return GitHubClient(token, repo)
 
 
-def _auto_detect_repo_and_pr(repo, pr, token, platform="github"):
+def _auto_detect_repo_and_pr(
+    repo: str | None, pr: int | None, token: str | None, platform: str = "github"
+) -> tuple[str, int]:
     """Auto-detect repo and PR from local git state.
 
     Raises click.UsageError on failure.
@@ -56,7 +67,7 @@ def _auto_detect_repo_and_pr(repo, pr, token, platform="github"):
     except ValueError:
         raise click.UsageError(
             "Not in a git repository. Provide --repo and --pr explicitly."
-        )
+        ) from None
 
     if repo is None:
         repo = git_local.get_repo_full_name()
@@ -69,7 +80,8 @@ def _auto_detect_repo_and_pr(repo, pr, token, platform="github"):
         branch = git_local.get_current_branch()
         if branch in _DEFAULT_BRANCHES:
             raise click.UsageError(
-                f"Current branch is '{branch}'. Switch to a feature branch or provide --pr explicitly."
+                f"Current branch is '{branch}'. Switch to a feature branch "
+                f"or provide --pr explicitly."
             )
         if token is None:
             raise click.UsageError(
@@ -100,7 +112,7 @@ def _auto_detect_repo_and_pr(repo, pr, token, platform="github"):
     return repo, pr
 
 
-def _auto_detect_repo(repo):
+def _auto_detect_repo(repo: str | None) -> str:
     """Auto-detect repo from local git state (for commands that don't need a PR)."""
     if repo is not None:
         return repo
@@ -110,20 +122,16 @@ def _auto_detect_repo(repo):
     try:
         git_local = GitLocalClient()
     except ValueError:
-        raise click.UsageError(
-            "Not in a git repository. Provide --repo explicitly."
-        )
+        raise click.UsageError("Not in a git repository. Provide --repo explicitly.") from None
 
     repo = git_local.get_repo_full_name()
     if repo is None:
-        raise click.UsageError(
-            "Could not detect repo from git remote. Provide --repo explicitly."
-        )
+        raise click.UsageError("Could not detect repo from git remote. Provide --repo explicitly.")
     return repo
 
 
-def _validate_repo(ctx, param, value):
-    if value is not None and not _re.match(r'^[\w.-]+/[\w.-]+$', value):
+def _validate_repo(ctx: click.Context, param: click.Parameter, value: str | None) -> str | None:
+    if value is not None and not _re.match(r"^[\w.-]+/[\w.-]+$", value):
         raise click.BadParameter("Must be in 'owner/repo' format")
     return value
 
@@ -143,7 +151,7 @@ def _validate_repo(ctx, param, value):
     help="GitLab instance URL (for self-hosted).",
 )
 @click.pass_context
-def main(ctx, verbose, platform, gitlab_url):
+def main(ctx: click.Context, verbose: bool, platform: str, gitlab_url: str) -> None:
     """MergeGuard: Cross-PR intelligence for the agentic coding era."""
     ctx.ensure_object(dict)
     ctx.obj["platform"] = platform
@@ -158,8 +166,18 @@ def main(ctx, verbose, platform, gitlab_url):
 
 
 @main.command()
-@click.option("--repo", "-r", callback=_validate_repo, help="Repo (owner/repo). Auto-detected from git remote.")
-@click.option("--pr", "-p", type=click.IntRange(min=1), help="PR/MR number to analyze. Defaults to current branch.")
+@click.option(
+    "--repo",
+    "-r",
+    callback=_validate_repo,
+    help="Repo (owner/repo). Auto-detected from git remote.",
+)
+@click.option(
+    "--pr",
+    "-p",
+    type=click.IntRange(min=1),
+    help="PR/MR number to analyze. Defaults to current branch.",
+)
 @click.option("--token", "-t", envvar=["GITHUB_TOKEN", "GITLAB_TOKEN"], help="GitHub/GitLab token.")
 @click.option("--config", "-c", default=".mergeguard.yml", help="Config file path.")
 @click.option(
@@ -177,7 +195,18 @@ def main(ctx, verbose, platform, gitlab_url):
 @click.option("--max-prs", type=int, default=None, help="Max open PRs to scan (overrides config).")
 @click.option("--max-pr-age", type=int, default=None, help="Max PR age in days (overrides config).")
 @click.pass_context
-def analyze(ctx, repo, pr, token, config, output_format, llm, post_comment, max_prs, max_pr_age):
+def analyze(
+    ctx: click.Context,
+    repo: str | None,
+    pr: int | None,
+    token: str | None,
+    config: str,
+    output_format: str,
+    llm: bool,
+    post_comment: bool,
+    max_prs: int | None,
+    max_pr_age: int | None,
+) -> None:
     """Analyze a PR for cross-PR conflicts."""
     platform = ctx.obj.get("platform", "auto")
     gitlab_url = ctx.obj.get("gitlab_url", "https://gitlab.com")
@@ -222,7 +251,13 @@ def analyze(ctx, repo, pr, token, config, output_format, llm, post_comment, max_
 @click.option("--max-prs", type=int, default=None, help="Max open PRs to scan.")
 @click.option("--max-pr-age", type=int, default=None, help="Max PR age in days.")
 @click.pass_context
-def map(ctx, repo, token, max_prs, max_pr_age):
+def map(
+    ctx: click.Context,
+    repo: str | None,
+    token: str | None,
+    max_prs: int | None,
+    max_pr_age: int | None,
+) -> None:
     """Show the collision map of all open PRs."""
     repo = _auto_detect_repo(repo)
 
@@ -235,7 +270,7 @@ def map(ctx, repo, token, max_prs, max_pr_age):
     prs = client.get_open_prs(max_count=max_prs or 200, max_age_days=max_pr_age or 30)
 
     # Enrich with file data (parallel)
-    def fetch_files(pr_info):
+    def fetch_files(pr_info: PRInfo) -> None:
         pr_info.changed_files = client.get_pr_files(pr_info.number)
 
     with ThreadPoolExecutor(max_workers=min(8, len(prs) or 1)) as executor:
@@ -248,7 +283,7 @@ def map(ctx, repo, token, max_prs, max_pr_age):
             file_to_prs[cf.path].add(pr_info.number)
 
     overlap_counts: dict[int, dict[int, int]] = defaultdict(lambda: defaultdict(int))
-    for path, pr_numbers in file_to_prs.items():
+    for _path, pr_numbers in file_to_prs.items():
         for a in pr_numbers:
             for b in pr_numbers:
                 if a != b:
@@ -281,7 +316,13 @@ def map(ctx, repo, token, max_prs, max_pr_age):
 @click.option("--max-prs", type=int, default=None, help="Max open PRs to scan (overrides config).")
 @click.option("--max-pr-age", type=int, default=None, help="Max PR age in days (overrides config).")
 @click.pass_context
-def dashboard(ctx, repo, token, max_prs, max_pr_age):
+def dashboard(
+    ctx: click.Context,
+    repo: str | None,
+    token: str | None,
+    max_prs: int | None,
+    max_pr_age: int | None,
+) -> None:
     """Show risk scores for all open PRs."""
     repo = _auto_detect_repo(repo)
 
@@ -310,11 +351,7 @@ def dashboard(ctx, repo, token, max_prs, max_pr_age):
 
     for report in sorted(reports, key=lambda r: r.risk_score, reverse=True):
         risk_style = (
-            "red"
-            if report.risk_score >= 70
-            else "yellow"
-            if report.risk_score >= 40
-            else "green"
+            "red" if report.risk_score >= 70 else "yellow" if report.risk_score >= 40 else "green"
         )
         ai = "\U0001f916" if report.pr.ai_attribution.value.startswith("ai") else ""
         table.add_row(
@@ -328,9 +365,8 @@ def dashboard(ctx, repo, token, max_prs, max_pr_age):
     console.print(table)
 
 
-def _display_terminal(report):
+def _display_terminal(report: ConflictReport) -> None:
     """Rich terminal display for a single PR analysis."""
-    from mergeguard.models import ConflictSeverity
 
     if not report.conflicts:
         console.print(

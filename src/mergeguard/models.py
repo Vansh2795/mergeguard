@@ -6,23 +6,22 @@ All models use Pydantic V2 for validation, serialization, and type safety.
 from __future__ import annotations
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, Field
-
 
 # ──────────────────────────────────────────────
 # Enums
 # ──────────────────────────────────────────────
 
 
-class ConflictSeverity(str, Enum):
+class ConflictSeverity(StrEnum):
     CRITICAL = "critical"  # Will definitely break if both merge
     WARNING = "warning"  # Likely to cause issues, needs human review
     INFO = "info"  # Overlap detected but probably fine
 
 
-class ConflictType(str, Enum):
+class ConflictType(StrEnum):
     HARD = "hard"  # Same lines modified differently
     INTERFACE = "interface"  # Signature changed, callers not updated
     BEHAVIORAL = "behavioral"  # Same logic modified incompatibly
@@ -32,7 +31,7 @@ class ConflictType(str, Enum):
     GUARDRAIL = "guardrail"  # Rule violation from .mergeguard.yml
 
 
-class SymbolType(str, Enum):
+class SymbolType(StrEnum):
     FUNCTION = "function"
     METHOD = "method"
     CLASS = "class"
@@ -45,14 +44,14 @@ class SymbolType(str, Enum):
     ENDPOINT = "endpoint"  # API route definitions
 
 
-class FileChangeStatus(str, Enum):
+class FileChangeStatus(StrEnum):
     ADDED = "added"
     MODIFIED = "modified"
     REMOVED = "removed"
     RENAMED = "renamed"
 
 
-class AIAttribution(str, Enum):
+class AIAttribution(StrEnum):
     HUMAN = "human"
     AI_CONFIRMED = "ai_confirmed"  # Agent Trace or commit metadata
     AI_SUSPECTED = "ai_suspected"  # Heuristic detection
@@ -180,7 +179,7 @@ class ConflictReport(BaseModel):
 # ──────────────────────────────────────────────
 
 
-class DecisionType(str, Enum):
+class DecisionType(StrEnum):
     REMOVAL = "removal"  # Something was deliberately removed
     ADDITION = "addition"  # New pattern/module introduced
     MIGRATION = "migration"  # Pattern A replaced with pattern B

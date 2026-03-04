@@ -1,27 +1,41 @@
 """Tests for conflict detection module."""
+
 from __future__ import annotations
 
+from datetime import datetime
+
 from mergeguard.core.conflict import (
-    compute_file_overlaps, classify_conflicts, FileOverlap,
-    _get_modified_ranges, _is_test_file, _is_comment_only_change,
+    FileOverlap,
+    _get_modified_ranges,
+    _is_comment_only_change,
+    _is_test_file,
+    classify_conflicts,
+    compute_file_overlaps,
 )
 from mergeguard.models import (
-    PRInfo, ChangedFile, ChangedSymbol, Symbol,
-    FileChangeStatus, SymbolType, ConflictType, ConflictSeverity,
+    ChangedFile,
+    ChangedSymbol,
+    ConflictSeverity,
+    ConflictType,
+    FileChangeStatus,
+    PRInfo,
+    Symbol,
+    SymbolType,
 )
-from datetime import datetime
 
 
 def make_pr(number, files, symbols=None):
     pr = PRInfo(
-        number=number, title=f"PR {number}", author="dev",
-        base_branch="main", head_branch=f"branch-{number}",
-        head_sha=f"sha{number}", created_at=datetime(2026, 1, 1),
+        number=number,
+        title=f"PR {number}",
+        author="dev",
+        base_branch="main",
+        head_branch=f"branch-{number}",
+        head_sha=f"sha{number}",
+        created_at=datetime(2026, 1, 1),
         updated_at=datetime(2026, 1, 1),
     )
-    pr.changed_files = [
-        ChangedFile(path=f, status=FileChangeStatus.MODIFIED) for f in files
-    ]
+    pr.changed_files = [ChangedFile(path=f, status=FileChangeStatus.MODIFIED) for f in files]
     pr.changed_symbols = symbols or []
     return pr
 
@@ -56,22 +70,31 @@ class TestComputeFileOverlaps:
 class TestFileOverlap:
     def test_has_line_overlap_true(self):
         overlap = FileOverlap(
-            file_path="f.py", pr_a=1, pr_b=2,
-            pr_a_lines=[(10, 20)], pr_b_lines=[(15, 25)],
+            file_path="f.py",
+            pr_a=1,
+            pr_b=2,
+            pr_a_lines=[(10, 20)],
+            pr_b_lines=[(15, 25)],
         )
         assert overlap.has_line_overlap is True
 
     def test_has_line_overlap_false(self):
         overlap = FileOverlap(
-            file_path="f.py", pr_a=1, pr_b=2,
-            pr_a_lines=[(10, 20)], pr_b_lines=[(25, 35)],
+            file_path="f.py",
+            pr_a=1,
+            pr_b=2,
+            pr_a_lines=[(10, 20)],
+            pr_b_lines=[(25, 35)],
         )
         assert overlap.has_line_overlap is False
 
     def test_has_line_overlap_adjacent(self):
         overlap = FileOverlap(
-            file_path="f.py", pr_a=1, pr_b=2,
-            pr_a_lines=[(10, 20)], pr_b_lines=[(20, 25)],
+            file_path="f.py",
+            pr_a=1,
+            pr_b=2,
+            pr_a_lines=[(10, 20)],
+            pr_b_lines=[(20, 25)],
         )
         assert overlap.has_line_overlap is True
 
@@ -81,15 +104,19 @@ class TestDuplicationConflicts:
 
     def _make_symbol(self, name, file_path="src/utils.py", signature=None):
         return Symbol(
-            name=name, symbol_type=SymbolType.FUNCTION,
-            file_path=file_path, start_line=1, end_line=10,
+            name=name,
+            symbol_type=SymbolType.FUNCTION,
+            file_path=file_path,
+            start_line=1,
+            end_line=10,
             signature=signature,
         )
 
     def _make_changed_symbol(self, name, file_path="src/utils.py", signature=None):
         return ChangedSymbol(
             symbol=self._make_symbol(name, file_path, signature),
-            change_type="added", diff_lines=(1, 10),
+            change_type="added",
+            diff_lines=(1, 10),
         )
 
     def test_duplication_detected_for_similar_symbols(self):
@@ -98,7 +125,8 @@ class TestDuplicationConflicts:
             "process_user_data", signature="def process_user_data(user, data)"
         )
         sym_b = self._make_changed_symbol(
-            "process_user_data", file_path="src/handler.py",
+            "process_user_data",
+            file_path="src/handler.py",
             signature="def process_user_data(user, data)",
         )
         pr_a = make_pr(1, ["src/utils.py"], symbols=[sym_a])
@@ -107,8 +135,11 @@ class TestDuplicationConflicts:
         # No file overlap needed — duplication is symbol-level
         overlaps = [
             FileOverlap(
-                file_path="src/shared.py", pr_a=1, pr_b=2,
-                pr_a_lines=[(1, 5)], pr_b_lines=[(50, 55)],
+                file_path="src/shared.py",
+                pr_a=1,
+                pr_b=2,
+                pr_a_lines=[(1, 5)],
+                pr_b_lines=[(50, 55)],
             )
         ]
         conflicts = classify_conflicts(pr_a, pr_b, overlaps)
@@ -122,7 +153,8 @@ class TestDuplicationConflicts:
             "authenticate_user", signature="def authenticate_user(token)"
         )
         sym_b = self._make_changed_symbol(
-            "send_email_notification", file_path="src/notifier.py",
+            "send_email_notification",
+            file_path="src/notifier.py",
             signature="def send_email_notification(to, subject, body)",
         )
         pr_a = make_pr(1, ["src/utils.py"], symbols=[sym_a])
@@ -130,8 +162,11 @@ class TestDuplicationConflicts:
 
         overlaps = [
             FileOverlap(
-                file_path="src/shared.py", pr_a=1, pr_b=2,
-                pr_a_lines=[(1, 5)], pr_b_lines=[(50, 55)],
+                file_path="src/shared.py",
+                pr_a=1,
+                pr_b=2,
+                pr_a_lines=[(1, 5)],
+                pr_b_lines=[(50, 55)],
             )
         ]
         conflicts = classify_conflicts(pr_a, pr_b, overlaps)
@@ -144,8 +179,11 @@ class TestDuplicationConflicts:
         pr_b = make_pr(2, ["src/b.py"])
         overlaps = [
             FileOverlap(
-                file_path="src/shared.py", pr_a=1, pr_b=2,
-                pr_a_lines=[(1, 5)], pr_b_lines=[(50, 55)],
+                file_path="src/shared.py",
+                pr_a=1,
+                pr_b=2,
+                pr_a_lines=[(1, 5)],
+                pr_b_lines=[(50, 55)],
             )
         ]
         conflicts = classify_conflicts(pr_a, pr_b, overlaps)
@@ -157,8 +195,11 @@ class TestGetModifiedRanges:
     def _make_symbol(self, name, file_path, start, end, diff_lines):
         return ChangedSymbol(
             symbol=Symbol(
-                name=name, symbol_type=SymbolType.FUNCTION,
-                file_path=file_path, start_line=start, end_line=end,
+                name=name,
+                symbol_type=SymbolType.FUNCTION,
+                file_path=file_path,
+                start_line=start,
+                end_line=end,
             ),
             change_type="modified_body",
             diff_lines=diff_lines,
@@ -244,8 +285,11 @@ class TestTestFileSeverityDowngrade:
 
     def _make_symbol(self, name, file_path, start=1, end=10):
         return Symbol(
-            name=name, symbol_type=SymbolType.FUNCTION,
-            file_path=file_path, start_line=start, end_line=end,
+            name=name,
+            symbol_type=SymbolType.FUNCTION,
+            file_path=file_path,
+            start_line=start,
+            end_line=end,
         )
 
     def _make_changed_symbol(self, name, file_path, start=1, end=10, diff_lines=None):
@@ -261,10 +305,15 @@ class TestTestFileSeverityDowngrade:
         sym_b = self._make_changed_symbol("func", "src/core.py")
         pr_a = make_pr(1, ["src/core.py"], symbols=[sym_a])
         pr_b = make_pr(2, ["src/core.py"], symbols=[sym_b])
-        overlaps = [FileOverlap(
-            file_path="src/core.py", pr_a=1, pr_b=2,
-            pr_a_lines=[(1, 10)], pr_b_lines=[(5, 15)],
-        )]
+        overlaps = [
+            FileOverlap(
+                file_path="src/core.py",
+                pr_a=1,
+                pr_b=2,
+                pr_a_lines=[(1, 10)],
+                pr_b_lines=[(5, 15)],
+            )
+        ]
         conflicts = classify_conflicts(pr_a, pr_b, overlaps)
         hard = [c for c in conflicts if c.conflict_type == ConflictType.HARD]
         assert len(hard) >= 1
@@ -276,10 +325,15 @@ class TestTestFileSeverityDowngrade:
         sym_b = self._make_changed_symbol("test_func", "tests/test_core.py")
         pr_a = make_pr(1, ["tests/test_core.py"], symbols=[sym_a])
         pr_b = make_pr(2, ["tests/test_core.py"], symbols=[sym_b])
-        overlaps = [FileOverlap(
-            file_path="tests/test_core.py", pr_a=1, pr_b=2,
-            pr_a_lines=[(1, 10)], pr_b_lines=[(5, 15)],
-        )]
+        overlaps = [
+            FileOverlap(
+                file_path="tests/test_core.py",
+                pr_a=1,
+                pr_b=2,
+                pr_a_lines=[(1, 10)],
+                pr_b_lines=[(5, 15)],
+            )
+        ]
         conflicts = classify_conflicts(pr_a, pr_b, overlaps)
         hard = [c for c in conflicts if c.conflict_type == ConflictType.HARD]
         assert len(hard) >= 1
@@ -289,10 +343,15 @@ class TestTestFileSeverityDowngrade:
         """Hard conflict without shared symbols in source file -> WARNING."""
         pr_a = make_pr(1, ["src/core.py"])
         pr_b = make_pr(2, ["src/core.py"])
-        overlaps = [FileOverlap(
-            file_path="src/core.py", pr_a=1, pr_b=2,
-            pr_a_lines=[(1, 10)], pr_b_lines=[(5, 15)],
-        )]
+        overlaps = [
+            FileOverlap(
+                file_path="src/core.py",
+                pr_a=1,
+                pr_b=2,
+                pr_a_lines=[(1, 10)],
+                pr_b_lines=[(5, 15)],
+            )
+        ]
         conflicts = classify_conflicts(pr_a, pr_b, overlaps)
         hard = [c for c in conflicts if c.conflict_type == ConflictType.HARD]
         assert len(hard) == 1
@@ -302,10 +361,15 @@ class TestTestFileSeverityDowngrade:
         """Hard conflict without shared symbols in test file -> INFO (downgraded from WARNING)."""
         pr_a = make_pr(1, ["tests/test_core.py"])
         pr_b = make_pr(2, ["tests/test_core.py"])
-        overlaps = [FileOverlap(
-            file_path="tests/test_core.py", pr_a=1, pr_b=2,
-            pr_a_lines=[(1, 10)], pr_b_lines=[(5, 15)],
-        )]
+        overlaps = [
+            FileOverlap(
+                file_path="tests/test_core.py",
+                pr_a=1,
+                pr_b=2,
+                pr_a_lines=[(1, 10)],
+                pr_b_lines=[(5, 15)],
+            )
+        ]
         conflicts = classify_conflicts(pr_a, pr_b, overlaps)
         hard = [c for c in conflicts if c.conflict_type == ConflictType.HARD]
         assert len(hard) == 1
@@ -315,14 +379,23 @@ class TestTestFileSeverityDowngrade:
 
     def test_behavioral_source_warning(self):
         """Behavioral conflict in source file -> WARNING."""
-        sym_a = self._make_changed_symbol("func", "src/core.py", start=1, end=10, diff_lines=(1, 10))
-        sym_b = self._make_changed_symbol("func", "src/core.py", start=20, end=30, diff_lines=(20, 30))
+        sym_a = self._make_changed_symbol(
+            "func", "src/core.py", start=1, end=10, diff_lines=(1, 10)
+        )
+        sym_b = self._make_changed_symbol(
+            "func", "src/core.py", start=20, end=30, diff_lines=(20, 30)
+        )
         pr_a = make_pr(1, ["src/core.py"], symbols=[sym_a])
         pr_b = make_pr(2, ["src/core.py"], symbols=[sym_b])
-        overlaps = [FileOverlap(
-            file_path="src/core.py", pr_a=1, pr_b=2,
-            pr_a_lines=[(1, 10)], pr_b_lines=[(20, 30)],
-        )]
+        overlaps = [
+            FileOverlap(
+                file_path="src/core.py",
+                pr_a=1,
+                pr_b=2,
+                pr_a_lines=[(1, 10)],
+                pr_b_lines=[(20, 30)],
+            )
+        ]
         conflicts = classify_conflicts(pr_a, pr_b, overlaps)
         behavioral = [c for c in conflicts if c.conflict_type == ConflictType.BEHAVIORAL]
         assert len(behavioral) >= 1
@@ -330,14 +403,23 @@ class TestTestFileSeverityDowngrade:
 
     def test_behavioral_test_info(self):
         """Behavioral conflict in test file -> INFO (downgraded from WARNING)."""
-        sym_a = self._make_changed_symbol("test_func", "tests/test_core.py", start=1, end=10, diff_lines=(1, 10))
-        sym_b = self._make_changed_symbol("test_func", "tests/test_core.py", start=20, end=30, diff_lines=(20, 30))
+        sym_a = self._make_changed_symbol(
+            "test_func", "tests/test_core.py", start=1, end=10, diff_lines=(1, 10)
+        )
+        sym_b = self._make_changed_symbol(
+            "test_func", "tests/test_core.py", start=20, end=30, diff_lines=(20, 30)
+        )
         pr_a = make_pr(1, ["tests/test_core.py"], symbols=[sym_a])
         pr_b = make_pr(2, ["tests/test_core.py"], symbols=[sym_b])
-        overlaps = [FileOverlap(
-            file_path="tests/test_core.py", pr_a=1, pr_b=2,
-            pr_a_lines=[(1, 10)], pr_b_lines=[(20, 30)],
-        )]
+        overlaps = [
+            FileOverlap(
+                file_path="tests/test_core.py",
+                pr_a=1,
+                pr_b=2,
+                pr_a_lines=[(1, 10)],
+                pr_b_lines=[(20, 30)],
+            )
+        ]
         conflicts = classify_conflicts(pr_a, pr_b, overlaps)
         behavioral = [c for c in conflicts if c.conflict_type == ConflictType.BEHAVIORAL]
         assert len(behavioral) >= 1
@@ -349,12 +431,24 @@ class TestCallerCalleeBehavioralConflict:
 
     def _make_symbol(self, name, file_path, start=1, end=10, deps=None):
         return Symbol(
-            name=name, symbol_type=SymbolType.FUNCTION,
-            file_path=file_path, start_line=start, end_line=end,
+            name=name,
+            symbol_type=SymbolType.FUNCTION,
+            file_path=file_path,
+            start_line=start,
+            end_line=end,
             dependencies=deps or [],
         )
 
-    def _make_changed_symbol(self, name, file_path, start=1, end=10, diff_lines=None, deps=None, change_type="modified_body"):
+    def _make_changed_symbol(
+        self,
+        name,
+        file_path,
+        start=1,
+        end=10,
+        diff_lines=None,
+        deps=None,
+        change_type="modified_body",
+    ):
         return ChangedSymbol(
             symbol=self._make_symbol(name, file_path, start, end, deps),
             change_type=change_type,
@@ -364,18 +458,31 @@ class TestCallerCalleeBehavioralConflict:
     def test_caller_callee_detected(self):
         """PR A modifies foo, PR B modifies bar, foo calls bar → WARNING."""
         sym_a = self._make_changed_symbol(
-            "foo", "src/core.py", start=1, end=10, diff_lines=(1, 10),
+            "foo",
+            "src/core.py",
+            start=1,
+            end=10,
+            diff_lines=(1, 10),
             deps=["bar"],
         )
         sym_b = self._make_changed_symbol(
-            "bar", "src/core.py", start=20, end=30, diff_lines=(20, 30),
+            "bar",
+            "src/core.py",
+            start=20,
+            end=30,
+            diff_lines=(20, 30),
         )
         pr_a = make_pr(1, ["src/core.py"], symbols=[sym_a])
         pr_b = make_pr(2, ["src/core.py"], symbols=[sym_b])
-        overlaps = [FileOverlap(
-            file_path="src/core.py", pr_a=1, pr_b=2,
-            pr_a_lines=[(1, 10)], pr_b_lines=[(20, 30)],
-        )]
+        overlaps = [
+            FileOverlap(
+                file_path="src/core.py",
+                pr_a=1,
+                pr_b=2,
+                pr_a_lines=[(1, 10)],
+                pr_b_lines=[(20, 30)],
+            )
+        ]
         conflicts = classify_conflicts(pr_a, pr_b, overlaps)
         behavioral = [c for c in conflicts if c.conflict_type == ConflictType.BEHAVIORAL]
         assert len(behavioral) >= 1
@@ -386,82 +493,150 @@ class TestCallerCalleeBehavioralConflict:
     def test_caller_callee_signature_change_keeps_warning(self):
         """Callee has modified_signature -> stays WARNING."""
         sym_a = self._make_changed_symbol(
-            "foo", "src/core.py", start=1, end=10, diff_lines=(1, 10),
+            "foo",
+            "src/core.py",
+            start=1,
+            end=10,
+            diff_lines=(1, 10),
             deps=["bar"],
         )
         sym_b = self._make_changed_symbol(
-            "bar", "src/core.py", start=20, end=30, diff_lines=(20, 30),
+            "bar",
+            "src/core.py",
+            start=20,
+            end=30,
+            diff_lines=(20, 30),
             change_type="modified_signature",
         )
         pr_a = make_pr(1, ["src/core.py"], symbols=[sym_a])
         pr_b = make_pr(2, ["src/core.py"], symbols=[sym_b])
-        overlaps = [FileOverlap(
-            file_path="src/core.py", pr_a=1, pr_b=2,
-            pr_a_lines=[(1, 10)], pr_b_lines=[(20, 30)],
-        )]
+        overlaps = [
+            FileOverlap(
+                file_path="src/core.py",
+                pr_a=1,
+                pr_b=2,
+                pr_a_lines=[(1, 10)],
+                pr_b_lines=[(20, 30)],
+            )
+        ]
         conflicts = classify_conflicts(pr_a, pr_b, overlaps)
-        cc = [c for c in conflicts if c.conflict_type == ConflictType.BEHAVIORAL and "\u2192" in (c.symbol_name or "")]
+        cc = [
+            c
+            for c in conflicts
+            if c.conflict_type == ConflictType.BEHAVIORAL and "\u2192" in (c.symbol_name or "")
+        ]
         assert len(cc) == 1
         assert cc[0].severity == ConflictSeverity.WARNING
 
     def test_caller_callee_test_file(self):
         """Same scenario in test file → INFO."""
         sym_a = self._make_changed_symbol(
-            "test_foo", "tests/test_core.py", start=1, end=10, diff_lines=(1, 10),
+            "test_foo",
+            "tests/test_core.py",
+            start=1,
+            end=10,
+            diff_lines=(1, 10),
             deps=["test_bar"],
         )
         sym_b = self._make_changed_symbol(
-            "test_bar", "tests/test_core.py", start=20, end=30, diff_lines=(20, 30),
+            "test_bar",
+            "tests/test_core.py",
+            start=20,
+            end=30,
+            diff_lines=(20, 30),
         )
         pr_a = make_pr(1, ["tests/test_core.py"], symbols=[sym_a])
         pr_b = make_pr(2, ["tests/test_core.py"], symbols=[sym_b])
-        overlaps = [FileOverlap(
-            file_path="tests/test_core.py", pr_a=1, pr_b=2,
-            pr_a_lines=[(1, 10)], pr_b_lines=[(20, 30)],
-        )]
+        overlaps = [
+            FileOverlap(
+                file_path="tests/test_core.py",
+                pr_a=1,
+                pr_b=2,
+                pr_a_lines=[(1, 10)],
+                pr_b_lines=[(20, 30)],
+            )
+        ]
         conflicts = classify_conflicts(pr_a, pr_b, overlaps)
-        cc = [c for c in conflicts if c.conflict_type == ConflictType.BEHAVIORAL and "\u2192" in (c.symbol_name or "")]
+        cc = [
+            c
+            for c in conflicts
+            if c.conflict_type == ConflictType.BEHAVIORAL and "\u2192" in (c.symbol_name or "")
+        ]
         assert len(cc) == 1
         assert cc[0].severity == ConflictSeverity.INFO
 
     def test_no_relationship(self):
         """Different functions, no call relationship → no caller/callee conflict."""
         sym_a = self._make_changed_symbol(
-            "foo", "src/core.py", start=1, end=10, diff_lines=(1, 10),
+            "foo",
+            "src/core.py",
+            start=1,
+            end=10,
+            diff_lines=(1, 10),
             deps=[],
         )
         sym_b = self._make_changed_symbol(
-            "bar", "src/core.py", start=20, end=30, diff_lines=(20, 30),
+            "bar",
+            "src/core.py",
+            start=20,
+            end=30,
+            diff_lines=(20, 30),
             deps=[],
         )
         pr_a = make_pr(1, ["src/core.py"], symbols=[sym_a])
         pr_b = make_pr(2, ["src/core.py"], symbols=[sym_b])
-        overlaps = [FileOverlap(
-            file_path="src/core.py", pr_a=1, pr_b=2,
-            pr_a_lines=[(1, 10)], pr_b_lines=[(20, 30)],
-        )]
+        overlaps = [
+            FileOverlap(
+                file_path="src/core.py",
+                pr_a=1,
+                pr_b=2,
+                pr_a_lines=[(1, 10)],
+                pr_b_lines=[(20, 30)],
+            )
+        ]
         conflicts = classify_conflicts(pr_a, pr_b, overlaps)
-        cc = [c for c in conflicts if c.conflict_type == ConflictType.BEHAVIORAL and "\u2192" in (c.symbol_name or "")]
+        cc = [
+            c
+            for c in conflicts
+            if c.conflict_type == ConflictType.BEHAVIORAL and "\u2192" in (c.symbol_name or "")
+        ]
         assert len(cc) == 0
 
     def test_bidirectional(self):
         """A calls B AND B calls A → still one conflict (deduplicated)."""
         sym_a = self._make_changed_symbol(
-            "foo", "src/core.py", start=1, end=10, diff_lines=(1, 10),
+            "foo",
+            "src/core.py",
+            start=1,
+            end=10,
+            diff_lines=(1, 10),
             deps=["bar"],
         )
         sym_b = self._make_changed_symbol(
-            "bar", "src/core.py", start=20, end=30, diff_lines=(20, 30),
+            "bar",
+            "src/core.py",
+            start=20,
+            end=30,
+            diff_lines=(20, 30),
             deps=["foo"],
         )
         pr_a = make_pr(1, ["src/core.py"], symbols=[sym_a])
         pr_b = make_pr(2, ["src/core.py"], symbols=[sym_b])
-        overlaps = [FileOverlap(
-            file_path="src/core.py", pr_a=1, pr_b=2,
-            pr_a_lines=[(1, 10)], pr_b_lines=[(20, 30)],
-        )]
+        overlaps = [
+            FileOverlap(
+                file_path="src/core.py",
+                pr_a=1,
+                pr_b=2,
+                pr_a_lines=[(1, 10)],
+                pr_b_lines=[(20, 30)],
+            )
+        ]
         conflicts = classify_conflicts(pr_a, pr_b, overlaps)
-        cc = [c for c in conflicts if c.conflict_type == ConflictType.BEHAVIORAL and "\u2192" in (c.symbol_name or "")]
+        cc = [
+            c
+            for c in conflicts
+            if c.conflict_type == ConflictType.BEHAVIORAL and "\u2192" in (c.symbol_name or "")
+        ]
         assert len(cc) == 1
 
 
@@ -471,75 +646,120 @@ class TestPRDuplication:
     def test_similar_titles_with_file_overlap(self):
         """Same title, shared files → DUPLICATION WARNING."""
         pr_a = PRInfo(
-            number=1, title="Fix login button styling",
-            author="dev1", base_branch="main", head_branch="fix-login-1",
-            head_sha="sha1", created_at=datetime(2026, 1, 1),
+            number=1,
+            title="Fix login button styling",
+            author="dev1",
+            base_branch="main",
+            head_branch="fix-login-1",
+            head_sha="sha1",
+            created_at=datetime(2026, 1, 1),
             updated_at=datetime(2026, 1, 1),
         )
         pr_a.changed_files = [
             ChangedFile(path="src/login.py", status=FileChangeStatus.MODIFIED),
         ]
         pr_b = PRInfo(
-            number=2, title="Fix login button styling",
-            author="dev2", base_branch="main", head_branch="fix-login-2",
-            head_sha="sha2", created_at=datetime(2026, 1, 1),
+            number=2,
+            title="Fix login button styling",
+            author="dev2",
+            base_branch="main",
+            head_branch="fix-login-2",
+            head_sha="sha2",
+            created_at=datetime(2026, 1, 1),
             updated_at=datetime(2026, 1, 1),
         )
         pr_b.changed_files = [
             ChangedFile(path="src/login.py", status=FileChangeStatus.MODIFIED),
         ]
-        overlaps = [FileOverlap(
-            file_path="src/login.py", pr_a=1, pr_b=2,
-            pr_a_lines=[(1, 10)], pr_b_lines=[(1, 10)],
-        )]
+        overlaps = [
+            FileOverlap(
+                file_path="src/login.py",
+                pr_a=1,
+                pr_b=2,
+                pr_a_lines=[(1, 10)],
+                pr_b_lines=[(1, 10)],
+            )
+        ]
         conflicts = classify_conflicts(pr_a, pr_b, overlaps)
-        dup = [c for c in conflicts if c.conflict_type == ConflictType.DUPLICATION and c.severity == ConflictSeverity.WARNING]
+        dup = [
+            c
+            for c in conflicts
+            if c.conflict_type == ConflictType.DUPLICATION
+            and c.severity == ConflictSeverity.WARNING
+        ]
         assert len(dup) >= 1
 
     def test_different_titles_no_duplication(self):
         """Unrelated titles → no PR-level duplication."""
         pr_a = PRInfo(
-            number=1, title="Add user authentication",
-            author="dev1", base_branch="main", head_branch="auth",
-            head_sha="sha1", created_at=datetime(2026, 1, 1),
+            number=1,
+            title="Add user authentication",
+            author="dev1",
+            base_branch="main",
+            head_branch="auth",
+            head_sha="sha1",
+            created_at=datetime(2026, 1, 1),
             updated_at=datetime(2026, 1, 1),
         )
         pr_a.changed_files = [
             ChangedFile(path="src/shared.py", status=FileChangeStatus.MODIFIED),
         ]
         pr_b = PRInfo(
-            number=2, title="Upgrade database driver",
-            author="dev2", base_branch="main", head_branch="db",
-            head_sha="sha2", created_at=datetime(2026, 1, 1),
+            number=2,
+            title="Upgrade database driver",
+            author="dev2",
+            base_branch="main",
+            head_branch="db",
+            head_sha="sha2",
+            created_at=datetime(2026, 1, 1),
             updated_at=datetime(2026, 1, 1),
         )
         pr_b.changed_files = [
             ChangedFile(path="src/shared.py", status=FileChangeStatus.MODIFIED),
         ]
-        overlaps = [FileOverlap(
-            file_path="src/shared.py", pr_a=1, pr_b=2,
-            pr_a_lines=[(1, 5)], pr_b_lines=[(50, 55)],
-        )]
+        overlaps = [
+            FileOverlap(
+                file_path="src/shared.py",
+                pr_a=1,
+                pr_b=2,
+                pr_a_lines=[(1, 5)],
+                pr_b_lines=[(50, 55)],
+            )
+        ]
         conflicts = classify_conflicts(pr_a, pr_b, overlaps)
-        pr_dup = [c for c in conflicts if c.conflict_type == ConflictType.DUPLICATION and c.severity == ConflictSeverity.WARNING]
+        pr_dup = [
+            c
+            for c in conflicts
+            if c.conflict_type == ConflictType.DUPLICATION
+            and c.severity == ConflictSeverity.WARNING
+        ]
         assert len(pr_dup) == 0
 
     def test_similar_titles_no_file_overlap(self):
         """Similar titles but no shared files → no conflict."""
         from mergeguard.core.conflict import _check_pr_duplication
+
         pr_a = PRInfo(
-            number=1, title="Fix login button",
-            author="dev1", base_branch="main", head_branch="fix-1",
-            head_sha="sha1", created_at=datetime(2026, 1, 1),
+            number=1,
+            title="Fix login button",
+            author="dev1",
+            base_branch="main",
+            head_branch="fix-1",
+            head_sha="sha1",
+            created_at=datetime(2026, 1, 1),
             updated_at=datetime(2026, 1, 1),
         )
         pr_a.changed_files = [
             ChangedFile(path="src/a.py", status=FileChangeStatus.MODIFIED),
         ]
         pr_b = PRInfo(
-            number=2, title="Fix login button",
-            author="dev2", base_branch="main", head_branch="fix-2",
-            head_sha="sha2", created_at=datetime(2026, 1, 1),
+            number=2,
+            title="Fix login button",
+            author="dev2",
+            base_branch="main",
+            head_branch="fix-2",
+            head_sha="sha2",
+            created_at=datetime(2026, 1, 1),
             updated_at=datetime(2026, 1, 1),
         )
         pr_b.changed_files = [
@@ -552,31 +772,53 @@ class TestPRDuplication:
     def test_description_boosts_similarity(self):
         """Mediocre title match + strong description match → detected."""
         pr_a = PRInfo(
-            number=1, title="Update auth module",
-            author="dev1", base_branch="main", head_branch="auth-1",
-            head_sha="sha1", created_at=datetime(2026, 1, 1),
+            number=1,
+            title="Update auth module",
+            author="dev1",
+            base_branch="main",
+            head_branch="auth-1",
+            head_sha="sha1",
+            created_at=datetime(2026, 1, 1),
             updated_at=datetime(2026, 1, 1),
-            description="Refactor the authentication flow to use JWT tokens instead of session cookies",
+            description=(
+                "Refactor the authentication flow to use JWT tokens instead of session cookies"
+            ),
         )
         pr_a.changed_files = [
             ChangedFile(path="src/auth.py", status=FileChangeStatus.MODIFIED),
         ]
         pr_b = PRInfo(
-            number=2, title="Refactor auth module",
-            author="dev2", base_branch="main", head_branch="auth-2",
-            head_sha="sha2", created_at=datetime(2026, 1, 1),
+            number=2,
+            title="Refactor auth module",
+            author="dev2",
+            base_branch="main",
+            head_branch="auth-2",
+            head_sha="sha2",
+            created_at=datetime(2026, 1, 1),
             updated_at=datetime(2026, 1, 1),
-            description="Refactor the authentication flow to use JWT tokens instead of session cookies",
+            description=(
+                "Refactor the authentication flow to use JWT tokens instead of session cookies"
+            ),
         )
         pr_b.changed_files = [
             ChangedFile(path="src/auth.py", status=FileChangeStatus.MODIFIED),
         ]
-        overlaps = [FileOverlap(
-            file_path="src/auth.py", pr_a=1, pr_b=2,
-            pr_a_lines=[(1, 50)], pr_b_lines=[(1, 50)],
-        )]
+        overlaps = [
+            FileOverlap(
+                file_path="src/auth.py",
+                pr_a=1,
+                pr_b=2,
+                pr_a_lines=[(1, 50)],
+                pr_b_lines=[(1, 50)],
+            )
+        ]
         conflicts = classify_conflicts(pr_a, pr_b, overlaps)
-        pr_dup = [c for c in conflicts if c.conflict_type == ConflictType.DUPLICATION and c.severity == ConflictSeverity.WARNING]
+        pr_dup = [
+            c
+            for c in conflicts
+            if c.conflict_type == ConflictType.DUPLICATION
+            and c.severity == ConflictSeverity.WARNING
+        ]
         assert len(pr_dup) >= 1
 
 
@@ -586,11 +828,15 @@ class TestSkipSameFileSameNameDuplication:
     def _make_changed_symbol(self, name, file_path, start=1, end=10, change_type="modified_body"):
         return ChangedSymbol(
             symbol=Symbol(
-                name=name, symbol_type=SymbolType.FUNCTION,
-                file_path=file_path, start_line=start, end_line=end,
+                name=name,
+                symbol_type=SymbolType.FUNCTION,
+                file_path=file_path,
+                start_line=start,
+                end_line=end,
                 signature=f"def {name}(self)",
             ),
-            change_type=change_type, diff_lines=(start, end),
+            change_type=change_type,
+            diff_lines=(start, end),
         )
 
     def test_skip_same_file_same_name_duplication(self):
@@ -599,10 +845,15 @@ class TestSkipSameFileSameNameDuplication:
         sym_b = self._make_changed_symbol("_generate", "src/chat/base.py")
         pr_a = make_pr(1, ["src/chat/base.py"], symbols=[sym_a])
         pr_b = make_pr(2, ["src/chat/base.py"], symbols=[sym_b])
-        overlaps = [FileOverlap(
-            file_path="src/chat/base.py", pr_a=1, pr_b=2,
-            pr_a_lines=[(1, 5)], pr_b_lines=[(6, 10)],
-        )]
+        overlaps = [
+            FileOverlap(
+                file_path="src/chat/base.py",
+                pr_a=1,
+                pr_b=2,
+                pr_a_lines=[(1, 5)],
+                pr_b_lines=[(6, 10)],
+            )
+        ]
         conflicts = classify_conflicts(pr_a, pr_b, overlaps)
         dup_conflicts = [c for c in conflicts if c.conflict_type == ConflictType.DUPLICATION]
         assert len(dup_conflicts) == 0
@@ -613,10 +864,15 @@ class TestSkipSameFileSameNameDuplication:
         sym_b = self._make_changed_symbol("process_data", "src/b.py", change_type="added")
         pr_a = make_pr(1, ["src/a.py"], symbols=[sym_a])
         pr_b = make_pr(2, ["src/b.py"], symbols=[sym_b])
-        overlaps = [FileOverlap(
-            file_path="src/shared.py", pr_a=1, pr_b=2,
-            pr_a_lines=[(1, 5)], pr_b_lines=[(50, 55)],
-        )]
+        overlaps = [
+            FileOverlap(
+                file_path="src/shared.py",
+                pr_a=1,
+                pr_b=2,
+                pr_a_lines=[(1, 5)],
+                pr_b_lines=[(50, 55)],
+            )
+        ]
         conflicts = classify_conflicts(pr_a, pr_b, overlaps)
         dup_conflicts = [c for c in conflicts if c.conflict_type == ConflictType.DUPLICATION]
         assert len(dup_conflicts) >= 1
@@ -627,10 +883,15 @@ class TestSkipSameFileSameNameDuplication:
         sym_b = self._make_changed_symbol("_generate", "src/b.py", change_type="modified_body")
         pr_a = make_pr(1, ["src/a.py"], symbols=[sym_a])
         pr_b = make_pr(2, ["src/b.py"], symbols=[sym_b])
-        overlaps = [FileOverlap(
-            file_path="src/shared.py", pr_a=1, pr_b=2,
-            pr_a_lines=[(1, 5)], pr_b_lines=[(50, 55)],
-        )]
+        overlaps = [
+            FileOverlap(
+                file_path="src/shared.py",
+                pr_a=1,
+                pr_b=2,
+                pr_a_lines=[(1, 5)],
+                pr_b_lines=[(50, 55)],
+            )
+        ]
         conflicts = classify_conflicts(pr_a, pr_b, overlaps)
         dup_conflicts = [c for c in conflicts if c.conflict_type == ConflictType.DUPLICATION]
         assert len(dup_conflicts) == 0
@@ -641,10 +902,15 @@ class TestSkipSameFileSameNameDuplication:
         sym_b = self._make_changed_symbol("process_data", "src/b.py", change_type="modified_body")
         pr_a = make_pr(1, ["src/a.py"], symbols=[sym_a])
         pr_b = make_pr(2, ["src/b.py"], symbols=[sym_b])
-        overlaps = [FileOverlap(
-            file_path="src/shared.py", pr_a=1, pr_b=2,
-            pr_a_lines=[(1, 5)], pr_b_lines=[(50, 55)],
-        )]
+        overlaps = [
+            FileOverlap(
+                file_path="src/shared.py",
+                pr_a=1,
+                pr_b=2,
+                pr_a_lines=[(1, 5)],
+                pr_b_lines=[(50, 55)],
+            )
+        ]
         conflicts = classify_conflicts(pr_a, pr_b, overlaps)
         dup_conflicts = [c for c in conflicts if c.conflict_type == ConflictType.DUPLICATION]
         assert len(dup_conflicts) >= 1
@@ -656,10 +922,14 @@ class TestCommentOnlyChange:
     def _make_changed_symbol(self, name, file_path, raw_diff=None, start=1, end=10):
         return ChangedSymbol(
             symbol=Symbol(
-                name=name, symbol_type=SymbolType.FUNCTION,
-                file_path=file_path, start_line=start, end_line=end,
+                name=name,
+                symbol_type=SymbolType.FUNCTION,
+                file_path=file_path,
+                start_line=start,
+                end_line=end,
             ),
-            change_type="modified_body", diff_lines=(start, end),
+            change_type="modified_body",
+            diff_lines=(start, end),
             raw_diff=raw_diff,
         )
 
@@ -684,55 +954,87 @@ class TestCommentOnlyChange:
     def test_comment_only_change_skipped(self):
         """Both PRs change only comments → no behavioral conflict."""
         sym_a = self._make_changed_symbol(
-            "func", "src/core.py", raw_diff="+# updated comment",
-            start=1, end=10,
+            "func",
+            "src/core.py",
+            raw_diff="+# updated comment",
+            start=1,
+            end=10,
         )
         sym_b = self._make_changed_symbol(
-            "func", "src/core.py", raw_diff="+# different comment",
-            start=20, end=30,
+            "func",
+            "src/core.py",
+            raw_diff="+# different comment",
+            start=20,
+            end=30,
         )
         pr_a = make_pr(1, ["src/core.py"], symbols=[sym_a])
         pr_b = make_pr(2, ["src/core.py"], symbols=[sym_b])
-        overlaps = [FileOverlap(
-            file_path="src/core.py", pr_a=1, pr_b=2,
-            pr_a_lines=[(1, 10)], pr_b_lines=[(20, 30)],
-        )]
+        overlaps = [
+            FileOverlap(
+                file_path="src/core.py",
+                pr_a=1,
+                pr_b=2,
+                pr_a_lines=[(1, 10)],
+                pr_b_lines=[(20, 30)],
+            )
+        ]
         conflicts = classify_conflicts(pr_a, pr_b, overlaps)
-        behavioral = [c for c in conflicts if c.conflict_type == ConflictType.BEHAVIORAL
-                      and c.symbol_name == "func"]
+        behavioral = [
+            c
+            for c in conflicts
+            if c.conflict_type == ConflictType.BEHAVIORAL and c.symbol_name == "func"
+        ]
         assert len(behavioral) == 0
 
     def test_mixed_comment_and_code_not_skipped(self):
         """One PR changes comments, other changes code → conflict fires."""
         sym_a = self._make_changed_symbol(
-            "func", "src/core.py", raw_diff="+# just a comment",
-            start=1, end=10,
+            "func",
+            "src/core.py",
+            raw_diff="+# just a comment",
+            start=1,
+            end=10,
         )
         sym_b = self._make_changed_symbol(
-            "func", "src/core.py", raw_diff="+x = compute()",
-            start=20, end=30,
+            "func",
+            "src/core.py",
+            raw_diff="+x = compute()",
+            start=20,
+            end=30,
         )
         pr_a = make_pr(1, ["src/core.py"], symbols=[sym_a])
         pr_b = make_pr(2, ["src/core.py"], symbols=[sym_b])
-        overlaps = [FileOverlap(
-            file_path="src/core.py", pr_a=1, pr_b=2,
-            pr_a_lines=[(1, 10)], pr_b_lines=[(20, 30)],
-        )]
+        overlaps = [
+            FileOverlap(
+                file_path="src/core.py",
+                pr_a=1,
+                pr_b=2,
+                pr_a_lines=[(1, 10)],
+                pr_b_lines=[(20, 30)],
+            )
+        ]
         conflicts = classify_conflicts(pr_a, pr_b, overlaps)
-        behavioral = [c for c in conflicts if c.conflict_type == ConflictType.BEHAVIORAL
-                      and c.symbol_name == "func"]
+        behavioral = [
+            c
+            for c in conflicts
+            if c.conflict_type == ConflictType.BEHAVIORAL and c.symbol_name == "func"
+        ]
         assert len(behavioral) >= 1
 
 
 class TestClassDemotion:
     """Class-level behavioral conflicts should always be demoted to INFO."""
 
-    def _make_changed_symbol(self, name, file_path, sym_type=SymbolType.FUNCTION,
-                             start=1, end=10, diff_lines=None):
+    def _make_changed_symbol(
+        self, name, file_path, sym_type=SymbolType.FUNCTION, start=1, end=10, diff_lines=None
+    ):
         return ChangedSymbol(
             symbol=Symbol(
-                name=name, symbol_type=sym_type,
-                file_path=file_path, start_line=start, end_line=end,
+                name=name,
+                symbol_type=sym_type,
+                file_path=file_path,
+                start_line=start,
+                end_line=end,
             ),
             change_type="modified_body",
             diff_lines=diff_lines or (start, end),
@@ -741,44 +1043,76 @@ class TestClassDemotion:
     def test_class_changes_always_info(self):
         """Any class symbol → INFO regardless of distance."""
         sym_a = self._make_changed_symbol(
-            "MyClass", "src/core.py", sym_type=SymbolType.CLASS,
-            start=1, end=500, diff_lines=(40, 50),
+            "MyClass",
+            "src/core.py",
+            sym_type=SymbolType.CLASS,
+            start=1,
+            end=500,
+            diff_lines=(40, 50),
         )
         sym_b = self._make_changed_symbol(
-            "MyClass", "src/core.py", sym_type=SymbolType.CLASS,
-            start=1, end=500, diff_lines=(60, 70),
+            "MyClass",
+            "src/core.py",
+            sym_type=SymbolType.CLASS,
+            start=1,
+            end=500,
+            diff_lines=(60, 70),
         )
         pr_a = make_pr(1, ["src/core.py"], symbols=[sym_a])
         pr_b = make_pr(2, ["src/core.py"], symbols=[sym_b])
-        overlaps = [FileOverlap(
-            file_path="src/core.py", pr_a=1, pr_b=2,
-            pr_a_lines=[(40, 50)], pr_b_lines=[(60, 70)],
-        )]
+        overlaps = [
+            FileOverlap(
+                file_path="src/core.py",
+                pr_a=1,
+                pr_b=2,
+                pr_a_lines=[(40, 50)],
+                pr_b_lines=[(60, 70)],
+            )
+        ]
         conflicts = classify_conflicts(pr_a, pr_b, overlaps)
-        behavioral = [c for c in conflicts if c.conflict_type == ConflictType.BEHAVIORAL
-                      and c.symbol_name == "MyClass"]
+        behavioral = [
+            c
+            for c in conflicts
+            if c.conflict_type == ConflictType.BEHAVIORAL and c.symbol_name == "MyClass"
+        ]
         assert len(behavioral) == 1
         assert behavioral[0].severity == ConflictSeverity.INFO
 
     def test_non_class_symbols_unaffected(self):
         """Function symbol stays WARNING regardless of distance."""
         sym_a = self._make_changed_symbol(
-            "my_func", "src/core.py", sym_type=SymbolType.FUNCTION,
-            start=1, end=500, diff_lines=(10, 20),
+            "my_func",
+            "src/core.py",
+            sym_type=SymbolType.FUNCTION,
+            start=1,
+            end=500,
+            diff_lines=(10, 20),
         )
         sym_b = self._make_changed_symbol(
-            "my_func", "src/core.py", sym_type=SymbolType.FUNCTION,
-            start=1, end=500, diff_lines=(300, 310),
+            "my_func",
+            "src/core.py",
+            sym_type=SymbolType.FUNCTION,
+            start=1,
+            end=500,
+            diff_lines=(300, 310),
         )
         pr_a = make_pr(1, ["src/core.py"], symbols=[sym_a])
         pr_b = make_pr(2, ["src/core.py"], symbols=[sym_b])
-        overlaps = [FileOverlap(
-            file_path="src/core.py", pr_a=1, pr_b=2,
-            pr_a_lines=[(10, 20)], pr_b_lines=[(300, 310)],
-        )]
+        overlaps = [
+            FileOverlap(
+                file_path="src/core.py",
+                pr_a=1,
+                pr_b=2,
+                pr_a_lines=[(10, 20)],
+                pr_b_lines=[(300, 310)],
+            )
+        ]
         conflicts = classify_conflicts(pr_a, pr_b, overlaps)
-        behavioral = [c for c in conflicts if c.conflict_type == ConflictType.BEHAVIORAL
-                      and c.symbol_name == "my_func"]
+        behavioral = [
+            c
+            for c in conflicts
+            if c.conflict_type == ConflictType.BEHAVIORAL and c.symbol_name == "my_func"
+        ]
         assert len(behavioral) == 1
         assert behavioral[0].severity == ConflictSeverity.WARNING
 
@@ -786,38 +1120,62 @@ class TestClassDemotion:
         """Method whose parent class is also a shared symbol → INFO."""
         # Both PRs modify the class AND the method inside it
         cls_a = self._make_changed_symbol(
-            "BaseChatModel", "src/core.py", sym_type=SymbolType.CLASS,
-            start=1, end=500, diff_lines=(40, 50),
+            "BaseChatModel",
+            "src/core.py",
+            sym_type=SymbolType.CLASS,
+            start=1,
+            end=500,
+            diff_lines=(40, 50),
         )
         cls_b = self._make_changed_symbol(
-            "BaseChatModel", "src/core.py", sym_type=SymbolType.CLASS,
-            start=1, end=500, diff_lines=(60, 70),
+            "BaseChatModel",
+            "src/core.py",
+            sym_type=SymbolType.CLASS,
+            start=1,
+            end=500,
+            diff_lines=(60, 70),
         )
         method_a = ChangedSymbol(
             symbol=Symbol(
-                name="_generate", symbol_type=SymbolType.METHOD,
-                file_path="src/core.py", start_line=100, end_line=150,
+                name="_generate",
+                symbol_type=SymbolType.METHOD,
+                file_path="src/core.py",
+                start_line=100,
+                end_line=150,
                 parent="BaseChatModel",
             ),
-            change_type="modified_body", diff_lines=(110, 120),
+            change_type="modified_body",
+            diff_lines=(110, 120),
         )
         method_b = ChangedSymbol(
             symbol=Symbol(
-                name="_generate", symbol_type=SymbolType.METHOD,
-                file_path="src/core.py", start_line=100, end_line=150,
+                name="_generate",
+                symbol_type=SymbolType.METHOD,
+                file_path="src/core.py",
+                start_line=100,
+                end_line=150,
                 parent="BaseChatModel",
             ),
-            change_type="modified_body", diff_lines=(130, 140),
+            change_type="modified_body",
+            diff_lines=(130, 140),
         )
         pr_a = make_pr(1, ["src/core.py"], symbols=[cls_a, method_a])
         pr_b = make_pr(2, ["src/core.py"], symbols=[cls_b, method_b])
-        overlaps = [FileOverlap(
-            file_path="src/core.py", pr_a=1, pr_b=2,
-            pr_a_lines=[(40, 50), (110, 120)], pr_b_lines=[(60, 70), (130, 140)],
-        )]
+        overlaps = [
+            FileOverlap(
+                file_path="src/core.py",
+                pr_a=1,
+                pr_b=2,
+                pr_a_lines=[(40, 50), (110, 120)],
+                pr_b_lines=[(60, 70), (130, 140)],
+            )
+        ]
         conflicts = classify_conflicts(pr_a, pr_b, overlaps)
-        method_conflicts = [c for c in conflicts if c.conflict_type == ConflictType.BEHAVIORAL
-                            and c.symbol_name == "_generate"]
+        method_conflicts = [
+            c
+            for c in conflicts
+            if c.conflict_type == ConflictType.BEHAVIORAL and c.symbol_name == "_generate"
+        ]
         assert len(method_conflicts) == 1
         assert method_conflicts[0].severity == ConflictSeverity.INFO
 
@@ -825,29 +1183,45 @@ class TestClassDemotion:
         """Method with parent class NOT in shared_symbols → stays WARNING."""
         method_a = ChangedSymbol(
             symbol=Symbol(
-                name="_generate", symbol_type=SymbolType.METHOD,
-                file_path="src/core.py", start_line=100, end_line=150,
+                name="_generate",
+                symbol_type=SymbolType.METHOD,
+                file_path="src/core.py",
+                start_line=100,
+                end_line=150,
                 parent="BaseChatModel",
             ),
-            change_type="modified_body", diff_lines=(110, 120),
+            change_type="modified_body",
+            diff_lines=(110, 120),
         )
         method_b = ChangedSymbol(
             symbol=Symbol(
-                name="_generate", symbol_type=SymbolType.METHOD,
-                file_path="src/core.py", start_line=100, end_line=150,
+                name="_generate",
+                symbol_type=SymbolType.METHOD,
+                file_path="src/core.py",
+                start_line=100,
+                end_line=150,
                 parent="BaseChatModel",
             ),
-            change_type="modified_body", diff_lines=(130, 140),
+            change_type="modified_body",
+            diff_lines=(130, 140),
         )
         # Only method is shared — class is NOT in either PR's symbols
         pr_a = make_pr(1, ["src/core.py"], symbols=[method_a])
         pr_b = make_pr(2, ["src/core.py"], symbols=[method_b])
-        overlaps = [FileOverlap(
-            file_path="src/core.py", pr_a=1, pr_b=2,
-            pr_a_lines=[(110, 120)], pr_b_lines=[(130, 140)],
-        )]
+        overlaps = [
+            FileOverlap(
+                file_path="src/core.py",
+                pr_a=1,
+                pr_b=2,
+                pr_a_lines=[(110, 120)],
+                pr_b_lines=[(130, 140)],
+            )
+        ]
         conflicts = classify_conflicts(pr_a, pr_b, overlaps)
-        method_conflicts = [c for c in conflicts if c.conflict_type == ConflictType.BEHAVIORAL
-                            and c.symbol_name == "_generate"]
+        method_conflicts = [
+            c
+            for c in conflicts
+            if c.conflict_type == ConflictType.BEHAVIORAL and c.symbol_name == "_generate"
+        ]
         assert len(method_conflicts) == 1
         assert method_conflicts[0].severity == ConflictSeverity.WARNING

@@ -1,4 +1,5 @@
 """Integration test: full GitLab MR analysis flow with mocked API."""
+
 from __future__ import annotations
 
 import httpx
@@ -6,7 +7,6 @@ import respx
 
 from mergeguard.integrations.gitlab_client import GitLabClient
 from mergeguard.models import FileChangeStatus
-
 
 _BASE = "https://gitlab.com/api/v4/projects/myorg%2Fbackend"
 
@@ -45,7 +45,10 @@ _MR1_DIFFS = [
     {
         "old_path": "src/auth.py",
         "new_path": "src/auth.py",
-        "diff": "@@ -1,3 +1,10 @@\n import os\n+import jwt\n+\n+def authenticate(token):\n+    return jwt.decode(token)\n",
+        "diff": (
+            "@@ -1,3 +1,10 @@\n import os\n+import jwt\n+\n"
+            "+def authenticate(token):\n+    return jwt.decode(token)\n"
+        ),
         "new_file": False,
         "renamed_file": False,
         "deleted_file": False,
@@ -56,7 +59,9 @@ _MR2_DIFFS = [
     {
         "old_path": "src/user.py",
         "new_path": "src/user.py",
-        "diff": "@@ -5,8 +5,12 @@\n class User:\n-    name: str\n+    username: str\n+    email: str\n",
+        "diff": (
+            "@@ -5,8 +5,12 @@\n class User:\n-    name: str\n+    username: str\n+    email: str\n"
+        ),
         "new_file": False,
         "renamed_file": False,
         "deleted_file": False,
@@ -71,9 +76,7 @@ class TestFullMRAnalysisFlow:
         client = GitLabClient("fake-token", "myorg/backend")
 
         # Mock MR list
-        respx.get(f"{_BASE}/merge_requests").mock(
-            return_value=httpx.Response(200, json=_MR_LIST)
-        )
+        respx.get(f"{_BASE}/merge_requests").mock(return_value=httpx.Response(200, json=_MR_LIST))
 
         # Mock MR details
         respx.get(f"{_BASE}/merge_requests/1").mock(

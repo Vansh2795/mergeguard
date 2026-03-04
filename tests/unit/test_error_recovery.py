@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import threading
 from datetime import datetime
 from unittest.mock import MagicMock, patch
@@ -12,8 +11,6 @@ import httpx
 import pytest
 
 from mergeguard.models import (
-    ChangedFile,
-    FileChangeStatus,
     MergeGuardConfig,
     PRInfo,
 )
@@ -93,9 +90,13 @@ class TestDiskFullDuringCacheWrite:
         key = cache.make_key("owner/repo", "42", "sha789")
 
         # Patch json.dump to raise OSError (simulating disk full during write)
-        with patch("mergeguard.storage.cache.json.dump", side_effect=OSError("No space left on device")):
-            with pytest.raises(OSError):
-                cache.set(key, {"value": 42})
+        with (
+            patch(
+                "mergeguard.storage.cache.json.dump", side_effect=OSError("No space left on device")
+            ),
+            pytest.raises(OSError),
+        ):
+            cache.set(key, {"value": 42})
 
         # Verify no stale tmp files remain
         cache_dir = tmp_path / "cache"

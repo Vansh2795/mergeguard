@@ -9,8 +9,10 @@ Planned for Phase 3 (Weeks 17-18).
 
 from __future__ import annotations
 
+from typing import Any
 
-def create_mcp_server():
+
+def create_mcp_server() -> Any:
     """Create and configure the MCP server.
 
     Exposes the following tools:
@@ -21,21 +23,21 @@ def create_mcp_server():
     TODO: Implement in Phase 3 (Weeks 17-18).
     """
     try:
-        from mcp.server import Server
+        from mcp.server import Server  # type: ignore[import-not-found]
     except ImportError:
         raise ImportError(
             "The 'mcp' package is required for MCP server functionality. "
             "Install it with: pip install mcp"
-        )
+        ) from None
 
     server = Server("mergeguard")
 
-    @server.tool("check_conflicts")
+    @server.tool("check_conflicts")  # type: ignore[untyped-decorator]
     async def check_conflicts(
         repo: str,
         files: list[str],
         token: str,
-    ) -> dict:
+    ) -> dict[str, str]:
         """Check if modifying the given files would conflict with open PRs.
 
         Args:
@@ -52,12 +54,12 @@ def create_mcp_server():
             "message": "MCP server is planned for Phase 3 (V2)",
         }
 
-    @server.tool("get_risk_score")
+    @server.tool("get_risk_score")  # type: ignore[untyped-decorator]
     async def get_risk_score(
         repo: str,
         pr_number: int,
         token: str,
-    ) -> dict:
+    ) -> dict[str, str]:
         """Get the risk score for an open PR.
 
         Args:
@@ -74,11 +76,11 @@ def create_mcp_server():
             "message": "MCP server is planned for Phase 3 (V2)",
         }
 
-    @server.tool("suggest_merge_order")
+    @server.tool("suggest_merge_order")  # type: ignore[untyped-decorator]
     async def suggest_merge_order(
         repo: str,
         token: str,
-    ) -> dict:
+    ) -> dict[str, str]:
         """Suggest the optimal merge order for all open PRs.
 
         Args:
