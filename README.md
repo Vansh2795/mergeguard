@@ -1,5 +1,8 @@
 # MergeGuard
 
+[![PyPI version](https://img.shields.io/pypi/v/py-mergeguard)](https://pypi.org/project/py-mergeguard/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 **Cross-PR intelligence for the agentic coding era.**
 
 MergeGuard detects conflicts between open pull requests *before* they become merge headaches. It analyzes overlapping code changes across PRs using AST-level understanding, computes risk scores, and integrates seamlessly as a GitHub Action or CLI tool.
@@ -41,8 +44,8 @@ jobs:
 ### As a CLI
 
 ```bash
-# Install
-pip install mergeguard
+# Install from PyPI
+pip install py-mergeguard
 
 # Analyze a specific PR
 mergeguard analyze --repo owner/repo --pr 42 --token $GITHUB_TOKEN
@@ -92,7 +95,7 @@ See [Configuration Guide](docs/configuration.md) for all options.
 
 ```bash
 # Clone and setup
-git clone https://github.com/mergeguard/mergeguard.git
+git clone https://github.com/Vansh2795/mergeguard.git
 cd mergeguard
 uv sync --dev
 
