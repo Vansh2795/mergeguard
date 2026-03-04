@@ -44,8 +44,11 @@ def load_config(config_path: str = ".mergeguard.yml") -> MergeGuardConfig:
 def _load_without_yaml(path: Path) -> MergeGuardConfig:
     """Basic config loading when PyYAML is not installed.
 
-    Supports simple key: value pairs only.
+    Supports simple key: value pairs only. Unknown keys are silently
+    skipped to avoid Pydantic validation errors from typos or
+    forward-compatible config files.
     """
+    valid_fields = set(MergeGuardConfig.model_fields.keys())
     config_dict: dict = {}
     with open(path) as f:
         for line in f:
@@ -55,6 +58,8 @@ def _load_without_yaml(path: Path) -> MergeGuardConfig:
             if ":" in line:
                 key, _, value = line.partition(":")
                 key = key.strip()
+                if key not in valid_fields:
+                    continue
                 value = value.strip()
                 if value.lower() == "true":
                     config_dict[key] = True

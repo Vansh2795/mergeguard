@@ -20,12 +20,20 @@ Enable regression detection against recently merged PRs. When enabled, MergeGuar
 check_regressions: true
 ```
 
-### `max_open_prs` (default: `30`)
+### `max_open_prs` (default: `200`)
 
-Maximum number of open PRs to analyze. Higher values increase analysis time quadratically (every PR is compared against every other PR).
+Safety cap on the number of open PRs to analyze. This is not the primary filter — use `max_pr_age_days` to control which PRs are scanned. This cap prevents runaway API usage on repositories with thousands of open PRs.
 
 ```yaml
-max_open_prs: 30
+max_open_prs: 200
+```
+
+### `max_pr_age_days` (default: `30`)
+
+Only scan PRs that were updated within this many days. Since PRs are fetched sorted by most recently updated, MergeGuard stops iterating as soon as it encounters a PR older than this cutoff. This is the primary filter for controlling scan scope.
+
+```yaml
+max_pr_age_days: 30  # Scan PRs updated in the last month
 ```
 
 ### `decisions_log_depth` (default: `50`)
@@ -95,7 +103,8 @@ rules:
 | `ANTHROPIC_API_KEY` | Anthropic API key for LLM analysis (optional) |
 | `MERGEGUARD_CONFIG_PATH` | Override config file path |
 | `MERGEGUARD_RISK_THRESHOLD` | Override risk threshold |
-| `MERGEGUARD_MAX_OPEN_PRS` | Override max open PRs |
+| `MERGEGUARD_MAX_OPEN_PRS` | Override max open PRs (safety cap) |
+| `MERGEGUARD_MAX_PR_AGE_DAYS` | Override max PR age in days |
 
 ## GitHub Action Inputs
 
@@ -104,5 +113,6 @@ rules:
 | `github-token` | Yes | — | GitHub token with PR read/write access |
 | `anthropic-api-key` | No | — | Anthropic API key for LLM analysis |
 | `risk-threshold` | No | `0` | Only comment if risk > threshold |
-| `max-open-prs` | No | `20` | Max open PRs to analyze |
+| `max-open-prs` | No | `200` | Max open PRs to analyze (safety cap) |
+| `max-pr-age` | No | `30` | Only scan PRs updated within this many days |
 | `config-path` | No | `.mergeguard.yml` | Path to config file |

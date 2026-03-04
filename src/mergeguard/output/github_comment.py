@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from itertools import groupby
+from operator import attrgetter
+
 from mergeguard.models import (
     Conflict,
     ConflictReport,
@@ -48,18 +51,48 @@ def format_report(report: ConflictReport, repo_full_name: str) -> str:
         )
         lines.append("")
 
-    # Critical and warning conflicts — shown prominently
+    # Critical and warning conflicts — grouped by target PR
     important = [
         c
         for c in report.conflicts
         if c.severity in (ConflictSeverity.CRITICAL, ConflictSeverity.WARNING)
     ]
     if important:
-        for conflict in important:
-            lines.append(_format_conflict(conflict, repo_full_name))
-            lines.append("")
+        grouped = groupby(
+            sorted(important, key=attrgetter("target_pr")),
+            key=attrgetter("target_pr"),
+        )
+        for target_pr, conflicts_iter in grouped:
+            conflicts_list = list(conflicts_iter)
+            pr_link = f"[#{target_pr}](https://github.com/{repo_full_name}/pull/{target_pr})"
+            if len(conflicts_list) > 4:
+                # Collapse large groups
+                crit = sum(1 for c in conflicts_list if c.severity == ConflictSeverity.CRITICAL)
+                warn = sum(1 for c in conflicts_list if c.severity == ConflictSeverity.WARNING)
+                parts = []
+                if crit:
+                    parts.append(f"{crit} critical")
+                if warn:
+                    parts.append(f"{warn} warning")
+                summary = ", ".join(parts)
+                lines.append(f"### Conflicts with {pr_link}")
+                lines.append("")
+                lines.append("<details>")
+                lines.append(f"<summary>{summary} — expand for details</summary>")
+                lines.append("")
+                for conflict in conflicts_list:
+                    lines.append(_format_conflict_compact(conflict, repo_full_name))
+                    lines.append("")
+                lines.append("</details>")
+                lines.append("")
+            else:
+                lines.append(f"### Conflicts with {pr_link}")
+                lines.append("")
+                for conflict in conflicts_list:
+                    lines.append(_format_conflict_compact(conflict, repo_full_name))
+                    lines.append("")
 
-    # Info-level conflicts — collapsed
+    # Info-level conflicts — collapsed, also grouped
     info_conflicts = [c for c in report.conflicts if c.severity == ConflictSeverity.INFO]
     if info_conflicts:
         lines.append("<details>")
@@ -67,9 +100,18 @@ def format_report(report: ConflictReport, repo_full_name: str) -> str:
             f"<summary>\u2139\ufe0f {len(info_conflicts)} low-severity overlap(s)</summary>"
         )
         lines.append("")
-        for conflict in info_conflicts:
-            lines.append(_format_conflict(conflict, repo_full_name))
+        info_grouped = groupby(
+            sorted(info_conflicts, key=attrgetter("target_pr")),
+            key=attrgetter("target_pr"),
+        )
+        for target_pr, conflicts_iter in info_grouped:
+            conflicts_list = list(conflicts_iter)
+            pr_link = f"[#{target_pr}](https://github.com/{repo_full_name}/pull/{target_pr})"
+            lines.append(f"#### {pr_link}")
             lines.append("")
+            for conflict in conflicts_list:
+                lines.append(_format_conflict_compact(conflict, repo_full_name))
+                lines.append("")
         lines.append("</details>")
         lines.append("")
 
@@ -77,6 +119,19 @@ def format_report(report: ConflictReport, repo_full_name: str) -> str:
     if report.no_conflict_prs:
         pr_links = ", ".join(f"#{n}" for n in sorted(report.no_conflict_prs))
         lines.append(f"\u2705 **No conflicts with:** {pr_links}")
+        lines.append("")
+
+    # Skipped files
+    if report.pr.skipped_files:
+        lines.append("<details>")
+        lines.append(
+            f"<summary>\u26a0\ufe0f {len(report.pr.skipped_files)} file(s) skipped (no patch data)</summary>"
+        )
+        lines.append("")
+        for path in report.pr.skipped_files:
+            lines.append(f"- `{path}`")
+        lines.append("")
+        lines.append("</details>")
         lines.append("")
 
     # No conflicts at all
@@ -114,6 +169,24 @@ def _format_conflict(conflict: Conflict, repo_full_name: str) -> str:
 
     lines.append(f"\n{conflict.description}")
     lines.append(f"\n\U0001f4a1 **Recommendation:** {conflict.recommendation}")
+
+    return "\n".join(lines)
+
+
+def _format_conflict_compact(conflict: Conflict, repo_full_name: str) -> str:
+    """Format a conflict without a per-conflict PR link (used in grouped output)."""
+    emoji = SEVERITY_EMOJI[conflict.severity]
+    type_label = TYPE_LABELS[conflict.conflict_type]
+
+    lines = [
+        f"{emoji} **{type_label}** — `{conflict.file_path}`",
+    ]
+
+    if conflict.symbol_name:
+        lines.append(f"**Symbol:** `{conflict.symbol_name}`")
+
+    lines.append(f"{conflict.description}")
+    lines.append(f"\U0001f4a1 {conflict.recommendation}")
 
     return "\n".join(lines)
 

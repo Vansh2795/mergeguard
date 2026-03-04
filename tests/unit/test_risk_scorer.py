@@ -9,10 +9,10 @@ from mergeguard.models import (
 from datetime import datetime
 
 
-def make_conflict(severity):
+def make_conflict(severity, target_pr=2):
     return Conflict(
         conflict_type=ConflictType.HARD, severity=severity,
-        source_pr=1, target_pr=2, file_path="f.py",
+        source_pr=1, target_pr=target_pr, file_path="f.py",
         description="test", recommendation="test",
     )
 
@@ -41,6 +41,28 @@ class TestScoreConflicts:
         score = _score_conflicts(conflicts)
         assert score == 100.0  # 100 + 50*0.5 = 125, capped at 100
 
+    def test_concentrated_criticals_discounted(self):
+        """3 CRITICALs from 1 PR -> discount applied (~73.3)."""
+        conflicts = [
+            make_conflict(ConflictSeverity.CRITICAL, target_pr=5),
+            make_conflict(ConflictSeverity.CRITICAL, target_pr=5),
+            make_conflict(ConflictSeverity.CRITICAL, target_pr=5),
+        ]
+        score = _score_conflicts(conflicts)
+        # discount = 0.6 + 0.4*(1/3) = 0.7333
+        # base = 100 + 100*0.5 + 100*0.25 = 175 -> capped at 100 -> 100 * 0.7333 = 73.33
+        assert 73.0 < score < 74.0
+
+    def test_distributed_criticals_no_discount(self):
+        """3 CRITICALs from 3 different PRs -> no discount."""
+        conflicts = [
+            make_conflict(ConflictSeverity.CRITICAL, target_pr=3),
+            make_conflict(ConflictSeverity.CRITICAL, target_pr=4),
+            make_conflict(ConflictSeverity.CRITICAL, target_pr=5),
+        ]
+        score = _score_conflicts(conflicts)
+        assert score == 100.0
+
 
 class TestComputeRiskScore:
     def test_zero_risk(self):
@@ -66,3 +88,46 @@ class TestComputeRiskScore:
         )
         assert factors["ai_attribution"] == 40.0
         assert score > 0
+
+    def test_blast_radius_boosted_by_conflicting_prs(self):
+        """10 conflicts from 10 different PRs → blast_radius = 15 + 40 = 55 (depth=1)."""
+        pr = PRInfo(
+            number=1, title="t", author="a", base_branch="main",
+            head_branch="b", head_sha="s",
+            created_at=datetime(2026, 1, 1), updated_at=datetime(2026, 1, 1),
+        )
+        conflicts = [
+            Conflict(
+                conflict_type=ConflictType.BEHAVIORAL,
+                severity=ConflictSeverity.WARNING,
+                source_pr=1, target_pr=i,
+                file_path="f.py", description="d", recommendation="r",
+            )
+            for i in range(2, 12)  # 10 distinct target PRs
+        ]
+        _, factors = compute_risk_score(
+            pr, conflicts, 1, 0.0, 0.0, MergeGuardConfig()
+        )
+        # depth=1 → 15, plus 10 PRs × 4 = 40 → total 55
+        assert factors["blast_radius"] == 55.0
+
+    def test_blast_radius_capped_at_100(self):
+        """Many conflicts don't exceed 100."""
+        pr = PRInfo(
+            number=1, title="t", author="a", base_branch="main",
+            head_branch="b", head_sha="s",
+            created_at=datetime(2026, 1, 1), updated_at=datetime(2026, 1, 1),
+        )
+        conflicts = [
+            Conflict(
+                conflict_type=ConflictType.BEHAVIORAL,
+                severity=ConflictSeverity.WARNING,
+                source_pr=1, target_pr=i,
+                file_path="f.py", description="d", recommendation="r",
+            )
+            for i in range(2, 52)  # 50 distinct target PRs
+        ]
+        _, factors = compute_risk_score(
+            pr, conflicts, 5, 0.0, 0.0, MergeGuardConfig()
+        )
+        assert factors["blast_radius"] == 100.0

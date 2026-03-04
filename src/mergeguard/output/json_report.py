@@ -7,6 +7,7 @@ custom dashboards, and programmatic consumption.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from mergeguard.models import ConflictReport
@@ -42,12 +43,21 @@ def write_json_report(report: ConflictReport, output_path: str | Path) -> None:
 def write_github_action_outputs(report: ConflictReport) -> None:
     """Write report data as GitHub Actions outputs.
 
-    Creates files that GitHub Actions reads for step outputs:
-    - /tmp/mergeguard-score.txt
-    - /tmp/mergeguard-conflicts.txt
+    Uses GITHUB_OUTPUT env var when available (standard Actions mechanism),
+    falls back to /tmp files with restrictive permissions.
     """
-    Path("/tmp/mergeguard-score.txt").write_text(f"{report.risk_score:.0f}")
-    Path("/tmp/mergeguard-conflicts.txt").write_text(str(len(report.conflicts)))
+    output_file = os.environ.get("GITHUB_OUTPUT")
+    if output_file:
+        with open(output_file, "a") as f:
+            f.write(f"risk_score={report.risk_score:.0f}\n")
+            f.write(f"conflict_count={len(report.conflicts)}\n")
+    else:
+        for name, value in [("score", f"{report.risk_score:.0f}"),
+                            ("conflicts", str(len(report.conflicts)))]:
+            fd = os.open(f"/tmp/mergeguard-{name}.txt",
+                         os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as f:
+                f.write(value)
 
 
 def format_summary(report: ConflictReport) -> dict:

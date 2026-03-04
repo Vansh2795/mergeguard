@@ -47,11 +47,11 @@ Yes. Use the `ignored_paths` config to scope analysis to specific directories, a
 
 ### How long does analysis take?
 
-For a typical repository with 10 open PRs: ~15-30 seconds. Analysis time scales quadratically with the number of open PRs.
+For a single PR analysis against 30 open PRs: ~25-40 seconds. Parallel enrichment (8 workers) and content caching keep API calls to ~92 per analysis. For a full dashboard of 30 PRs, batch enrichment completes in ~5-10 minutes.
 
 ### Does MergeGuard hit GitHub API rate limits?
 
-A single analysis of 10 PRs uses ~43 API calls, well within the 5,000/hour limit for authenticated tokens.
+A single PR analysis uses ~92 API calls, well within the 5,000/hour limit for authenticated tokens. MergeGuard tracks `X-RateLimit-Remaining` headers and exposes a `rate_limit_remaining` property for monitoring.
 
 ## Troubleshooting
 

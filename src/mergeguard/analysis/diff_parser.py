@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
+
+MAX_DIFF_LINES = 50_000
 
 
 @dataclass
@@ -46,7 +51,7 @@ DIFF_HEADER = re.compile(r"^diff --git a/(.*) b/(.*)$")
 HUNK_HEADER = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
 
-def parse_unified_diff(diff_text: str) -> list[FileDiff]:
+def parse_unified_diff(diff_text: str, max_lines: int = MAX_DIFF_LINES) -> list[FileDiff]:
     """Parse a full unified diff into structured FileDiff objects.
 
     This handles the standard `git diff` output format, including
@@ -57,8 +62,13 @@ def parse_unified_diff(diff_text: str) -> list[FileDiff]:
     current_hunk: DiffHunk | None = None
     new_line_num = 0
     old_line_num = 0
+    lines_processed = 0
 
     for line in diff_text.split("\n"):
+        lines_processed += 1
+        if lines_processed > max_lines:
+            logger.warning("Diff truncated at %d lines", max_lines)
+            break
         # New file header
         header_match = DIFF_HEADER.match(line)
         if header_match:

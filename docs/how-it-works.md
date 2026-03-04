@@ -21,6 +21,8 @@ MergeGuard connects to the GitHub API and fetches:
 - Changed files for each PR (with unified diffs)
 - File contents at the base branch for AST parsing
 
+PR enrichment runs in **parallel** using a ThreadPoolExecutor (8 workers), and a **content cache** (`_content_cache`) avoids duplicate `get_file_content()` calls across analysis phases. Fork PRs are detected automatically — MergeGuard skips head content fetches for forks since the head repo may not be accessible.
+
 ### Step 2: Parse Diffs
 
 The unified diff parser (`diff_parser.py`) converts raw git diffs into structured data:
@@ -44,6 +46,20 @@ For each pair of open PRs (`conflict.py`):
 1. Compute file overlap (which PRs touch the same files)
 2. Compute symbol overlap (which PRs modify the same functions)
 3. Classify conflicts by type and severity
+
+### Step 4b: Conflict Intelligence
+
+After raw conflict detection, MergeGuard applies a severity intelligence pipeline to reduce noise and surface only actionable conflicts:
+
+- **Test file demotion**: Conflicts in test files are demoted (CRITICAL→WARNING, WARNING→INFO) since test conflicts rarely block merges.
+- **Comment-only change skipping**: When both sides only modify docstrings or comments, no behavioral conflict is reported — there's no risk of incompatible runtime behavior.
+- **Class-level demotion**: CLASS-level symbol conflicts are demoted to INFO. Method-level conflicts within those classes capture the real risk more precisely.
+- **Parent-class demotion**: When a method's parent class is also in the shared symbol set, the method conflict is demoted to INFO to avoid double-counting.
+- **Caller/callee behavioral conflicts**: Detects when one PR modifies a function (callee) and another PR modifies a caller of that function. If the callee's signature is stable, the conflict is demoted to INFO.
+- **PR-level duplication detection**: Compares PR titles/descriptions (Jaccard similarity) and file overlap percentages to flag potential duplicate PRs.
+- **Same-file same-name duplication skip**: Prevents double-counting when a behavioral conflict already exists between the same symbols.
+- **Both-sides-modify duplication skip**: Two PRs that both modify the same symbol body (`modified_body × modified_body`) are behavioral conflicts, not duplications.
+- **Truncated patch backfill**: When GitHub truncates patches (>300 lines), MergeGuard fetches the full diff to ensure complete analysis.
 
 ### Step 5: Risk Scoring
 

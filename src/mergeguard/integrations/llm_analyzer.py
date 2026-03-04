@@ -81,6 +81,9 @@ class LLMAnalyzer:
         except (json.JSONDecodeError, IndexError):
             return None
 
+        if not isinstance(result, dict):
+            return None
+
         if result.get("compatible", True):
             return None  # No conflict
 

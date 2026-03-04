@@ -26,18 +26,33 @@ def display_report(report: ConflictReport) -> None:
     console.print(f"\n[bold]MergeGuard Report \u2014 PR #{report.pr.number}[/bold]")
     console.print(f"Risk Score: {report.risk_score:.0f}/100\n")
 
-    for conflict in report.conflicts:
-        sev_color = {"critical": "red", "warning": "yellow", "info": "dim"}
-        color = sev_color.get(conflict.severity.value, "white")
-        console.print(
-            f"  [{color}]\u25cf {conflict.severity.value.upper()}[/{color}] "
-            f"{conflict.conflict_type.value} with #{conflict.target_pr}"
-        )
-        console.print(f"    File: {conflict.file_path}")
-        if conflict.symbol_name:
-            console.print(f"    Symbol: {conflict.symbol_name}")
-        console.print(f"    {conflict.description}")
-        console.print(f"    \U0001f4a1 {conflict.recommendation}\n")
+    from itertools import groupby
+    from operator import attrgetter
+
+    sorted_conflicts = sorted(report.conflicts, key=attrgetter("target_pr"))
+    for target_pr, conflicts_iter in groupby(sorted_conflicts, key=attrgetter("target_pr")):
+        conflicts_list = list(conflicts_iter)
+        if len(conflicts_list) > 4:
+            console.print(f"  [bold cyan]Conflicts with #{target_pr}[/bold cyan] ({len(conflicts_list)} conflicts)")
+        else:
+            console.print(f"  [bold cyan]Conflicts with #{target_pr}[/bold cyan]")
+        for conflict in conflicts_list:
+            sev_color = {"critical": "red", "warning": "yellow", "info": "dim"}
+            color = sev_color.get(conflict.severity.value, "white")
+            console.print(
+                f"    [{color}]\u25cf {conflict.severity.value.upper()}[/{color}] "
+                f"{conflict.conflict_type.value}"
+            )
+            console.print(f"      File: {conflict.file_path}")
+            if conflict.symbol_name:
+                console.print(f"      Symbol: {conflict.symbol_name}")
+            console.print(f"      {conflict.description}")
+            console.print(f"      \U0001f4a1 {conflict.recommendation}\n")
+
+    if report.pr.skipped_files:
+        console.print("[dim]Files skipped (no patch data):[/dim]")
+        for path in report.pr.skipped_files:
+            console.print(f"  [dim]- {path}[/dim]")
 
 
 def display_dashboard(reports: list[ConflictReport], repo_name: str) -> None:

@@ -6,8 +6,11 @@ blast radius and detect transitive conflicts.
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -70,24 +73,54 @@ class DependencyGraph:
         visited.discard(file_path)
         return visited
 
-    def dependency_depth(self, file_path: str) -> int:
-        """Compute how deep in the dependency graph this file sits.
+    def get_imported_names(self, source_file: str, target_file: str) -> list[str]:
+        """Get specific names that source_file imports from target_file."""
+        for edge in self.edges:
+            if edge.source_file == source_file and edge.target_file == target_file:
+                return edge.imported_names
+        return []
 
-        Returns the length of the longest reverse-dependency chain.
+    def dependency_depth(self, file_path: str) -> int:
+        """Compute the longest reverse-dependency chain depth.
+
+        Returns the longest chain length (e.g., A imports B imports C imports
+        target → depth 3), not the total number of dependents.
         """
-        dependents = self.get_dependents(file_path)
-        return len(dependents)
+        max_depth = 0
+        visited: set[str] = set()
+        queue: list[tuple[str, int]] = [(file_path, 0)]
+        while queue:
+            current, depth = queue.pop(0)
+            if current in visited:
+                continue
+            visited.add(current)
+            max_depth = max(max_depth, depth)
+            for dep in self._reverse.get(current, set()):
+                if dep not in visited:
+                    queue.append((dep, depth + 1))
+                elif dep == file_path:
+                    logger.debug(
+                        "Circular dependency detected: %s ↔ %s",
+                        file_path, current,
+                    )
+        return max_depth
 
 
 # ── Import extraction patterns ──
 
-PYTHON_IMPORT = re.compile(
-    r"^\s*(?:from\s+([\w.]+)\s+import|import\s+([\w.]+))", re.MULTILINE
+PYTHON_FROM_IMPORT = re.compile(
+    r"^\s*from\s+([\w.]+)\s+import\s+(.+?)(?:\s*#.*)?$", re.MULTILINE
 )
+PYTHON_IMPORT_MODULE = re.compile(r"^\s*import\s+([\w.]+)", re.MULTILINE)
+
 JS_IMPORT = re.compile(
     r"""(?:import\s+.*?\s+from\s+['"](.+?)['"]|require\s*\(\s*['"](.+?)['"]\s*\))""",
     re.MULTILINE,
 )
+JS_NAMED_IMPORT = re.compile(
+    r"""import\s+\{([^}]+)\}\s+from\s+['"](.+?)['"]""", re.MULTILINE
+)
+
 GO_IMPORT = re.compile(r'"([\w./]+)"')
 
 
@@ -98,32 +131,122 @@ def extract_imports(source_code: str, file_path: str) -> list[str]:
     Language is detected from the file extension.
     """
     if file_path.endswith(".py"):
-        return _extract_python_imports(source_code)
+        return [mod for mod, _names in _extract_python_imports(source_code)]
     elif file_path.endswith((".js", ".jsx", ".ts", ".tsx")):
-        return _extract_js_imports(source_code)
+        return [mod for mod, _names in _extract_js_imports(source_code)]
     elif file_path.endswith(".go"):
         return _extract_go_imports(source_code)
     return []
 
 
-def _extract_python_imports(source_code: str) -> list[str]:
-    """Extract Python import targets."""
-    imports: list[str] = []
-    for match in PYTHON_IMPORT.finditer(source_code):
-        module = match.group(1) or match.group(2)
-        if module:
-            imports.append(module)
+def extract_imports_with_names(
+    source_code: str, file_path: str,
+) -> list[tuple[str, list[str]]]:
+    """Extract import targets with specific imported names.
+
+    Returns list of (module, imported_names) tuples.
+    """
+    if file_path.endswith(".py"):
+        return _extract_python_imports(source_code)
+    elif file_path.endswith((".js", ".jsx", ".ts", ".tsx")):
+        return _extract_js_imports(source_code)
+    elif file_path.endswith(".go"):
+        return [(mod, []) for mod in _extract_go_imports(source_code)]
+    return []
+
+
+def _extract_python_imports(source_code: str) -> list[tuple[str, list[str]]]:
+    """Extract Python imports with specific imported names.
+
+    Returns list of (module, imported_names) tuples.
+    - ``from X import Y, Z`` → ("X", ["Y", "Z"])
+    - ``import X`` → ("X", [])
+    """
+    imports: list[tuple[str, list[str]]] = []
+    seen_from_modules: set[str] = set()
+
+    for match in PYTHON_FROM_IMPORT.finditer(source_code):
+        module = match.group(1)
+        names_str = match.group(2).strip()
+        # Skip multiline imports that start with '('
+        if names_str.startswith("("):
+            imports.append((module, []))
+            seen_from_modules.add(module)
+            continue
+        names = []
+        for name in names_str.split(","):
+            name = name.strip()
+            if not name:
+                continue
+            # Handle 'as' aliases: extract the original name
+            if " as " in name:
+                name = name.split(" as ")[0].strip()
+            names.append(name)
+        imports.append((module, names))
+        seen_from_modules.add(module)
+
+    for match in PYTHON_IMPORT_MODULE.finditer(source_code):
+        module = match.group(1)
+        if module not in seen_from_modules:
+            imports.append((module, []))
+
     return imports
 
 
-def _extract_js_imports(source_code: str) -> list[str]:
-    """Extract JavaScript/TypeScript import targets."""
-    imports: list[str] = []
+def _extract_js_imports(source_code: str) -> list[tuple[str, list[str]]]:
+    """Extract JavaScript/TypeScript imports with specific imported names.
+
+    Returns list of (module, imported_names) tuples.
+    - ``import { Y, Z } from 'X'`` → ("X", ["Y", "Z"])
+    - ``import X from 'X'`` → ("X", [])
+    """
+    imports: list[tuple[str, list[str]]] = []
+    seen_modules: set[str] = set()
+
+    # First pass: named imports with specific symbols
+    for match in JS_NAMED_IMPORT.finditer(source_code):
+        names_str = match.group(1)
+        module = match.group(2)
+        names = []
+        for name in names_str.split(","):
+            name = name.strip()
+            if not name:
+                continue
+            if " as " in name:
+                name = name.split(" as ")[0].strip()
+            names.append(name)
+        imports.append((module, names))
+        seen_modules.add(module)
+
+    # Second pass: other imports (default, require, etc.)
     for match in JS_IMPORT.finditer(source_code):
         module = match.group(1) or match.group(2)
-        if module:
-            imports.append(module)
+        if module and module not in seen_modules:
+            imports.append((module, []))
+            seen_modules.add(module)
+
     return imports
+
+
+def build_dependency_graph(
+    file_contents: list[tuple[str, str]],
+) -> DependencyGraph:
+    """Build a DependencyGraph from a list of (file_path, source_code) tuples.
+
+    For each file, extracts import targets and creates ImportEdge objects
+    mapping the source file to each imported module/file.
+    """
+    graph = DependencyGraph()
+    for file_path, source_code in file_contents:
+        imported_modules = extract_imports_with_names(source_code, file_path)
+        for target, names in imported_modules:
+            edge = ImportEdge(
+                source_file=file_path,
+                target_file=target,
+                imported_names=names,
+            )
+            graph.add_edge(edge)
+    return graph
 
 
 def _extract_go_imports(source_code: str) -> list[str]:

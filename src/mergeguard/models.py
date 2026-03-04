@@ -29,6 +29,7 @@ class ConflictType(str, Enum):
     DUPLICATION = "duplication"  # Same work done in two PRs
     TRANSITIVE = "transitive"  # Conflict through dependency chain
     REGRESSION = "regression"  # Reverts a recent deliberate change
+    GUARDRAIL = "guardrail"  # Rule violation from .mergeguard.yml
 
 
 class SymbolType(str, Enum):
@@ -110,6 +111,7 @@ class PRInfo(BaseModel):
     base_branch: str
     head_branch: str
     head_sha: str
+    is_fork: bool = False
     created_at: datetime
     updated_at: datetime
     labels: list[str] = Field(default_factory=list)
@@ -119,6 +121,7 @@ class PRInfo(BaseModel):
     changed_files: list[ChangedFile] = Field(default_factory=list)
     changed_symbols: list[ChangedSymbol] = Field(default_factory=list)
     ai_attribution: AIAttribution = AIAttribution.UNKNOWN
+    skipped_files: list[str] = Field(default_factory=list)
 
     @property
     def file_paths(self) -> set[str]:
@@ -232,7 +235,8 @@ class MergeGuardConfig(BaseModel):
 
     risk_threshold: int = 50  # Only comment if risk > threshold
     check_regressions: bool = True
-    max_open_prs: int = 30  # Performance limit
+    max_open_prs: int = 200  # Safety cap (not the primary filter)
+    max_pr_age_days: int = 30  # Only scan PRs updated within this many days
     decisions_log_depth: int = 50  # How many merged PRs to track
     llm_enabled: bool = False
     llm_model: str = "claude-sonnet-4-20250514"

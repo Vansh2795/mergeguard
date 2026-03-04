@@ -2,8 +2,22 @@
 
 from __future__ import annotations
 
-from mergeguard.analysis.ast_parser import detect_language, extract_symbols, map_diff_to_symbols
+from mergeguard.analysis.ast_parser import _safe_decode, detect_language, extract_call_graph, extract_symbols, map_diff_to_symbols
 from mergeguard.models import Symbol, SymbolType
+
+
+class TestSafeDecode:
+    def test_valid_utf8(self):
+        assert _safe_decode(b"hello world") == "hello world"
+
+    def test_invalid_utf8_replaced(self):
+        result = _safe_decode(b"hello \xff\xfe world")
+        assert "\ufffd" in result
+        assert "hello" in result
+        assert "world" in result
+
+    def test_empty_bytes(self):
+        assert _safe_decode(b"") == ""
 
 
 class TestDetectLanguage:
@@ -95,3 +109,84 @@ class TestMapDiffToSymbols:
         # Diff touches exactly the last line of the symbol
         affected = map_diff_to_symbols(symbols, [(20, 20)])
         assert len(affected) == 1
+
+
+class TestExtractCallGraph:
+    def test_direct_calls(self):
+        """foo() calls bar() and baz()."""
+        source = (
+            "def bar():\n"
+            "    pass\n"
+            "\n"
+            "def baz():\n"
+            "    pass\n"
+            "\n"
+            "def foo():\n"
+            "    bar()\n"
+            "    baz()\n"
+        )
+        graph = extract_call_graph(source, "test.py")
+        assert "foo" in graph
+        assert graph["foo"] == {"bar", "baz"}
+
+    def test_self_method_calls(self):
+        """self.helper() resolves to helper."""
+        source = (
+            "class MyClass:\n"
+            "    def helper(self):\n"
+            "        pass\n"
+            "\n"
+            "    def run(self):\n"
+            "        self.helper()\n"
+        )
+        graph = extract_call_graph(source, "test.py")
+        assert "run" in graph
+        assert "helper" in graph["run"]
+
+    def test_filters_external_calls(self):
+        """Calls to undefined names are excluded."""
+        source = (
+            "def foo():\n"
+            "    print('hello')\n"
+            "    os.path.join('a', 'b')\n"
+        )
+        graph = extract_call_graph(source, "test.py")
+        assert graph.get("foo", set()) == set()
+
+    def test_class_methods(self):
+        """Methods within a class have their own call sets."""
+        source = (
+            "class Processor:\n"
+            "    def validate(self):\n"
+            "        pass\n"
+            "\n"
+            "    def transform(self):\n"
+            "        self.validate()\n"
+            "\n"
+            "    def run(self):\n"
+            "        self.validate()\n"
+            "        self.transform()\n"
+        )
+        graph = extract_call_graph(source, "test.py")
+        assert "run" in graph
+        assert graph["run"] == {"validate", "transform"}
+        assert "transform" in graph
+        assert graph["transform"] == {"validate"}
+
+    def test_empty_file(self):
+        """No functions → empty dict."""
+        graph = extract_call_graph("", "test.py")
+        assert graph == {}
+
+    def test_no_calls(self):
+        """Functions that don't call anything → empty sets."""
+        source = (
+            "def foo():\n"
+            "    x = 1\n"
+            "\n"
+            "def bar():\n"
+            "    y = 2\n"
+        )
+        graph = extract_call_graph(source, "test.py")
+        assert graph.get("foo", set()) == set()
+        assert graph.get("bar", set()) == set()

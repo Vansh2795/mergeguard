@@ -2,23 +2,120 @@
 
 from __future__ import annotations
 
+import logging
+import re as _re
+
 import click
 from rich.console import Console
+from rich.logging import RichHandler
 from rich.table import Table
 
-console = Console()
+console = Console(stderr=True)
+
+_DEFAULT_BRANCHES = {"main", "master", "develop", "HEAD"}
+
+
+def _auto_detect_repo_and_pr(repo, pr, token):
+    """Auto-detect repo and PR from local git state.
+
+    Raises click.UsageError on failure.
+    """
+    if repo is not None and pr is not None:
+        return repo, pr
+
+    from mergeguard.integrations.git_local import GitLocalClient
+
+    try:
+        git_local = GitLocalClient()
+    except ValueError:
+        raise click.UsageError(
+            "Not in a git repository. Provide --repo and --pr explicitly."
+        )
+
+    if repo is None:
+        repo = git_local.get_repo_full_name()
+        if repo is None:
+            raise click.UsageError(
+                "Could not detect repo from git remote. Provide --repo explicitly."
+            )
+
+    if pr is None:
+        branch = git_local.get_current_branch()
+        if branch in _DEFAULT_BRANCHES:
+            raise click.UsageError(
+                f"Current branch is '{branch}'. Switch to a feature branch or provide --pr explicitly."
+            )
+        if token is None:
+            raise click.UsageError(
+                "A GitHub token is required to auto-detect the PR number. "
+                "Provide --token or set GITHUB_TOKEN."
+            )
+        from mergeguard.integrations.github_client import GitHubClient
+
+        open_prs = GitHubClient(token, repo).get_open_prs()
+        matching = [p for p in open_prs if p.head_branch == branch]
+        if not matching:
+            raise click.UsageError(
+                f"No open PR found for branch '{branch}'. Provide --pr explicitly."
+            )
+        if len(matching) > 1:
+            matching.sort(key=lambda p: p.updated_at, reverse=True)
+            console.print(
+                f"[yellow]Multiple PRs for branch '{branch}', using most recent: "
+                f"#{matching[0].number}[/yellow]"
+            )
+        pr = matching[0].number
+
+    return repo, pr
+
+
+def _auto_detect_repo(repo):
+    """Auto-detect repo from local git state (for commands that don't need a PR)."""
+    if repo is not None:
+        return repo
+
+    from mergeguard.integrations.git_local import GitLocalClient
+
+    try:
+        git_local = GitLocalClient()
+    except ValueError:
+        raise click.UsageError(
+            "Not in a git repository. Provide --repo explicitly."
+        )
+
+    repo = git_local.get_repo_full_name()
+    if repo is None:
+        raise click.UsageError(
+            "Could not detect repo from git remote. Provide --repo explicitly."
+        )
+    return repo
+
+
+def _validate_repo(ctx, param, value):
+    if value is not None and not _re.match(r'^[\w.-]+/[\w.-]+$', value):
+        raise click.BadParameter("Must be in 'owner/repo' format")
+    return value
 
 
 @click.group()
 @click.version_option()
-def main():
+@click.option("--verbose", "-v", is_flag=True, default=False, help="Enable debug logging.")
+@click.pass_context
+def main(ctx, verbose):
     """MergeGuard: Cross-PR intelligence for the agentic coding era."""
-    pass
+    ctx.ensure_object(dict)
+    level = logging.DEBUG if verbose else logging.WARNING
+    logging.basicConfig(
+        level=level,
+        format="%(message)s",
+        datefmt="[%X]",
+        handlers=[RichHandler(console=console, rich_tracebacks=True, show_path=False)],
+    )
 
 
 @main.command()
-@click.option("--repo", "-r", help="GitHub repo (owner/repo). Auto-detected from git remote.")
-@click.option("--pr", "-p", type=int, help="PR number to analyze. Defaults to current branch.")
+@click.option("--repo", "-r", callback=_validate_repo, help="GitHub repo (owner/repo). Auto-detected from git remote.")
+@click.option("--pr", "-p", type=click.IntRange(min=1), help="PR number to analyze. Defaults to current branch.")
 @click.option("--token", "-t", envvar="GITHUB_TOKEN", help="GitHub token.")
 @click.option("--config", "-c", default=".mergeguard.yml", help="Config file path.")
 @click.option(
@@ -33,14 +130,22 @@ def main():
     default=False,
     help="Post results as a GitHub PR comment.",
 )
-def analyze(repo, pr, token, config, output_format, llm, post_comment):
+@click.option("--max-prs", type=int, default=None, help="Max open PRs to scan (overrides config).")
+@click.option("--max-pr-age", type=int, default=None, help="Max PR age in days (overrides config).")
+def analyze(repo, pr, token, config, output_format, llm, post_comment, max_prs, max_pr_age):
     """Analyze a PR for cross-PR conflicts."""
+    repo, pr = _auto_detect_repo_and_pr(repo, pr, token)
+
     from mergeguard.config import load_config
     from mergeguard.core.engine import MergeGuardEngine
 
     cfg = load_config(config)
     if llm:
         cfg.llm_enabled = True
+    if max_prs is not None:
+        cfg.max_open_prs = max_prs
+    if max_pr_age is not None:
+        cfg.max_pr_age_days = max_pr_age
 
     with console.status("[bold blue]Analyzing cross-PR conflicts...", spinner="dots"):
         engine = MergeGuardEngine(
@@ -69,19 +174,41 @@ def analyze(repo, pr, token, config, output_format, llm, post_comment):
 
 
 @main.command()
-@click.option("--repo", "-r", help="GitHub repo (owner/repo).")
+@click.option("--repo", "-r", callback=_validate_repo, help="GitHub repo (owner/repo).")
 @click.option("--token", "-t", envvar="GITHUB_TOKEN")
-def map(repo, token):
+@click.option("--max-prs", type=int, default=None, help="Max open PRs to scan.")
+@click.option("--max-pr-age", type=int, default=None, help="Max PR age in days.")
+def map(repo, token, max_prs, max_pr_age):
     """Show the collision map of all open PRs."""
-    from mergeguard.core.conflict import compute_file_overlaps
+    repo = _auto_detect_repo(repo)
+
+    from collections import defaultdict
+    from concurrent.futures import ThreadPoolExecutor
+
     from mergeguard.integrations.github_client import GitHubClient
 
     client = GitHubClient(token, repo)
-    prs = client.get_open_prs()
+    prs = client.get_open_prs(max_count=max_prs or 200, max_age_days=max_pr_age or 30)
 
-    # Enrich with file data
-    for pr_info in prs:
+    # Enrich with file data (parallel)
+    def fetch_files(pr_info):
         pr_info.changed_files = client.get_pr_files(pr_info.number)
+
+    with ThreadPoolExecutor(max_workers=min(8, len(prs) or 1)) as executor:
+        list(executor.map(fetch_files, prs))
+
+    # Pre-compute all pairwise overlaps using a file→PR index
+    file_to_prs: dict[str, set[int]] = defaultdict(set)
+    for pr_info in prs:
+        for cf in pr_info.changed_files:
+            file_to_prs[cf.path].add(pr_info.number)
+
+    overlap_counts: dict[int, dict[int, int]] = defaultdict(lambda: defaultdict(int))
+    for path, pr_numbers in file_to_prs.items():
+        for a in pr_numbers:
+            for b in pr_numbers:
+                if a != b:
+                    overlap_counts[a][b] += 1
 
     table = Table(title=f"PR Collision Map \u2014 {repo}", show_lines=True)
     table.add_column("PR", style="bold cyan")
@@ -94,9 +221,8 @@ def map(repo, token):
             if i == j:
                 row.append("\u2014")
             else:
-                overlaps = compute_file_overlaps(pr_a, [pr_b])
-                if pr_b.number in overlaps:
-                    count = len(overlaps[pr_b.number])
+                count = overlap_counts[pr_a.number].get(pr_b.number, 0)
+                if count > 0:
                     row.append(f"[red]{count} file(s)[/red]")
                 else:
                     row.append("[green]\u2713[/green]")
@@ -106,14 +232,22 @@ def map(repo, token):
 
 
 @main.command()
-@click.option("--repo", "-r", help="GitHub repo (owner/repo).")
+@click.option("--repo", "-r", callback=_validate_repo, help="GitHub repo (owner/repo).")
 @click.option("--token", "-t", envvar="GITHUB_TOKEN")
-def dashboard(repo, token):
+@click.option("--max-prs", type=int, default=None, help="Max open PRs to scan (overrides config).")
+@click.option("--max-pr-age", type=int, default=None, help="Max PR age in days (overrides config).")
+def dashboard(repo, token, max_prs, max_pr_age):
     """Show risk scores for all open PRs."""
+    repo = _auto_detect_repo(repo)
+
     from mergeguard.config import load_config
     from mergeguard.core.engine import MergeGuardEngine
 
     cfg = load_config(".mergeguard.yml")
+    if max_prs is not None:
+        cfg.max_open_prs = max_prs
+    if max_pr_age is not None:
+        cfg.max_pr_age_days = max_pr_age
     engine = MergeGuardEngine(token=token, repo_full_name=repo, config=cfg)
 
     with console.status("[bold blue]Analyzing all open PRs...", spinner="dots"):
@@ -171,3 +305,8 @@ def _display_terminal(report):
             console.print(f"    Symbol: {conflict.symbol_name}")
         console.print(f"    {conflict.description}")
         console.print(f"    \U0001f4a1 {conflict.recommendation}\n")
+
+    if report.pr.skipped_files:
+        console.print("[dim]Files skipped (no patch data):[/dim]")
+        for path in report.pr.skipped_files:
+            console.print(f"  [dim]- {path}[/dim]")

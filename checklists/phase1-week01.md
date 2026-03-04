@@ -7,37 +7,37 @@
 ## Daily Tasks
 
 ### Day 1-2: Project Initialization
-- [ ] Initialize repo with uv: `uv init mergeguard --lib --python 3.12`
-- [ ] Set up src layout with all directories
-- [ ] Create pyproject.toml with all dependencies and tool configs
-- [ ] Set up CI (GitHub Actions for ruff, mypy, pytest on every push)
-- [ ] Write README skeleton with project vision
-- [ ] Create Pydantic data models (models.py)
-- [ ] Implement config.py — loads .mergeguard.yml with sensible defaults
+- [x] Initialize repo with uv: `uv init mergeguard --lib --python 3.12`
+- [x] Set up src layout with all directories
+- [x] Create pyproject.toml with all dependencies and tool configs
+- [x] Set up CI (GitHub Actions for ruff, mypy, pytest on every push)
+- [x] Write README skeleton with project vision
+- [x] Create Pydantic data models (models.py)
+- [x] Implement config.py — loads .mergeguard.yml with sensible defaults
 
 ### Day 3-4: GitHub Client
-- [ ] Implement `GitHubClient` class with PyGithub
-- [ ] `get_open_prs()` — fetch all open PRs with metadata
-- [ ] `get_pr_files()` — fetch changed files per PR
-- [ ] `get_pr_diff()` — fetch full unified diff
-- [ ] `get_file_content()` — fetch file at specific branch/commit
-- [ ] `post_pr_comment()` — post/update MergeGuard comments
-- [ ] `set_commit_status()` — set pass/warn/fail status
+- [x] Implement `GitHubClient` class with PyGithub
+- [x] `get_open_prs()` — fetch all open PRs with metadata
+- [x] `get_pr_files()` — fetch changed files per PR
+- [x] `get_pr_diff()` — fetch full unified diff
+- [x] `get_file_content()` — fetch file at specific branch/commit
+- [x] `post_pr_comment()` — post/update MergeGuard comments
+- [x] `set_commit_status()` — set pass/warn/fail status
 
 ### Day 5: Tests
-- [ ] Create mock API responses in tests/fixtures/api_responses/
-- [ ] Test get_open_prs, get_pr_files, get_pr_diff with mocked responses
-- [ ] Test error handling (rate limits, 404s, auth failures)
+- [x] Create mock API responses in tests/fixtures/api_responses/
+- [x] Test get_open_prs, get_pr_files, get_pr_diff with mocked responses
+- [x] Test error handling (rate limits, 404s, auth failures)
 
 ## Deliverables
-- [ ] Working GitHub client that can fetch real PR data
-- [ ] CI pipeline with lint + type check + test
-- [ ] All Pydantic models defined and validated
-- [ ] Config loader with sensible defaults
+- [x] Working GitHub client that can fetch real PR data
+- [x] CI pipeline with lint + type check + test
+- [x] All Pydantic models defined and validated
+- [x] Config loader with sensible defaults
 
 ## Acceptance Criteria
-- [ ] `mergeguard` package can be imported without errors
-- [ ] `GitHubClient` successfully fetches PRs from a test repository
-- [ ] All tests pass: `uv run pytest`
-- [ ] Lint clean: `uv run ruff check src/`
-- [ ] Type check clean: `uv run mypy src/`
+- [x] `mergeguard` package can be imported without errors
+- [x] `GitHubClient` successfully fetches PRs from a test repository
+- [x] All tests pass: `uv run pytest`
+- [x] Lint clean: `uv run ruff check src/`
+- [x] Type check clean: `uv run mypy src/`

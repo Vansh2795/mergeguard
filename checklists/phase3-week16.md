@@ -31,3 +31,5 @@
 - [ ] Trends show accurate historical data
 - [ ] Merge order reduces total conflicts when followed
 - [ ] Dashboard performs well with 30 open PRs
+
+> **Status:** Not started. Depends on Week 15 dashboard setup.

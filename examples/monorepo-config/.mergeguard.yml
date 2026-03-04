@@ -3,7 +3,8 @@
 
 risk_threshold: 40
 check_regressions: true
-max_open_prs: 50
+max_open_prs: 300
+max_pr_age_days: 30
 decisions_log_depth: 100
 
 # LLM analysis for better behavioral conflict detection

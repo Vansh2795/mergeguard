@@ -7,8 +7,11 @@ risk_threshold: 50
 # Enable regression detection against recently merged PRs
 check_regressions: true
 
-# Maximum number of open PRs to analyze (performance limit)
-max_open_prs: 30
+# Maximum number of open PRs to analyze (safety cap)
+max_open_prs: 200
+
+# Only scan PRs updated within this many days
+max_pr_age_days: 30
 
 # How many recently merged PRs to track for regression detection
 decisions_log_depth: 50

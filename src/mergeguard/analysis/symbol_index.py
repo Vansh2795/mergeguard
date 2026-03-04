@@ -6,7 +6,9 @@ redundant AST parsing across multiple PR comparisons.
 
 from __future__ import annotations
 
-from mergeguard.analysis.ast_parser import extract_symbols
+import threading
+
+from mergeguard.analysis.ast_parser import extract_symbols, extract_symbols_and_call_graph
 from mergeguard.models import Symbol
 
 
@@ -16,6 +18,8 @@ class SymbolIndex:
     def __init__(self) -> None:
         # Cache: (file_path, ref) -> list[Symbol]
         self._cache: dict[tuple[str, str], list[Symbol]] = {}
+        self._cg_cache: dict[tuple, dict[str, set[str]]] = {}
+        self._lock = threading.Lock()
 
     def get_symbols(
         self,
@@ -34,12 +38,32 @@ class SymbolIndex:
             List of Symbol objects extracted from the file.
         """
         cache_key = (file_path, ref)
-        if cache_key in self._cache:
+        with self._lock:
+            if cache_key in self._cache:
+                return self._cache[cache_key]
+        symbols = extract_symbols(source_code, file_path)
+        with self._lock:
+            if cache_key not in self._cache:
+                self._cache[cache_key] = symbols
             return self._cache[cache_key]
 
-        symbols = extract_symbols(source_code, file_path)
-        self._cache[cache_key] = symbols
-        return symbols
+    def get_symbols_and_call_graph(
+        self,
+        file_path: str,
+        source_code: str,
+        ref: str = "HEAD",
+    ) -> tuple[list[Symbol], dict[str, set[str]]]:
+        """Get symbols and call graph for a file, parsing source only once."""
+        cache_key = (file_path, ref)
+        call_graph_key = ("cg", file_path, ref)
+        with self._lock:
+            if cache_key in self._cache and call_graph_key in self._cg_cache:
+                return self._cache[cache_key], self._cg_cache[call_graph_key]
+        symbols, call_graph = extract_symbols_and_call_graph(source_code, file_path)
+        with self._lock:
+            self._cache.setdefault(cache_key, symbols)
+            self._cg_cache.setdefault(call_graph_key, call_graph)
+        return self._cache[cache_key], self._cg_cache[call_graph_key]
 
     def find_symbol(
         self,

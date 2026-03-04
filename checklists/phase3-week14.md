@@ -32,3 +32,5 @@
 - [ ] Forbidden imports detected accurately
 - [ ] Pattern violations reported with clear messages
 - [ ] Guardrails add < 5% to analysis time
+
+> **Note:** Basic guardrail rule parsing and size limit enforcement are complete (Week 13). Import dependency rules, pattern rules, and engine wiring remain to be implemented.

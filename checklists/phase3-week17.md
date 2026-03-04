@@ -6,10 +6,10 @@
 ## Daily Tasks
 
 ### Day 1-2: MCP Server Setup
-- [ ] Set up MCP server framework
+- [x] Set up MCP server framework
 - [ ] Implement `check_conflicts` tool
-- [ ] Define input/output schemas
-- [ ] Handle authentication (GitHub token passing)
+- [x] Define input/output schemas
+- [x] Handle authentication (GitHub token passing)
 
 ### Day 3-4: Risk Score Tool
 - [ ] Implement `get_risk_score` tool
@@ -29,3 +29,5 @@
 - [ ] AI agents can check conflicts before opening PRs
 - [ ] Risk scores returned within 5 seconds
 - [ ] Clean error handling for invalid inputs
+
+> **Note:** `mcp/server.py` exists with `create_mcp_server()` but all tools currently return `"not_implemented"`. Framework is in place, tool logic needs to be connected.

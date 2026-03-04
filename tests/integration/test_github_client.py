@@ -1,7 +1,7 @@
 """Integration tests for GitHub client with mocked API."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -70,6 +70,51 @@ class TestGitHubClientIntegration:
         mock_repo.get_pulls.assert_called_once_with(
             state="open", sort="updated", direction="desc"
         )
+
+    @patch("mergeguard.integrations.github_client.httpx.Client")
+    @patch("mergeguard.integrations.github_client.Github")
+    def test_get_open_prs_age_cutoff(self, MockGithub, MockHttpClient):
+        """PRs older than max_age_days should be excluded."""
+        mock_repo = MagicMock()
+        MockGithub.return_value.get_repo.return_value = mock_repo
+
+        now = datetime.now(timezone.utc)
+        mock_pr1 = _make_mock_pr(number=1, title="Recent", updated_at=now - timedelta(days=1))
+        mock_pr2 = _make_mock_pr(number=2, title="Within range", updated_at=now - timedelta(days=5))
+        mock_pr3 = _make_mock_pr(number=3, title="Too old", updated_at=now - timedelta(days=14))
+        # PyGithub returns naive UTC datetimes
+        mock_pr1.updated_at = (now - timedelta(days=1)).replace(tzinfo=None)
+        mock_pr2.updated_at = (now - timedelta(days=5)).replace(tzinfo=None)
+        mock_pr3.updated_at = (now - timedelta(days=14)).replace(tzinfo=None)
+        mock_repo.get_pulls.return_value = [mock_pr1, mock_pr2, mock_pr3]
+
+        client = GitHubClient("fake-token", "owner/repo")
+        prs = client.get_open_prs(max_count=100, max_age_days=7)
+
+        assert len(prs) == 2
+        assert prs[0].number == 1
+        assert prs[1].number == 2
+
+    @patch("mergeguard.integrations.github_client.httpx.Client")
+    @patch("mergeguard.integrations.github_client.Github")
+    def test_get_open_prs_max_count_caps_before_age(self, MockGithub, MockHttpClient):
+        """max_count should cap results even when all PRs are within age range."""
+        mock_repo = MagicMock()
+        MockGithub.return_value.get_repo.return_value = mock_repo
+
+        now = datetime.now(timezone.utc)
+        mock_prs = []
+        for i in range(5):
+            pr = _make_mock_pr(number=i + 1, title=f"PR {i + 1}")
+            pr.updated_at = (now - timedelta(days=i)).replace(tzinfo=None)
+            mock_prs.append(pr)
+        mock_repo.get_pulls.return_value = mock_prs
+
+        client = GitHubClient("fake-token", "owner/repo")
+        prs = client.get_open_prs(max_count=3, max_age_days=30)
+
+        assert len(prs) == 3
+        assert [p.number for p in prs] == [1, 2, 3]
 
     @patch("mergeguard.integrations.github_client.httpx.Client")
     @patch("mergeguard.integrations.github_client.Github")
@@ -152,6 +197,102 @@ class TestGitHubClientIntegration:
 
         existing_comment.edit.assert_called_once()
         mock_pr.create_issue_comment.assert_not_called()
+
+    @patch("mergeguard.integrations.github_client.httpx.Client")
+    @patch("mergeguard.integrations.github_client.Github")
+    def test_get_file_content_returns_none_on_404(self, MockGithub, MockHttpClient):
+        """UnknownObjectException (404) should return None."""
+        from github import UnknownObjectException
+
+        mock_repo = MagicMock()
+        MockGithub.return_value.get_repo.return_value = mock_repo
+        mock_repo.get_contents.side_effect = UnknownObjectException(
+            404, {"message": "Not Found"}, None
+        )
+
+        client = GitHubClient("fake-token", "owner/repo")
+        result = client.get_file_content("nonexistent.py", "main")
+        assert result is None
+
+    @patch("mergeguard.integrations.github_client.httpx.Client")
+    @patch("mergeguard.integrations.github_client.Github")
+    def test_get_file_content_propagates_auth_error(self, MockGithub, MockHttpClient):
+        """BadCredentialsException (401) should propagate, not be swallowed."""
+        from github import BadCredentialsException
+
+        mock_repo = MagicMock()
+        MockGithub.return_value.get_repo.return_value = mock_repo
+        mock_repo.get_contents.side_effect = BadCredentialsException(
+            401, {"message": "Bad credentials"}, None
+        )
+
+        client = GitHubClient("fake-token", "owner/repo")
+        try:
+            client.get_file_content("file.py", "main")
+            assert False, "Should have raised BadCredentialsException"
+        except BadCredentialsException as e:
+            assert e.status == 401
+
+    @patch("mergeguard.integrations.github_client.httpx.Client")
+    @patch("mergeguard.integrations.github_client.Github")
+    def test_rate_limit_remaining_property(self, MockGithub, MockHttpClient):
+        """rate_limit_remaining property should return core remaining count."""
+        mock_repo = MagicMock()
+        MockGithub.return_value.get_repo.return_value = mock_repo
+
+        mock_rate_limit = MagicMock()
+        mock_rate_limit.rate.remaining = 4500
+        MockGithub.return_value.get_rate_limit.return_value = mock_rate_limit
+
+        client = GitHubClient("fake-token", "owner/repo")
+        assert client.rate_limit_remaining == 4500
+
+    @patch("mergeguard.integrations.github_client.httpx.Client")
+    @patch("mergeguard.integrations.github_client.Github")
+    def test_pr_to_info_detects_fork(self, MockGithub, MockHttpClient):
+        """PR from a different repo should be detected as a fork."""
+        mock_repo = MagicMock()
+        MockGithub.return_value.get_repo.return_value = mock_repo
+
+        mock_pr = _make_mock_pr(number=10)
+        mock_pr.head.repo.full_name = "contributor/repo"
+        mock_pr.base.repo.full_name = "owner/repo"
+
+        client = GitHubClient("fake-token", "owner/repo")
+        pr_info = client._pr_to_info(mock_pr)
+
+        assert pr_info.is_fork is True
+
+    @patch("mergeguard.integrations.github_client.httpx.Client")
+    @patch("mergeguard.integrations.github_client.Github")
+    def test_pr_to_info_non_fork(self, MockGithub, MockHttpClient):
+        """PR from the same repo should not be detected as a fork."""
+        mock_repo = MagicMock()
+        MockGithub.return_value.get_repo.return_value = mock_repo
+
+        mock_pr = _make_mock_pr(number=11)
+        mock_pr.head.repo.full_name = "owner/repo"
+        mock_pr.base.repo.full_name = "owner/repo"
+
+        client = GitHubClient("fake-token", "owner/repo")
+        pr_info = client._pr_to_info(mock_pr)
+
+        assert pr_info.is_fork is False
+
+    @patch("mergeguard.integrations.github_client.httpx.Client")
+    @patch("mergeguard.integrations.github_client.Github")
+    def test_pr_to_info_deleted_fork(self, MockGithub, MockHttpClient):
+        """PR whose head repo is None (deleted fork) should be detected as a fork."""
+        mock_repo = MagicMock()
+        MockGithub.return_value.get_repo.return_value = mock_repo
+
+        mock_pr = _make_mock_pr(number=12)
+        mock_pr.head.repo = None
+
+        client = GitHubClient("fake-token", "owner/repo")
+        pr_info = client._pr_to_info(mock_pr)
+
+        assert pr_info.is_fork is True
 
     @patch("mergeguard.integrations.github_client.httpx.Client")
     @patch("mergeguard.integrations.github_client.Github")

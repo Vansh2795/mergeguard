@@ -30,3 +30,5 @@
 - [ ] All 3 MCP tools working reliably
 - [ ] Responds within 10 seconds for typical queries
 - [ ] Works with Claude Desktop and other MCP clients
+
+> **Status:** Not started. Depends on Week 17 MCP tool implementation.

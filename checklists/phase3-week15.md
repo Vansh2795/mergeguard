@@ -32,3 +32,5 @@
 - [ ] Graph renders correctly for 10+ PRs
 - [ ] Colors accurately reflect risk scores
 - [ ] Dashboard loads within 3 seconds
+
+> **Status:** Not started.

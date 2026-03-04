@@ -6,29 +6,29 @@
 ## Daily Tasks
 
 ### Day 1-2: Pattern Deviation Score
-- [ ] Implement AST comparison for coding pattern consistency
-- [ ] Compare symbol signatures against module averages
-- [ ] Detect unusual patterns (very long functions, deep nesting)
-- [ ] Normalize to 0-1 scale
+- [x] Implement AST comparison for coding pattern consistency
+- [x] Compare symbol signatures against module averages
+- [x] Detect unusual patterns (very long functions, deep nesting)
+- [x] Normalize to 0-1 scale
 
 ### Day 3-4: Churn Risk + Composite Score
-- [ ] Implement churn risk from git history (revert/hotfix rate)
-- [ ] Combine all 5 factors with configured weights
-- [ ] Implement `compute_risk_score()` returning (score, breakdown)
-- [ ] Ensure score is clamped to 0-100
+- [x] Implement churn risk from git history (revert/hotfix rate)
+- [x] Combine all 5 factors with configured weights
+- [x] Implement `compute_risk_score()` returning (score, breakdown)
+- [x] Ensure score is clamped to 0-100
 
 ### Day 5: Testing + Tuning
-- [ ] Test with realistic scenarios (high/medium/low risk)
-- [ ] Verify weight contributions match expectations
-- [ ] Tune default weights based on test results
-- [ ] Write comprehensive tests for edge cases
+- [x] Test with realistic scenarios (high/medium/low risk)
+- [x] Verify weight contributions match expectations
+- [x] Tune default weights based on test results
+- [x] Write comprehensive tests for edge cases
 
 ## Deliverables
-- [ ] Complete risk scoring with all 5 factors
-- [ ] Transparent breakdown dict for each factor
-- [ ] Tuned default weights
+- [x] Complete risk scoring with all 5 factors
+- [x] Transparent breakdown dict for each factor
+- [x] Tuned default weights
 
 ## Acceptance Criteria
-- [ ] Zero-risk PR (no conflicts, no dependencies) scores 0
-- [ ] High-risk PR (critical conflict, deep deps, AI) scores > 70
-- [ ] Risk breakdown shows individual factor contributions
+- [x] Zero-risk PR (no conflicts, no dependencies) scores 0
+- [x] High-risk PR (critical conflict, deep deps, AI) scores > 70
+- [x] Risk breakdown shows individual factor contributions

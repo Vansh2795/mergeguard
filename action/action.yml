@@ -13,8 +13,11 @@ inputs:
     description: "Only comment if risk score exceeds this value (0-100)"
     default: "0"
   max-open-prs:
-    description: "Maximum number of open PRs to analyze"
-    default: "20"
+    description: "Maximum number of open PRs to analyze (safety cap)"
+    default: "200"
+  max-pr-age:
+    description: "Only scan PRs updated within this many days"
+    default: "30"
   config-path:
     description: "Path to .mergeguard.yml config file"
     default: ".mergeguard.yml"
@@ -35,6 +38,7 @@ runs:
     ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
     MERGEGUARD_RISK_THRESHOLD: ${{ inputs.risk-threshold }}
     MERGEGUARD_MAX_OPEN_PRS: ${{ inputs.max-open-prs }}
+    MERGEGUARD_MAX_PR_AGE_DAYS: ${{ inputs.max-pr-age }}
     MERGEGUARD_CONFIG_PATH: ${{ inputs.config-path }}
 
 branding:

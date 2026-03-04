@@ -49,21 +49,21 @@ def _check_rule(pr: PRInfo, rule: GuardrailRule) -> list[Conflict]:
     """Check a single guardrail rule against a PR."""
     violations: list[Conflict] = []
 
-    # Check file-scoped rules
+    # Check file-scoped rules — use only files matching the rule pattern
     matching_files = _get_matching_files(pr, rule.pattern)
 
-    # Check size limits
+    # Check size limits against matching files only
     if rule.max_files_changed is not None:
-        if len(pr.changed_files) > rule.max_files_changed:
+        if len(matching_files) > rule.max_files_changed:
             violations.append(
                 Conflict(
-                    conflict_type=ConflictType.REGRESSION,
+                    conflict_type=ConflictType.GUARDRAIL,
                     severity=ConflictSeverity.WARNING,
                     source_pr=pr.number,
                     target_pr=pr.number,
                     file_path="<repo>",
                     description=(
-                        f"PR changes {len(pr.changed_files)} files, "
+                        f"PR changes {len(matching_files)} matching files, "
                         f"exceeding the limit of {rule.max_files_changed}. "
                         f"Rule: {rule.name}"
                     ),
@@ -72,19 +72,21 @@ def _check_rule(pr: PRInfo, rule: GuardrailRule) -> list[Conflict]:
             )
 
     if rule.max_lines_changed is not None:
+        matching_paths = set(matching_files)
+        matching_cfs = [f for f in pr.changed_files if f.path in matching_paths]
         total_lines = sum(
-            f.additions + f.deletions for f in pr.changed_files
+            f.additions + f.deletions for f in matching_cfs
         )
         if total_lines > rule.max_lines_changed:
             violations.append(
                 Conflict(
-                    conflict_type=ConflictType.REGRESSION,
+                    conflict_type=ConflictType.GUARDRAIL,
                     severity=ConflictSeverity.WARNING,
                     source_pr=pr.number,
                     target_pr=pr.number,
                     file_path="<repo>",
                     description=(
-                        f"PR changes {total_lines} lines, "
+                        f"PR changes {total_lines} lines in matching files, "
                         f"exceeding the limit of {rule.max_lines_changed}. "
                         f"Rule: {rule.name}"
                     ),

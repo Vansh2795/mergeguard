@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 from datetime import datetime
 
@@ -10,6 +12,28 @@ from mergeguard.models import (
     ConflictSeverity, ConflictType, SymbolType, FileChangeStatus,
     AIAttribution, MergeGuardConfig, Decision, DecisionType, DecisionsEntry,
 )
+
+
+@pytest.fixture(autouse=True)
+def _no_filesystem_side_effects():
+    """Prevent AnalysisCache and DecisionsLog from writing to disk during tests.
+
+    Tests that specifically need to control cache/log behavior should
+    patch these at 'mergeguard.core.engine.AnalysisCache' etc. explicitly —
+    the explicit patch takes precedence over this autouse fixture.
+    """
+    mock_cache = MagicMock()
+    mock_cache.get.return_value = None  # Always cache-miss
+    mock_cache.make_key.return_value = "test-key"
+
+    mock_log = MagicMock()
+    mock_log.find_regressions.return_value = []
+
+    with (
+        patch("mergeguard.core.engine.AnalysisCache", return_value=mock_cache),
+        patch("mergeguard.core.engine.DecisionsLog", return_value=mock_log),
+    ):
+        yield
 
 
 @pytest.fixture

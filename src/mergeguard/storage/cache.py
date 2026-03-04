@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 
 
@@ -20,6 +21,8 @@ class AnalysisCache:
 
     def __init__(self, cache_dir: str | Path = ".mergeguard-cache"):
         self._cache_dir = Path(cache_dir)
+        if self._cache_dir.exists() and self._cache_dir.is_symlink():
+            raise ValueError(f"Cache directory is a symlink: {self._cache_dir}")
         self._cache_dir.mkdir(parents=True, exist_ok=True)
 
     def get(self, key: str) -> dict | None:
@@ -32,15 +35,24 @@ class AnalysisCache:
             return None
         try:
             with open(path) as f:
-                return json.load(f)
+                data = json.load(f)
+            if not isinstance(data, dict):
+                return None
+            return data
         except (json.JSONDecodeError, OSError):
             return None
 
     def set(self, key: str, value: dict) -> None:
         """Store a value in the cache."""
         path = self._key_to_path(key)
-        with open(path, "w") as f:
-            json.dump(value, f)
+        tmp_path = path.with_suffix(".tmp")
+        try:
+            with open(tmp_path, "w") as f:
+                json.dump(value, f)
+            os.replace(tmp_path, path)
+        except Exception:
+            tmp_path.unlink(missing_ok=True)
+            raise
 
     def invalidate(self, key: str) -> None:
         """Remove a cached value."""

@@ -15,14 +15,15 @@ src/mergeguard/
 │   ├── conflict.py    # Conflict detection algorithm
 │   ├── risk_scorer.py # Risk score computation
 │   ├── regression.py  # Regression detection
-│   └── guardrails.py  # Rule enforcement (V2)
+│   └── guardrails.py  # Rule enforcement
 ├── analysis/          # Code analysis modules
 │   ├── ast_parser.py  # Tree-sitter AST extraction
 │   ├── symbol_index.py # Symbol caching
 │   ├── dependency.py  # Import graph builder
 │   ├── diff_parser.py # Unified diff parser
 │   ├── attribution.py # AI code detection
-│   └── similarity.py  # Duplication detection
+│   ├── similarity.py  # Duplication detection
+│   └── patch_backfill.py # Truncated patch recovery
 ├── integrations/      # External services
 │   ├── github_client.py
 │   ├── gitlab_client.py (V2)
@@ -48,7 +49,7 @@ src/mergeguard/
 
 3. **Pluggable VCS backends**: The GitHub client can be swapped for GitLab or local git operations.
 
-4. **Cache-friendly**: Every analysis step can be cached by (file_path, ref) to avoid redundant work.
+4. **Cache-friendly**: Every analysis step can be cached by (file_path, ref) to avoid redundant work. The engine maintains a `_content_cache` dict keyed by `(path, ref)` that eliminates duplicate `get_file_content()` calls across enrichment, dependency, and pattern analysis phases.
 
 5. **Tree-sitter for AST parsing**: Supports 165+ languages with pre-compiled wheels (no C compiler needed).
 
@@ -71,6 +72,9 @@ O(n*m) comparison where n = files in target PR, m = files in other PRs. Uses set
 
 ### Symbol-Level Conflict Detection
 Maps diff line ranges to AST symbol boundaries. A "hard conflict" occurs when two PRs modify lines within the same symbol's range.
+
+### Parallel PR Enrichment
+PR data enrichment (fetching files, parsing diffs, extracting symbols) runs in parallel using a ThreadPoolExecutor with 8 workers. Combined with the content cache, this reduces single-PR analysis from ~120-300s to ~25-40s.
 
 ### Composite Risk Scoring
 Weighted sum of 5 factors (conflict severity, blast radius, pattern deviation, churn risk, AI attribution), each normalized to 0-100.

@@ -32,3 +32,5 @@
 - [ ] GitLab MRs analyzed with same accuracy as GitHub PRs
 - [ ] Existing GitHub tests unaffected by refactoring
 - [ ] CLI auto-detects platform from remote URL
+
+> **Note:** `gitlab_client.py` exists as a stub class that raises `NotImplementedError`. No actual implementation yet.

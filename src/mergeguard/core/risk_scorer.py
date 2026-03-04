@@ -19,6 +19,18 @@ DEFAULT_WEIGHTS = {
     "ai_attribution": 0.10,
 }
 
+# ── Scoring constants ──
+DEPENDENCY_DEPTH_MULTIPLIER = 15.0   # Points per dependency level
+CONFLICTING_PR_MULTIPLIER = 4.0      # Points per conflicting PR
+AI_CONFIRMED_PENALTY = 40.0          # Score penalty for confirmed AI PRs
+AI_SUSPECTED_PENALTY = 20.0          # Score penalty for suspected AI PRs
+CRITICAL_SEVERITY_SCORE = 100.0
+WARNING_SEVERITY_SCORE = 50.0
+INFO_SEVERITY_SCORE = 15.0
+DIMINISHING_RETURN_BASE = 0.5        # Exponent base for diminishing returns
+CONCENTRATION_FLOOR = 0.6            # Min discount for concentrated criticals
+CONCENTRATION_VARIABLE = 0.4         # Variable portion of concentration discount
+
 
 def compute_risk_score(
     pr: PRInfo,
@@ -41,7 +53,10 @@ def compute_risk_score(
 
     # 2. Blast radius (0-100)
     # Based on how many downstream files/modules depend on changed code
-    blast_score = min(100.0, dependency_depth * 15.0)  # Each dependency level = 15 points
+    blast_score = min(100.0, dependency_depth * DEPENDENCY_DEPTH_MULTIPLIER)
+    # Boost: number of conflicting PRs signals high-traffic code
+    num_conflicting = len({c.target_pr for c in conflicts})
+    blast_score = min(100.0, blast_score + num_conflicting * CONFLICTING_PR_MULTIPLIER)
     factors["blast_radius"] = blast_score
 
     # 3. Pattern deviation (0-100)
@@ -56,9 +71,9 @@ def compute_risk_score(
     # AI-generated PRs get a modest penalty because data shows higher bug rates
     ai_score = 0.0
     if pr.ai_attribution == AIAttribution.AI_CONFIRMED:
-        ai_score = 40.0  # Confirmed AI: moderate penalty
+        ai_score = AI_CONFIRMED_PENALTY
     elif pr.ai_attribution == AIAttribution.AI_SUSPECTED:
-        ai_score = 20.0  # Suspected AI: mild penalty
+        ai_score = AI_SUSPECTED_PENALTY
     factors["ai_attribution"] = ai_score
 
     # Weighted sum
@@ -73,9 +88,9 @@ def _score_conflicts(conflicts: list[Conflict]) -> float:
     if not conflicts:
         return 0.0
     severity_scores = {
-        ConflictSeverity.CRITICAL: 100.0,
-        ConflictSeverity.WARNING: 50.0,
-        ConflictSeverity.INFO: 15.0,
+        ConflictSeverity.CRITICAL: CRITICAL_SEVERITY_SCORE,
+        ConflictSeverity.WARNING: WARNING_SEVERITY_SCORE,
+        ConflictSeverity.INFO: INFO_SEVERITY_SCORE,
     }
     # Take the max severity, plus a diminishing contribution from others
     scores = sorted(
@@ -84,5 +99,16 @@ def _score_conflicts(conflicts: list[Conflict]) -> float:
     )
     total = scores[0]
     for i, s in enumerate(scores[1:], start=1):
-        total += s * (0.5**i)  # Diminishing returns
-    return min(100.0, total)
+        total += s * (DIMINISHING_RETURN_BASE**i)
+    base_score = min(100.0, total)
+
+    # Concentration discount: multiple CRITICALs from fewer PRs → lower effective risk
+    critical_conflicts = [c for c in conflicts if c.severity == ConflictSeverity.CRITICAL]
+    if critical_conflicts:
+        unique_prs = len({c.target_pr for c in critical_conflicts})
+        n = len(critical_conflicts)
+        if n > unique_prs:
+            discount = CONCENTRATION_FLOOR + CONCENTRATION_VARIABLE * (unique_prs / n)
+            base_score *= discount
+
+    return min(100.0, base_score)
