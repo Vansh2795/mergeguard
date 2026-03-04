@@ -1,0 +1,251 @@
+[14:16:43] WARNING  Skipping                                                    
+                    docs/ref/contrib/admin/_images/adding-actions-to-the-modelad
+                    min-detail-view.png (no patch after backfill)               
+[14:17:13] WARNING  Skipping                                                    
+                    tests/migrations/migrations_test_apps/unmanaged_model_with_f
+                    k/migrations/__init__.py (no patch after backfill)          
+{
+  "pr": {
+    "number": 20826,
+    "title": "Fixed #22536 -- Fixed AttributeError in date-based generic views with MySQL invalid dates and USE_TZ=True",
+    "author": "JohananOppongAmoateng",
+    "base_branch": "main",
+    "head_branch": "date-geneeric-views-nullable",
+    "head_sha": "4eecf2cdff2ad9c5415d956508f27cd52e51ebf4",
+    "is_fork": true,
+    "created_at": "2026-03-03T22:25:13Z",
+    "updated_at": "2026-03-03T22:52:49Z",
+    "labels": [],
+    "description": "   date fields.\r\n\r\n#### Trac ticket number\r\nticket-#22536\r\n\r\n#### Branch description\r\nDate-based generic views can raise an AttributeError when used with MySQL, USE_TZ=True, and rows containing invalid date values such as 0000-00-00. MySQL allows these invalid dates, and Django’s ORM converts them to None. The view logic assumes a valid datetime and attempts timezone conversion, resulting in a crash ('NoneType' object has no attribute 'astimezone').\r\n\r\nThis change adds a defensive check to gracefully handle None date values and prevent the exception.\r\n\r\n#### AI Assistance Disclosure (REQUIRED)\r\n<!-- Please select exactly ONE of the following: -->\r\n- [x] **No AI tools were used** in preparing this PR.\r\n- [ ] **If AI tools were used**, I have disclosed which ones, and fully reviewed and verified their output.\r\n\r\n#### Checklist\r\n- [x] This PR follows the [contribution guidelines](https://docs.djangoproject.com/en/stable/internals/contributing/writing-code/submitting-patches/).\r\n- [x] This PR **does not** disclose a security vulnerability (see [vulnerability reporting](https://docs.djangoproject.com/en/stable/internals/security/)).\r\n- [x] This PR targets the `main` branch. <!-- Backports will be evaluated and done by mergers, when necessary. -->\r\n- [x] The commit message is written in past tense, mentions the ticket number, and ends with a period.\r\n- [x] I have checked the \"Has patch\" ticket flag in the Trac system.\r\n- [x] I have added or updated relevant tests.\r\n- [ ] I have added or updated relevant docs, including release notes if applicable.\r\n- [ ] I have attached screenshots in both light and dark modes for any UI changes.\r\n",
+    "changed_files": [
+      {
+        "path": "django/views/generic/dates.py",
+        "status": "modified",
+        "additions": 5,
+        "deletions": 0,
+        "patch": "@@ -802,6 +802,11 @@ def _get_next_prev(generic_view, date, is_previous, period):\n         # means there's no next/previous link available.\n         try:\n             result = getattr(qs[0], date_field)\n+            # If result is None (e.g. from invalid dates like MySQL's\n+            # 0000-00-00 being converted to None by the ORM), there's\n+            # no valid date to return.\n+            if result is None:\n+                return None\n         except IndexError:\n             return None\n ",
+        "previous_path": null
+      },
+      {
+        "path": "tests/generic_views/models.py",
+        "status": "modified",
+        "additions": 1,
+        "deletions": 1,
+        "patch": "@@ -43,7 +43,7 @@ class Book(models.Model):\n     slug = models.SlugField()\n     pages = models.IntegerField()\n     authors = models.ManyToManyField(Author)\n-    pubdate = models.DateField()\n+    pubdate = models.DateField(null=True)\n \n     objects = models.Manager()\n     does_not_exist = DoesNotExistBookManager()",
+        "previous_path": null
+      },
+      {
+        "path": "tests/generic_views/test_dates.py",
+        "status": "modified",
+        "additions": 12,
+        "deletions": 0,
+        "patch": "@@ -816,6 +816,18 @@ def test_aware_datetime_day_view(self):\n         res = self.client.get(\"/dates/booksignings/2008/apr/2/\")\n         self.assertEqual(res.status_code, 404)\n \n+    def test_day_view_null_date_field(self):\n+        \"\"\"\n+        If the date field value is None (e.g. from MySQL's 0000-00-00 converted\n+        to None by the ORM), the view returns None for next/previous day\n+        instead of raising AttributeError (#22536).\n+        \"\"\"\n+        Book.objects.create(name=\"Nulldate\", slug=\"nulldate\", pages=1, pubdate=None)\n+        res = self.client.get(\"/dates/books/2008/oct/01/\")\n+        self.assertEqual(res.status_code, 200)\n+        self.assertIsNone(res.context[\"next_day\"])\n+        self.assertEqual(res.context[\"previous_day\"], datetime.date(2006, 5, 1))\n+\n \n @override_settings(ROOT_URLCONF=\"generic_views.urls\")\n class DateDetailViewTests(TestDataMixin, TestCase):",
+        "previous_path": null
+      }
+    ],
+    "changed_symbols": [
+      {
+        "symbol": {
+          "name": "_get_next_prev",
+          "symbol_type": "function",
+          "file_path": "django/views/generic/dates.py",
+          "start_line": 728,
+          "end_line": 815,
+          "signature": "def _get_next_prev(generic_view, date, is_previous, period):",
+          "parent": null,
+          "dependencies": [
+            "timezone_today",
+            "_make_date_lookup_arg",
+            "get_date_field",
+            "get_allow_future"
+          ]
+        },
+        "change_type": "modified_body",
+        "diff_lines": [
+          805,
+          809
+        ],
+        "raw_diff": "+            # If result is None (e.g. from invalid dates like MySQL's\n+            # 0000-00-00 being converted to None by the ORM), there's\n+            # no valid date to return.\n+            if result is None:\n+                return None"
+      },
+      {
+        "symbol": {
+          "name": "Book",
+          "symbol_type": "class",
+          "file_path": "tests/generic_views/models.py",
+          "start_line": 41,
+          "end_line": 55,
+          "signature": "class Book(models.Model):",
+          "parent": null,
+          "dependencies": []
+        },
+        "change_type": "modified_body",
+        "diff_lines": [
+          46,
+          46
+        ],
+        "raw_diff": "+    pubdate = models.DateField(null=True)\n-    pubdate = models.DateField()"
+      },
+      {
+        "symbol": {
+          "name": "DateDetailViewTests",
+          "symbol_type": "class",
+          "file_path": "tests/generic_views/test_dates.py",
+          "start_line": 821,
+          "end_line": 920,
+          "signature": "class DateDetailViewTests(TestDataMixin, TestCase):",
+          "parent": null,
+          "dependencies": []
+        },
+        "change_type": "modified_body",
+        "diff_lines": [
+          819,
+          830
+        ],
+        "raw_diff": "+        If the date field value is None (e.g. from MySQL's 0000-00-00 converted\n+        to None by the ORM), the view returns None for next/previous day\n+        instead of raising AttributeError (#22536).\n+        \"\"\"\n+        Book.objects.create(name=\"Nulldate\", slug=\"nulldate\", pages=1, pubdate=None)\n+        res = self.client.get(\"/dates/books/2008/oct/01/\")\n+        self.assertEqual(res.status_code, 200)\n+        self.assertIsNone(res.context[\"next_day\"])\n+        self.assertEqual(res.context[\"previous_day\"], datetime.date(2006, 5, 1))\n+"
+      },
+      {
+        "symbol": {
+          "name": "test_date_detail_by_pk",
+          "symbol_type": "method",
+          "file_path": "tests/generic_views/test_dates.py",
+          "start_line": 822,
+          "end_line": 827,
+          "signature": "def test_date_detail_by_pk(self):",
+          "parent": "DateDetailViewTests",
+          "dependencies": []
+        },
+        "change_type": "modified_body",
+        "diff_lines": [
+          819,
+          830
+        ],
+        "raw_diff": "+        to None by the ORM), the view returns None for next/previous day\n+        instead of raising AttributeError (#22536).\n+        \"\"\"\n+        Book.objects.create(name=\"Nulldate\", slug=\"nulldate\", pages=1, pubdate=None)\n+        res = self.client.get(\"/dates/books/2008/oct/01/\")\n+        self.assertEqual(res.status_code, 200)"
+      },
+      {
+        "symbol": {
+          "name": "test_date_detail_by_slug",
+          "symbol_type": "method",
+          "file_path": "tests/generic_views/test_dates.py",
+          "start_line": 829,
+          "end_line": 832,
+          "signature": "def test_date_detail_by_slug(self):",
+          "parent": "DateDetailViewTests",
+          "dependencies": []
+        },
+        "change_type": "modified_body",
+        "diff_lines": [
+          819,
+          830
+        ],
+        "raw_diff": "+        self.assertEqual(res.context[\"previous_day\"], datetime.date(2006, 5, 1))\n+"
+      }
+    ],
+    "ai_attribution": "unknown",
+    "skipped_files": []
+  },
+  "conflicts": [],
+  "risk_score": 0.57,
+  "risk_factors": {
+    "conflict_severity": 0.0,
+    "blast_radius": 0.0,
+    "pattern_deviation": 0.0,
+    "churn_risk": 3.8,
+    "ai_attribution": 0.0
+  },
+  "no_conflict_prs": [
+    20456,
+    20827,
+    20639,
+    20777,
+    20814,
+    20718,
+    20467,
+    20551,
+    20779,
+    20470,
+    16012,
+    20825,
+    20822,
+    20792,
+    20699,
+    20818,
+    20707,
+    20817,
+    18988,
+    18332,
+    19561,
+    20812,
+    20811,
+    20810,
+    20661,
+    20701,
+    20700,
+    20803,
+    20802,
+    20708,
+    20800,
+    20300,
+    20436,
+    20782,
+    20786,
+    20712,
+    20743,
+    20781,
+    20763,
+    19364,
+    20749,
+    18660,
+    20721,
+    20757,
+    20754,
+    18286,
+    20587,
+    19442,
+    20748,
+    20585,
+    20473,
+    20482,
+    20746,
+    20724,
+    20680,
+    20740,
+    20737,
+    20736,
+    20469,
+    19971,
+    20602,
+    20698,
+    20730,
+    20013,
+    20723,
+    20367,
+    20716,
+    20692,
+    20715,
+    20710,
+    19655,
+    20711,
+    20685,
+    20702,
+    20401,
+    20690,
+    20689,
+    20516,
+    20492,
+    20669,
+    19995,
+    19735,
+    20622,
+    20654,
+    20648,
+    20581,
+    20604,
+    20393,
+    19452,
+    20616,
+    19931,
+    20552
+  ],
+  "analysis_duration_ms": 55296,
+  "analyzed_at": "2026-03-04T14:17:19.275063"
+}

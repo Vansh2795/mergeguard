@@ -98,7 +98,7 @@ def _validate_repo(ctx, param, value):
 
 
 @click.group()
-@click.version_option()
+@click.version_option(package_name="py-mergeguard")
 @click.option("--verbose", "-v", is_flag=True, default=False, help="Enable debug logging.")
 @click.pass_context
 def main(ctx, verbose):
