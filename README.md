@@ -50,8 +50,15 @@ pip install py-mergeguard
 # Analyze a specific PR
 mergeguard analyze --repo owner/repo --pr 42 --token $GITHUB_TOKEN
 
+# Output as JSON or SARIF (for CI integration)
+mergeguard analyze --repo owner/repo --pr 42 --token $GITHUB_TOKEN --format json
+mergeguard analyze --repo owner/repo --pr 42 --token $GITHUB_TOKEN --format sarif
+
 # Show collision map of all open PRs
 mergeguard map --repo owner/repo --token $GITHUB_TOKEN
+
+# Collision map as JSON
+mergeguard map --repo owner/repo --token $GITHUB_TOKEN --format json
 
 # Risk dashboard for all open PRs
 mergeguard dashboard --repo owner/repo --token $GITHUB_TOKEN
@@ -85,6 +92,7 @@ See [Configuration Guide](docs/configuration.md) for all options.
 ## Documentation
 
 - [Getting Started](docs/getting-started.md)
+- [CI Setup](docs/ci-setup.md) — GitHub Actions, GitLab CI, and advanced integration
 - [How It Works](docs/how-it-works.md)
 - [Configuration](docs/configuration.md)
 - [Architecture](docs/architecture.md)

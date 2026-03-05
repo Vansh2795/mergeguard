@@ -64,8 +64,14 @@ export GITHUB_TOKEN=ghp_your_token_here
 # Analyze a specific PR
 mergeguard analyze --repo owner/repo --pr 42
 
+# Output as SARIF for CI integration (e.g. GitHub Code Scanning)
+mergeguard analyze --repo owner/repo --pr 42 --format sarif
+
 # Show the collision map of all open PRs
 mergeguard map --repo owner/repo
+
+# Collision map as JSON for scripting
+mergeguard map --repo owner/repo --format json
 
 # Risk dashboard for all open PRs
 mergeguard dashboard --repo owner/repo
@@ -88,6 +94,7 @@ See the [Configuration Guide](configuration.md) for all options.
 
 ## What's Next?
 
+- Set up [CI Integration](ci-setup.md) for GitHub Actions or GitLab CI
 - Read [How It Works](how-it-works.md) to understand the analysis pipeline
 - See [Configuration](configuration.md) for all available options
 - Check [Architecture](architecture.md) for the technical deep dive

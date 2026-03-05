@@ -1,18 +1,13 @@
 FROM python:3.12-slim
 
-# Install uv for fast dependency management
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends jq && rm -rf /var/lib/apt/lists/*
 
-# Copy project files
-WORKDIR /app
-COPY pyproject.toml uv.lock ./
-COPY src/ ./src/
-
-# Install dependencies
-RUN uv sync --frozen --no-dev
+# Install mergeguard from PyPI
+RUN pip install --no-cache-dir py-mergeguard
 
 # Copy entrypoint
-COPY action/entrypoint.sh /entrypoint.sh
+COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
