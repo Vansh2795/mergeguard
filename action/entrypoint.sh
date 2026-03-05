@@ -13,7 +13,7 @@ if [ -n "${MERGEGUARD_CONFIG_PATH:-}" ]; then
 fi
 
 # Run MergeGuard and capture JSON output
-REPORT=$(uv run mergeguard analyze $ARGS)
+REPORT=$(mergeguard analyze $ARGS)
 
 # Extract outputs from JSON
 RISK_SCORE=$(echo "$REPORT" | jq -r '.risk_score')
@@ -27,7 +27,7 @@ echo "report-json=$REPORT" >> "$GITHUB_OUTPUT"
 # Post PR comment if risk exceeds threshold
 THRESHOLD="${INPUT_RISK_THRESHOLD:-0}"
 if [ "$RISK_SCORE" -ge "$THRESHOLD" ]; then
-  uv run mergeguard analyze \
+  mergeguard analyze \
     --repo "$REPO_FULL_NAME" \
     --pr "$PR_NUMBER" \
     --post-comment
