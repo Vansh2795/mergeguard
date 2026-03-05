@@ -1,0 +1,27 @@
+# MergeGuard — pip-based GitHub Actions workflow
+# Lighter alternative to the Docker action; just pip install and run.
+
+name: MergeGuard Analysis
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install py-mergeguard
+
+      - name: Run MergeGuard
+        run: mergeguard analyze --post-comment
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

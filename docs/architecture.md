@@ -36,6 +36,7 @@ src/mergeguard/
 │   ├── github_comment.py
 │   ├── badge.py
 │   ├── json_report.py
+│   ├── sarif.py       # SARIF v2.1.0 formatter
 │   └── terminal.py
 └── mcp/               # AI agent integration (V2)
     └── server.py

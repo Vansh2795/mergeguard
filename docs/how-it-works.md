@@ -76,7 +76,10 @@ Results are formatted as:
 - GitHub PR comments (with collapsible sections for low-severity issues)
 - Terminal output (Rich-based colored tables)
 - JSON reports (for CI integration)
+- SARIF v2.1.0 (for GitHub Code Scanning and other SARIF-aware CI tools)
 - SVG badges (for README embedding)
+
+The `map` command also supports JSON output (`--format json`), emitting a machine-readable list of PR pairs and their shared files.
 
 ## Supported Languages
 

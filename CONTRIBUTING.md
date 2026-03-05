@@ -64,7 +64,7 @@ Look for issues labeled [`good first issue`](https://github.com/Vansh2795/mergeg
 ### Areas We Need Help With
 
 - **New platform integrations** — Bitbucket, Azure DevOps, Gitea ([#2](https://github.com/Vansh2795/mergeguard/issues/2))
-- **Output formats** — SARIF, JUnit XML, HTML reports ([#3](https://github.com/Vansh2795/mergeguard/issues/3))
+- **Output formats** — JUnit XML, HTML reports
 - **CI/CD examples** — GitHub Actions, GitLab CI, Jenkins ([#4](https://github.com/Vansh2795/mergeguard/issues/4))
 - **Documentation** — tutorials, blog posts, demo recordings ([#6](https://github.com/Vansh2795/mergeguard/issues/6))
 - **Bug reports and fixes** — always welcome

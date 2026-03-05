@@ -1,0 +1,13 @@
+# MergeGuard — GitLab CI configuration
+# Runs on merge request pipelines and posts analysis as a comment.
+
+mergeguard:
+  image: python:3.12-slim
+  stage: test
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - pip install py-mergeguard
+    - mergeguard analyze --platform gitlab --post-comment
+  variables:
+    GITLAB_TOKEN: $CI_JOB_TOKEN

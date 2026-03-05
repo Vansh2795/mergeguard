@@ -8,7 +8,10 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 COPY src/ ./src/
 
-# Install dependencies
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends jq && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
 RUN uv sync --frozen --no-dev
 
 # Copy entrypoint
