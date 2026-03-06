@@ -58,12 +58,16 @@ def format_sarif(report: ConflictReport) -> str:
                 "endLine": conflict.source_lines[1],
             }
 
+        message_text = f"{conflict.description} (conflicts with PR #{conflict.target_pr})"
+        if conflict.fix_suggestion is not None:
+            message_text += f"\n\nSuggested Fix: {conflict.fix_suggestion}"
+
         results.append(
             {
                 "ruleId": rule_id,
                 "level": _SEVERITY_MAP[conflict.severity],
                 "message": {
-                    "text": f"{conflict.description} (conflicts with PR #{conflict.target_pr})",
+                    "text": message_text,
                 },
                 "locations": [location],
             }
