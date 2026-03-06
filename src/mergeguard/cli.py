@@ -188,6 +188,17 @@ def main(ctx: click.Context, verbose: bool, platform: str, gitlab_url: str) -> N
 )
 @click.option("--llm/--no-llm", default=False, help="Enable LLM-powered semantic analysis.")
 @click.option(
+    "--fix-suggestions/--no-fix-suggestions",
+    default=False,
+    help="Enhance fix suggestions with LLM analysis (templates always active).",
+)
+@click.option(
+    "--llm-provider",
+    type=click.Choice(["auto", "openai", "anthropic"]),
+    default="auto",
+    help="LLM provider to use (default: auto-detect from API keys).",
+)
+@click.option(
     "--post-comment/--no-post-comment",
     default=False,
     help="Post results as a PR/MR comment.",
@@ -203,6 +214,8 @@ def analyze(
     config: str,
     output_format: str,
     llm: bool,
+    fix_suggestions: bool,
+    llm_provider: str,
     post_comment: bool,
     max_prs: int | None,
     max_pr_age: int | None,
@@ -217,8 +230,17 @@ def analyze(
     from mergeguard.core.engine import MergeGuardEngine
 
     cfg = load_config(config)
+    if fix_suggestions:
+        cfg.fix_suggestions = True
+        if not llm:
+            import os as _os
+
+            if _os.environ.get("OPENAI_API_KEY") or _os.environ.get("ANTHROPIC_API_KEY"):
+                llm = True
     if llm:
         cfg.llm_enabled = True
+    if llm_provider != "auto":
+        cfg.llm_provider = llm_provider
     if max_prs is not None:
         cfg.max_open_prs = max_prs
     if max_pr_age is not None:
@@ -426,7 +448,10 @@ def _display_terminal(report: ConflictReport) -> None:
         if conflict.symbol_name:
             console.print(f"    Symbol: {conflict.symbol_name}")
         console.print(f"    {conflict.description}")
-        console.print(f"    \U0001f4a1 {conflict.recommendation}\n")
+        console.print(f"    \U0001f4a1 {conflict.recommendation}")
+        if conflict.fix_suggestion is not None:
+            console.print(f"    \U0001f527 {conflict.fix_suggestion}")
+        console.print()
 
     if report.pr.skipped_files:
         console.print("[dim]Files skipped (no patch data):[/dim]")

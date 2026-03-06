@@ -24,7 +24,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-llm = ["anthropic>=0.42.0"]
+llm = ["anthropic>=0.42.0", "openai>=1.0.0"]
+llm-anthropic = ["anthropic>=0.42.0"]
+llm-openai = ["openai>=1.0.0"]
 all = ["py-mergeguard[llm]"]
 dev = [
     "pytest>=8.0",
