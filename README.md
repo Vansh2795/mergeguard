@@ -1,4 +1,5 @@
 # MergeGuard
+![Demo](demo.gif)
 
 [![PyPI version](https://img.shields.io/pypi/v/py-mergeguard)](https://pypi.org/project/py-mergeguard/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
