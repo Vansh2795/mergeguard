@@ -52,7 +52,10 @@ def display_report(report: ConflictReport) -> None:
             if conflict.symbol_name:
                 console.print(f"      Symbol: {conflict.symbol_name}")
             console.print(f"      {conflict.description}")
-            console.print(f"      \U0001f4a1 {conflict.recommendation}\n")
+            console.print(f"      \U0001f4a1 {conflict.recommendation}")
+            if conflict.fix_suggestion is not None:
+                console.print(f"      \U0001f527 {conflict.fix_suggestion}")
+            console.print()
 
     if report.pr.skipped_files:
         console.print("[dim]Files skipped (no patch data):[/dim]")

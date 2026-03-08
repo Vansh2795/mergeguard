@@ -9,13 +9,16 @@ from __future__ import annotations
 
 import fnmatch
 import logging
-import os
 import re as _re
 import sqlite3
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import PurePosixPath
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from mergeguard.integrations.llm_analyzer import LLMAnalyzer
 
 import httpx
 
@@ -286,9 +289,19 @@ class MergeGuardEngine:
             prs_excluding_target,
         )
 
+        # Step 4c: Template-based fix suggestions (always)
+        self._apply_template_suggestions(all_conflicts)
+
         # Step 4d: LLM semantic analysis for behavioral conflicts
         if self._config.llm_enabled:
             all_conflicts = self._apply_llm_analysis(target_pr, other_prs, all_conflicts)
+
+        # Step 4e: LLM-enhanced fix suggestions (overrides templates for select types)
+        if self._config.fix_suggestions and self._config.llm_enabled:
+            try:
+                self._generate_fix_suggestions(target_pr, other_prs, all_conflicts)
+            except Exception:
+                logger.warning("Fix suggestion generation failed", exc_info=True)
 
         # Step 5: Compute risk factors
         dependency_depth = self._compute_dependency_depth(target_pr)
@@ -779,6 +792,43 @@ class MergeGuardEngine:
         except (httpx.HTTPError, SCMError, Exception):
             logger.warning("Failed to enrich PR #%d, skipping", pr.number, exc_info=True)
 
+    def _create_llm_analyzer(self) -> LLMAnalyzer | None:
+        """Create an LLMAnalyzer if an API key is available, or return None."""
+        from mergeguard.integrations.llm_analyzer import _resolve_provider
+
+        provider = _resolve_provider(self._config.llm_provider)
+        if provider is None:
+            logger.warning(
+                "LLM analysis enabled but no API key set (set OPENAI_API_KEY or ANTHROPIC_API_KEY)"
+            )
+            return None
+
+        try:
+            from mergeguard.integrations.llm_analyzer import LLMAnalyzer
+        except ImportError:
+            logger.warning("LLM analysis enabled but required LLM package not installed")
+            return None
+
+        try:
+            return LLMAnalyzer(
+                model=self._config.llm_model
+                if self._config.llm_model != "claude-sonnet-4-20250514" or provider == "anthropic"
+                else None,
+                provider=self._config.llm_provider,
+            )
+        except (ImportError, ValueError, TypeError):
+            logger.warning("Failed to initialize LLM analyzer", exc_info=True)
+            return None
+
+    def _apply_template_suggestions(self, conflicts: list[Conflict]) -> None:
+        """Apply template-based fix suggestions to all conflicts (zero cost)."""
+        from mergeguard.core.fix_templates import generate_template_suggestion
+
+        for conflict in conflicts:
+            suggestion = generate_template_suggestion(conflict)
+            if suggestion:
+                conflict.fix_suggestion = suggestion
+
     def _apply_llm_analysis(
         self,
         target_pr: PRInfo,
@@ -786,21 +836,8 @@ class MergeGuardEngine:
         conflicts: list[Conflict],
     ) -> list[Conflict]:
         """Use LLM to refine behavioral conflict severity."""
-        api_key = os.environ.get("ANTHROPIC_API_KEY")
-        if not api_key:
-            logger.warning("LLM analysis enabled but ANTHROPIC_API_KEY not set")
-            return conflicts
-
-        try:
-            from mergeguard.integrations.llm_analyzer import LLMAnalyzer
-        except ImportError:
-            logger.warning("LLM analysis enabled but 'anthropic' package not installed")
-            return conflicts
-
-        try:
-            llm = LLMAnalyzer(api_key=api_key, model=self._config.llm_model)
-        except (ImportError, ValueError, TypeError):
-            logger.warning("Failed to initialize LLM analyzer", exc_info=True)
+        llm = self._create_llm_analyzer()
+        if llm is None:
             return conflicts
 
         other_pr_map = {pr.number: pr for pr in other_prs}
@@ -847,11 +884,89 @@ class MergeGuardEngine:
 
         return conflicts
 
+    def _generate_fix_suggestions(
+        self,
+        target_pr: PRInfo,
+        other_prs: list[PRInfo],
+        conflicts: list[Conflict],
+    ) -> None:
+        """Generate LLM-enhanced fix suggestions for conflicts that benefit from it.
+
+        Only BEHAVIORAL and INTERFACE conflicts at warning/critical severity are
+        sent to the LLM. Other types keep their template suggestions. Conflicts
+        sharing the same (file_path, target_pr) are batched into a single LLM call.
+        """
+        from collections import defaultdict
+
+        # 1. Filter to LLM-worthy conflicts
+        llm_worthy = [
+            c
+            for c in conflicts
+            if c.conflict_type in (ConflictType.BEHAVIORAL, ConflictType.INTERFACE)
+            and c.severity != ConflictSeverity.INFO
+        ]
+        if not llm_worthy:
+            return
+
+        llm = self._create_llm_analyzer()
+        if llm is None:
+            return
+
+        other_pr_map = {pr.number: pr for pr in other_prs}
+
+        # 2. Group by (file_path, target_pr) — same diffs can be shared
+        groups: dict[tuple[str, int], list[Conflict]] = defaultdict(list)
+        for c in llm_worthy:
+            groups[(c.file_path, c.target_pr)].append(c)
+
+        # 3. One LLM call per group
+        for (file_path, target_pr_num), group in groups.items():
+            other_pr = other_pr_map.get(target_pr_num)
+            if not other_pr:
+                continue
+
+            source_diff = self._get_file_diff(target_pr, file_path)
+            target_diff = self._get_file_diff(other_pr, file_path)
+            if not source_diff or not target_diff:
+                continue
+
+            try:
+                if len(group) == 1:
+                    suggestion = llm.generate_fix_suggestion(
+                        conflict=group[0],
+                        source_diff=source_diff,
+                        target_diff=target_diff,
+                    )
+                    if suggestion:
+                        group[0].fix_suggestion = suggestion
+                else:
+                    results = llm.generate_fix_suggestions_batch(
+                        conflicts=group,
+                        source_diff=source_diff,
+                        target_diff=target_diff,
+                    )
+                    for conflict, suggestion in zip(group, results, strict=True):
+                        if suggestion:
+                            conflict.fix_suggestion = suggestion
+            except Exception:
+                logger.debug(
+                    "Fix suggestion failed for %s",
+                    file_path,
+                    exc_info=True,
+                )
+
     def _get_symbol_diff(self, pr: PRInfo, symbol_name: str, file_path: str) -> str | None:
         """Find the raw diff for a specific symbol in a PR."""
         for cs in pr.changed_symbols:
             if cs.symbol.name == symbol_name and cs.symbol.file_path == file_path:
                 return cs.raw_diff
+        return None
+
+    def _get_file_diff(self, pr: PRInfo, file_path: str) -> str | None:
+        """Find the raw patch for a file in a PR."""
+        for cf in pr.changed_files:
+            if cf.path == file_path:
+                return cf.patch
         return None
 
     def _parse_file_diff(

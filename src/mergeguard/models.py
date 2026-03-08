@@ -149,6 +149,7 @@ class Conflict(BaseModel):
     recommendation: str  # Suggested action
     source_lines: tuple[int, int] | None = None
     target_lines: tuple[int, int] | None = None
+    fix_suggestion: str | None = None  # Template or LLM-generated fix suggestion
 
 
 class ConflictReport(BaseModel):
@@ -239,6 +240,8 @@ class MergeGuardConfig(BaseModel):
     decisions_log_depth: int = 50  # How many merged PRs to track
     llm_enabled: bool = False
     llm_model: str = "claude-sonnet-4-20250514"
+    llm_provider: str = "auto"  # "auto" | "openai" | "anthropic"
+    fix_suggestions: bool = False  # LLM-enhanced suggestions (templates always active)
     ignored_paths: list[str] = Field(
         default_factory=lambda: [
             "*.lock",

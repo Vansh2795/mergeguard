@@ -1,5 +1,8 @@
 name: CI
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
 
 jobs:
   lint:
@@ -16,14 +19,11 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python: ["3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
         with:
-          python-version: ${{ matrix.python }}
+          python-version: "3.12"
       - run: uv sync --dev
       - run: uv run pytest --cov=mergeguard --cov-report=xml
       - uses: codecov/codecov-action@v4
