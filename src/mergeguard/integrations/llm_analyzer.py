@@ -139,7 +139,7 @@ class LLMAnalyzer:
 
     def _init_openai(self, api_key: str, model: str | None) -> None:
         try:
-            from openai import OpenAI  # type: ignore[import-not-found]
+            from openai import OpenAI
         except ImportError:
             raise ImportError(
                 "The 'openai' package is required for OpenAI LLM analysis. "
@@ -174,7 +174,7 @@ class LLMAnalyzer:
                 max_tokens=max_tokens,
                 messages=[{"role": "user", "content": prompt}],
             )
-            return response.content[0].text
+            return str(response.content[0].text)
 
     def analyze_behavioral_conflict(
         self,

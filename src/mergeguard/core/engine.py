@@ -15,6 +15,10 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import PurePosixPath
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from mergeguard.integrations.llm_analyzer import LLMAnalyzer
 
 import httpx
 
@@ -788,7 +792,7 @@ class MergeGuardEngine:
         except (httpx.HTTPError, SCMError, Exception):
             logger.warning("Failed to enrich PR #%d, skipping", pr.number, exc_info=True)
 
-    def _create_llm_analyzer(self) -> object | None:
+    def _create_llm_analyzer(self) -> LLMAnalyzer | None:
         """Create an LLMAnalyzer if an API key is available, or return None."""
         from mergeguard.integrations.llm_analyzer import _resolve_provider
 
