@@ -150,7 +150,7 @@ class LLMAnalyzer:
 
     def _init_anthropic(self, api_key: str, model: str | None) -> None:
         try:
-            from anthropic import Anthropic  # type: ignore[import-not-found]
+            from anthropic import Anthropic
         except ImportError:
             raise ImportError(
                 "The 'anthropic' package is required for Anthropic LLM analysis. "
