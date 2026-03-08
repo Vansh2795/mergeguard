@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import fnmatch
 import logging
-import os
 import re as _re
 import sqlite3
 import threading
@@ -944,7 +943,7 @@ class MergeGuardEngine:
                         source_diff=source_diff,
                         target_diff=target_diff,
                     )
-                    for conflict, suggestion in zip(group, results):
+                    for conflict, suggestion in zip(group, results, strict=True):
                         if suggestion:
                             conflict.fix_suggestion = suggestion
             except Exception:
