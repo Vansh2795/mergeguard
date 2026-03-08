@@ -795,8 +795,7 @@ class MergeGuardEngine:
         provider = _resolve_provider(self._config.llm_provider)
         if provider is None:
             logger.warning(
-                "LLM analysis enabled but no API key set "
-                "(set OPENAI_API_KEY or ANTHROPIC_API_KEY)"
+                "LLM analysis enabled but no API key set (set OPENAI_API_KEY or ANTHROPIC_API_KEY)"
             )
             return None
 
@@ -809,8 +808,7 @@ class MergeGuardEngine:
         try:
             return LLMAnalyzer(
                 model=self._config.llm_model
-                if self._config.llm_model != "claude-sonnet-4-20250514"
-                or provider == "anthropic"
+                if self._config.llm_model != "claude-sonnet-4-20250514" or provider == "anthropic"
                 else None,
                 provider=self._config.llm_provider,
             )

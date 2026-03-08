@@ -130,9 +130,7 @@ class LLMAnalyzer:
     ):
         self._provider = _resolve_provider(provider)
         if self._provider is None:
-            raise ValueError(
-                "No LLM provider available. Set OPENAI_API_KEY or ANTHROPIC_API_KEY."
-            )
+            raise ValueError("No LLM provider available. Set OPENAI_API_KEY or ANTHROPIC_API_KEY.")
 
         if self._provider == "openai":
             self._init_openai(api_key or os.environ.get("OPENAI_API_KEY", ""), model)
