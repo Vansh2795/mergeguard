@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <g fill="none" stroke="#000" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Owl head -->
+    <circle cx="32" cy="32" r="22" stroke-width="4"/>
+
+    <!-- Ear tufts -->
+    <path d="M 14 16 L 12 4 L 19 13" stroke-width="3.5" fill="#000"/>
+    <path d="M 50 16 L 52 4 L 45 13" stroke-width="3.5" fill="#000"/>
+
+    <!-- Left eye -->
+    <circle cx="23" cy="30" r="8" stroke-width="3.5"/>
+    <circle cx="25" cy="29" r="4" fill="#000" stroke="none"/>
+
+    <!-- Right eye -->
+    <circle cx="41" cy="30" r="8" stroke-width="3.5"/>
+    <circle cx="43" cy="29" r="4" fill="#000" stroke="none"/>
+
+    <!-- Beak -->
+    <path d="M 29 40 L 32 47 L 35 40" stroke-width="3" fill="#000"/>
+  </g>
+</svg>

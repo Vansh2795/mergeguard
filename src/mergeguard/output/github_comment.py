@@ -48,7 +48,10 @@ def format_report(report: ConflictReport, repo_full_name: str, *, platform: str 
 
     # Header with risk score
     risk_emoji = _risk_emoji(report.risk_score)
-    lines.append(f"## {risk_emoji} MergeGuard: Cross-PR Analysis")
+    logo_url = "https://raw.githubusercontent.com/Vansh2795/mergeguard/main/assets/logo.svg"
+    lines.append(
+        f'## <img src="{logo_url}" height="24" alt=""> {risk_emoji} MergeGuard: Cross-PR Analysis'
+    )
     lines.append("")
 
     if report.risk_score > 0:
