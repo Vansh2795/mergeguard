@@ -9,6 +9,8 @@
 
 **Cross-PR intelligence for the agentic coding era.**
 
+![MergeGuard Demo](docs/demo.gif)
+
 MergeGuard detects conflicts between open pull requests *before* they become merge headaches. It analyzes overlapping code changes across PRs using AST-level understanding, computes risk scores, and integrates seamlessly as a GitHub Action or CLI tool.
 
 ![MergeGuard Demo](demo.gif)
