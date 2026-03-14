@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="../assets/logo.svg" alt="MergeGuard" height="64">
+</p>
+
 # Getting Started with MergeGuard
 
 Get MergeGuard running in 5 minutes.

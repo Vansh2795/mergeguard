@@ -1,7 +1,11 @@
-# MergeGuard
+<p align="center">
+  <img src="assets/logo-with-text.svg" alt="MergeGuard" height="120">
+</p>
 
-[![PyPI version](https://img.shields.io/pypi/v/py-mergeguard)](https://pypi.org/project/py-mergeguard/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+<p align="center">
+  <a href="https://pypi.org/project/py-mergeguard/"><img src="https://img.shields.io/pypi/v/py-mergeguard" alt="PyPI version"></a>
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+</p>
 
 **Cross-PR intelligence for the agentic coding era.**
 

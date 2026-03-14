@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.svg" alt="MergeGuard" height="64">
+</p>
+
 # Contributing to MergeGuard
 
 Thanks for your interest in contributing! MergeGuard is an open-source project and we welcome contributions of all kinds — bug fixes, new features, documentation, and ideas.
