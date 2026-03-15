@@ -71,7 +71,7 @@ python_version = "3.12"
 strict = true
 
 [[tool.mypy.overrides]]
-module = ["openai.*", "anthropic.*"]
+module = ["openai.*", "anthropic.*", "yaml.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

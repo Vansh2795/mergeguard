@@ -689,18 +689,18 @@ def history(
 
     table = Table(title="Analysis History")
     table.add_column("PR", style="bold")
-    table.add_column("Title")
+    table.add_column("Type")
+    table.add_column("Entity")
     table.add_column("Merged At")
     table.add_column("Author")
-    table.add_column("Decisions", justify="right")
 
     for entry in decisions:
         table.add_row(
             f"#{entry.pr_number}",
-            entry.title[:40],
+            entry.decision_type.value,
+            entry.entity[:40],
             entry.merged_at.strftime("%Y-%m-%d %H:%M"),
             entry.author,
-            str(len(entry.decisions)),
         )
 
     console.print(table)

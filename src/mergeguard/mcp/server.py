@@ -19,7 +19,7 @@ from mergeguard.integrations.github_client import GitHubClient
 logger = logging.getLogger(__name__)
 
 
-def _serialize_conflicts(conflicts: list) -> list[dict[str, Any]]:
+def _serialize_conflicts(conflicts: list[Any]) -> list[dict[str, Any]]:
     """Convert Conflict model instances to plain dicts for JSON transport."""
     result = []
     for c in conflicts:
