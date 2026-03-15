@@ -318,8 +318,7 @@ class LLMAnalyzer:
             assessment = result.get("overall_assessment", "")
             if assessment:
                 conflicts[0].description = (
-                    f"{conflicts[0].description}\n\n"
-                    f"**Holistic assessment:** {assessment}"
+                    f"{conflicts[0].description}\n\n**Holistic assessment:** {assessment}"
                 )
             conflicts[0].recommendation = recommendation
 

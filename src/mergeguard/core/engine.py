@@ -623,9 +623,7 @@ class MergeGuardEngine:
                             recommendation=rec,
                         )
                     )
-                    per_pair_count[other_pr.number] = (
-                        per_pair_count.get(other_pr.number, 0) + 1
-                    )
+                    per_pair_count[other_pr.number] = per_pair_count.get(other_pr.number, 0) + 1
 
         # Track PR numbers already covered in Direction A to avoid duplicates
         direction_a_prs = {c.target_pr for c in transitive}
@@ -698,9 +696,7 @@ class MergeGuardEngine:
                             recommendation=rec_b,
                         )
                     )
-                    per_pair_count[other_pr.number] = (
-                        per_pair_count.get(other_pr.number, 0) + 1
-                    )
+                    per_pair_count[other_pr.number] = per_pair_count.get(other_pr.number, 0) + 1
 
         return transitive
 

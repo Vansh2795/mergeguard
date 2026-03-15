@@ -222,9 +222,9 @@ def _build_factor_bars(factors: dict[str, float]) -> str:
             f'<div class="factor-name">{label}</div>'
             f'<div class="factor-track">'
             f'<div class="factor-fill" style="width: {width}%; background: {color};"></div>'
-            f'</div>'
+            f"</div>"
             f'<div class="factor-value">{value:.0f}</div>'
-            f'</div>'
+            f"</div>"
         )
     return "\n".join(bars)
 

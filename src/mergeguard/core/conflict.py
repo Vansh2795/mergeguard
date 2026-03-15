@@ -587,11 +587,11 @@ def _get_symbol_diff_preview(pr: PRInfo, file_path: str, symbol_name: str | None
     # Symbol-level: find the matching ChangedSymbol's raw_diff
     for cs in pr.changed_symbols:
         if cs.symbol.file_path == file_path and cs.symbol.name == symbol_name and cs.raw_diff:
-                lines = cs.raw_diff.splitlines()[:10]
-                preview = "\n".join(lines)
-                if len(cs.raw_diff.splitlines()) > 10:
-                    preview += "\n..."
-                return preview
+            lines = cs.raw_diff.splitlines()[:10]
+            preview = "\n".join(lines)
+            if len(cs.raw_diff.splitlines()) > 10:
+                preview += "\n..."
+            return preview
     return None
 
 

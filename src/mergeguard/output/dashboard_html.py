@@ -26,14 +26,16 @@ def format_dashboard_html(reports: list[ConflictReport], repo: str) -> str:
     collision_matrix: dict[int, dict[int, int]] = {}
 
     for report in reports:
-        pr_data.append({
-            "number": report.pr.number,
-            "title": report.pr.title[:40],
-            "risk_score": round(report.risk_score, 1),
-            "conflicts": len(report.conflicts),
-            "author": report.pr.author,
-            "ai": report.pr.ai_attribution.value.startswith("ai"),
-        })
+        pr_data.append(
+            {
+                "number": report.pr.number,
+                "title": report.pr.title[:40],
+                "risk_score": round(report.risk_score, 1),
+                "conflicts": len(report.conflicts),
+                "author": report.pr.author,
+                "ai": report.pr.ai_attribution.value.startswith("ai"),
+            }
+        )
 
         for c in report.conflicts:
             type_counts[c.conflict_type.value] = type_counts.get(c.conflict_type.value, 0) + 1
@@ -250,8 +252,10 @@ def _build_dashboard_table(reports: list[ConflictReport]) -> str:
     rows = []
     for report in sorted(reports, key=lambda r: r.risk_score, reverse=True):
         risk_class = (
-            "risk-high" if report.risk_score >= 70
-            else "risk-med" if report.risk_score >= 40
+            "risk-high"
+            if report.risk_score >= 70
+            else "risk-med"
+            if report.risk_score >= 40
             else "risk-low"
         )
         severity_badges = []
@@ -259,13 +263,13 @@ def _build_dashboard_table(reports: list[ConflictReport]) -> str:
         for sev in ["critical", "warning", "info"]:
             count = counts.get(sev, 0)
             if count > 0:
-                severity_badges.append(
-                    f'<span class="badge badge-{sev}">{count} {sev}</span>'
-                )
+                severity_badges.append(f'<span class="badge badge-{sev}">{count} {sev}</span>')
 
-        ai_badge = ' <span class="badge badge-warning">AI</span>' if (
-            report.pr.ai_attribution.value.startswith("ai")
-        ) else ""
+        ai_badge = (
+            ' <span class="badge badge-warning">AI</span>'
+            if (report.pr.ai_attribution.value.startswith("ai"))
+            else ""
+        )
 
         rows.append(
             f"<tr>"
@@ -274,7 +278,7 @@ def _build_dashboard_table(reports: list[ConflictReport]) -> str:
             f"<td>{html.escape(report.pr.author)}</td>"
             f'<td class="{risk_class}">{report.risk_score:.0f}</td>'
             f"<td>{len(report.conflicts)}</td>"
-            f"<td>{' '.join(severity_badges) or '<span style=\"color:#64748b\">clean</span>'}</td>"
+            f"<td>{' '.join(severity_badges) or '<span style="color:#64748b">clean</span>'}</td>"
             f"</tr>"
         )
     return "\n".join(rows)

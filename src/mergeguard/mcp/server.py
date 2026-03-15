@@ -23,19 +23,21 @@ def _serialize_conflicts(conflicts: list) -> list[dict[str, Any]]:
     """Convert Conflict model instances to plain dicts for JSON transport."""
     result = []
     for c in conflicts:
-        result.append({
-            "conflict_type": c.conflict_type.value,
-            "severity": c.severity.value,
-            "source_pr": c.source_pr,
-            "target_pr": c.target_pr,
-            "file_path": c.file_path,
-            "symbol_name": c.symbol_name,
-            "description": c.description,
-            "recommendation": c.recommendation,
-            "source_lines": list(c.source_lines) if c.source_lines else None,
-            "target_lines": list(c.target_lines) if c.target_lines else None,
-            "cross_file": c.cross_file,
-        })
+        result.append(
+            {
+                "conflict_type": c.conflict_type.value,
+                "severity": c.severity.value,
+                "source_pr": c.source_pr,
+                "target_pr": c.target_pr,
+                "file_path": c.file_path,
+                "symbol_name": c.symbol_name,
+                "description": c.description,
+                "recommendation": c.recommendation,
+                "source_lines": list(c.source_lines) if c.source_lines else None,
+                "target_lines": list(c.target_lines) if c.target_lines else None,
+                "cross_file": c.cross_file,
+            }
+        )
     return result
 
 
@@ -107,14 +109,16 @@ def create_mcp_server() -> Any:
                 pr_files = pr.file_paths
                 overlap = target_files & pr_files
                 if overlap:
-                    conflicting_prs.append({
-                        "pr_number": pr.number,
-                        "title": pr.title,
-                        "author": pr.author,
-                        "head_branch": pr.head_branch,
-                        "overlapping_files": sorted(overlap),
-                        "total_files_changed": len(pr_files),
-                    })
+                    conflicting_prs.append(
+                        {
+                            "pr_number": pr.number,
+                            "title": pr.title,
+                            "author": pr.author,
+                            "head_branch": pr.head_branch,
+                            "overlapping_files": sorted(overlap),
+                            "total_files_changed": len(pr_files),
+                        }
+                    )
 
             has_conflicts = len(conflicting_prs) > 0
             if has_conflicts:
@@ -251,8 +255,7 @@ def create_mcp_server() -> Any:
 
             total_conflicts = sum(len(r.conflicts) for r in reports)
             critical_count = sum(
-                1 for r in reports for c in r.conflicts
-                if c.severity.value == "critical"
+                1 for r in reports for c in r.conflicts if c.severity.value == "critical"
             )
 
             summary_parts = [
@@ -262,8 +265,7 @@ def create_mcp_server() -> Any:
             if critical_count > 0:
                 summary_parts.append(f"including {critical_count} critical")
             summary_parts.append(
-                f"Recommended first merge: PR #{order[0][0]}."
-                if order else "No ordering needed."
+                f"Recommended first merge: PR #{order[0][0]}." if order else "No ordering needed."
             )
 
             return {

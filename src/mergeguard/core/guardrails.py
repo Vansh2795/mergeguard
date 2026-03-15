@@ -181,8 +181,7 @@ def _check_must_not_contain(
                                 f"`{cf.path}` contains forbidden pattern "
                                 f"`{forbidden}`. Rule: {rule.name}"
                             ),
-                            recommendation=rule.message
-                            or f"Remove or replace `{forbidden}`.",
+                            recommendation=rule.message or f"Remove or replace `{forbidden}`.",
                         )
                     )
                     break  # One violation per file per forbidden string is enough
