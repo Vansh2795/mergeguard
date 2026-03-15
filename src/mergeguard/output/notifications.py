@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
@@ -44,12 +44,12 @@ def notify_slack(
     if not matching:
         return False
 
-    severity_counts = {}
+    severity_counts: dict[str, int] = {}
     for c in matching:
         severity_counts[c.severity.value] = severity_counts.get(c.severity.value, 0) + 1
 
     # Build Block Kit payload
-    blocks = [
+    blocks: list[dict[str, Any]] = [
         {
             "type": "header",
             "text": {
@@ -151,7 +151,7 @@ def notify_teams(
     if not matching:
         return False
 
-    severity_counts = {}
+    severity_counts: dict[str, int] = {}
     for c in matching:
         severity_counts[c.severity.value] = severity_counts.get(c.severity.value, 0) + 1
 
