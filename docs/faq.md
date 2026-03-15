@@ -9,10 +9,12 @@ MergeGuard is a cross-PR intelligence tool that detects conflicts between open p
 ### How is this different from GitHub's built-in conflict detection?
 
 GitHub only detects textual merge conflicts (same lines modified). MergeGuard detects semantic conflicts:
-- Interface conflicts (signature changes affecting callers)
-- Behavioral conflicts (incompatible logic changes)
+- Interface conflicts (signature changes affecting callers, including cross-file via import analysis)
+- Behavioral conflicts (incompatible logic changes, including across file boundaries)
+- Transitive conflicts (PR A changes a module that PR B depends on through imports)
 - Duplications (same feature implemented twice)
 - Regressions (re-introducing removed code)
+- Guardrail violations (import restrictions, complexity limits, forbidden patterns)
 
 ### Does MergeGuard require AI/LLM?
 
@@ -61,4 +63,20 @@ Tune the `risk_threshold` in `.mergeguard.yml` to filter out low-confidence resu
 
 ### The risk score seems too high/low
 
-The risk score is a composite of multiple factors. Check the `risk_factors` in the JSON report to understand which factors contribute most.
+The risk score is a composite of multiple factors. Check the `risk_factors` in the JSON report to understand which factors contribute most. You can customize the weights via `risk_weights` in `.mergeguard.yml` — see [Configuration](configuration.md).
+
+### What platforms are supported?
+
+MergeGuard supports GitHub (Cloud and Enterprise Server), GitLab (Cloud and self-hosted), and Bitbucket Cloud. Use `--platform` to select, or let MergeGuard auto-detect from your git remote.
+
+### Can MergeGuard detect conflicts across different files?
+
+Yes. MergeGuard uses import graph analysis to detect cross-file conflicts. If PR A changes `UserModel` in `models.py` and PR B imports `UserModel` in `views.py`, MergeGuard detects this as an interface or behavioral conflict depending on what changed.
+
+### How do I get Slack/Teams notifications?
+
+Configure webhook notifications via the `notify_slack()` or `notify_teams()` functions, or integrate them into your CI pipeline. See the [Configuration Guide](configuration.md).
+
+### What is the MCP server?
+
+The MCP (Model Context Protocol) server lets AI agents like Claude query MergeGuard directly. It provides three tools: `check_conflicts` (what-if analysis before creating a PR), `get_risk_score` (risk assessment for an existing PR), and `suggest_merge_order` (optimal merge sequence). Install with `pip install py-mergeguard[mcp]`.

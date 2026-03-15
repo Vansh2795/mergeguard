@@ -150,6 +150,9 @@ class Conflict(BaseModel):
     source_lines: tuple[int, int] | None = None
     target_lines: tuple[int, int] | None = None
     fix_suggestion: str | None = None  # Template or LLM-generated fix suggestion
+    cross_file: bool = False  # True if conflict spans different files
+    source_diff_preview: str | None = None  # Code preview from source PR
+    target_diff_preview: str | None = None  # Code preview from target PR
 
 
 class ConflictReport(BaseModel):
@@ -254,3 +257,12 @@ class MergeGuardConfig(BaseModel):
         ]
     )
     rules: list[GuardrailRule] = Field(default_factory=list)
+    risk_weights: dict[str, float] | None = None  # Custom risk scoring weights (must sum to ~1.0)
+    max_transitive_per_pair: int = 5  # Max transitive conflicts per PR pair
+    github_url: str | None = None  # GitHub Enterprise Server URL (e.g., https://github.example.com)
+    max_file_size: int = 500_000  # Max file size in bytes (skip larger files)
+    max_diff_size: int = 100_000  # Max diff size in bytes (truncate larger diffs)
+    churn_max_lines: int = 500  # Lines changed for max churn score (1.0)
+    max_cache_entries: int = 500  # Max entries in analysis cache
+    api_timeout: int = 30  # HTTP timeout in seconds
+    max_workers: int = 8  # Max concurrent workers for parallel operations

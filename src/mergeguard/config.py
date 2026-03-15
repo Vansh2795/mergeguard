@@ -7,7 +7,8 @@ MergeGuardConfig defaults when no config file is present.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+
+import yaml
 
 from mergeguard.models import MergeGuardConfig
 
@@ -27,12 +28,6 @@ def load_config(config_path: str = ".mergeguard.yml") -> MergeGuardConfig:
     if not path.exists():
         return MergeGuardConfig()
 
-    try:
-        import yaml  # type: ignore[import-untyped]  # noqa: TCH002
-    except ImportError:
-        # PyYAML is not a required dependency — fall back to basic parsing
-        return _load_without_yaml(path)
-
     with open(path) as f:
         raw = yaml.safe_load(f)
 
@@ -40,34 +35,3 @@ def load_config(config_path: str = ".mergeguard.yml") -> MergeGuardConfig:
         return MergeGuardConfig()
 
     return MergeGuardConfig(**raw)
-
-
-def _load_without_yaml(path: Path) -> MergeGuardConfig:
-    """Basic config loading when PyYAML is not installed.
-
-    Supports simple key: value pairs only. Unknown keys are silently
-    skipped to avoid Pydantic validation errors from typos or
-    forward-compatible config files.
-    """
-    valid_fields = set(MergeGuardConfig.model_fields.keys())
-    config_dict: dict[str, Any] = {}
-    with open(path) as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            if ":" in line:
-                key, _, value = line.partition(":")
-                key = key.strip()
-                if key not in valid_fields:
-                    continue
-                value = value.strip()
-                if value.lower() == "true":
-                    config_dict[key] = True
-                elif value.lower() == "false":
-                    config_dict[key] = False
-                elif value.isdigit():
-                    config_dict[key] = int(value)
-                else:
-                    config_dict[key] = value.strip('"').strip("'")
-    return MergeGuardConfig(**config_dict)

@@ -25,6 +25,7 @@ TYPE_LABELS = {
     ConflictType.DUPLICATION: "Duplication Detected",
     ConflictType.TRANSITIVE: "Transitive Conflict",
     ConflictType.REGRESSION: "Regression Detected",
+    ConflictType.GUARDRAIL: "Guardrail Violation",
 }
 
 

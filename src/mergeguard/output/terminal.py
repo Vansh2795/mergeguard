@@ -9,6 +9,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from rich.console import Console
+from rich.panel import Panel
+from rich.syntax import Syntax
 from rich.table import Table
 
 if TYPE_CHECKING:
@@ -55,6 +57,9 @@ def display_report(report: ConflictReport) -> None:
             console.print(f"      \U0001f4a1 {conflict.recommendation}")
             if conflict.fix_suggestion is not None:
                 console.print(f"      \U0001f527 {conflict.fix_suggestion}")
+            # Diff previews (collapsed by default in rich via Panel)
+            if conflict.source_diff_preview or conflict.target_diff_preview:
+                _render_diff_previews(conflict)
             console.print()
 
     if report.pr.skipped_files:
@@ -86,6 +91,34 @@ def display_dashboard(reports: list[ConflictReport], repo_name: str) -> None:
         )
 
     console.print(table)
+
+
+def _render_diff_previews(conflict: ConflictReport | object) -> None:
+    """Render source and target diff previews with syntax highlighting."""
+    from mergeguard.models import Conflict
+
+    if not isinstance(conflict, Conflict):
+        return
+    if conflict.source_diff_preview:
+        syntax = Syntax(
+            conflict.source_diff_preview,
+            "diff",
+            theme="monokai",
+            line_numbers=False,
+        )
+        console.print(
+            Panel(syntax, title=f"PR #{conflict.source_pr} diff", border_style="dim", width=80)
+        )
+    if conflict.target_diff_preview:
+        syntax = Syntax(
+            conflict.target_diff_preview,
+            "diff",
+            theme="monokai",
+            line_numbers=False,
+        )
+        console.print(
+            Panel(syntax, title=f"PR #{conflict.target_pr} diff", border_style="dim", width=80)
+        )
 
 
 def display_collision_map(

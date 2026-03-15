@@ -51,8 +51,9 @@ from mergeguard.storage.decisions_log import DecisionsLog
 
 logger = logging.getLogger(__name__)
 
-CHURN_MAX_LINES = 500  # Lines changed for max churn score (1.0)
-MAX_FILE_SIZE = 500_000  # 500KB
+# Defaults — overridable via MergeGuardConfig
+CHURN_MAX_LINES = 500
+MAX_FILE_SIZE = 500_000
 MAX_CACHE_ENTRIES = 500
 
 
@@ -180,7 +181,11 @@ class MergeGuardEngine:
         with self._cache_lock:
             self._content_cache.setdefault(key, content)
             # Evict oldest entries if cache exceeds max size
-            while len(self._content_cache) > MAX_CACHE_ENTRIES:
+            cfg = getattr(self, "_config", None)
+            max_entries = getattr(cfg, "max_cache_entries", None)
+            if not isinstance(max_entries, int):
+                max_entries = MAX_CACHE_ENTRIES
+            while len(self._content_cache) > max_entries:
                 self._content_cache.pop(next(iter(self._content_cache)))
         return self._content_cache[key]
 
@@ -561,12 +566,18 @@ class MergeGuardEngine:
                 target_dependents |= graph.get_dependents(module_form)
 
         transitive: list[Conflict] = []
-        matched_prs: set[int] = set()  # Track PRs that already have a transitive conflict
+        per_pair_count: dict[int, int] = {}  # PR number -> count of transitive conflicts
+        cfg = getattr(self, "_config", None)
+        max_per_pair = getattr(cfg, "max_transitive_per_pair", None)
+        if not isinstance(max_per_pair, int):
+            max_per_pair = 5
 
         for other_pr in other_prs:
             if other_pr.number in existing_pairs:
                 continue
             for cf in other_pr.changed_files:
+                if per_pair_count.get(other_pr.number, 0) >= max_per_pair:
+                    break
                 hit = cf.path in target_dependents
                 if not hit:
                     for mf in self._file_path_module_forms(cf.path):
@@ -612,12 +623,20 @@ class MergeGuardEngine:
                             recommendation=rec,
                         )
                     )
-                    matched_prs.add(other_pr.number)
-                    break  # One transitive conflict per PR pair is enough
+                    per_pair_count[other_pr.number] = (
+                        per_pair_count.get(other_pr.number, 0) + 1
+                    )
+
+        # Track PR numbers already covered in Direction A to avoid duplicates
+        direction_a_prs = {c.target_pr for c in transitive}
 
         # --- Direction B: target_pr's files depend on other_pr's files ---
         for other_pr in other_prs:
-            if other_pr.number in existing_pairs or other_pr.number in matched_prs:
+            if other_pr.number in existing_pairs:
+                continue
+            if other_pr.number in direction_a_prs:
+                continue
+            if per_pair_count.get(other_pr.number, 0) >= max_per_pair:
                 continue
             other_dependents: set[str] = set()
             for cf in other_pr.changed_files:
@@ -626,6 +645,8 @@ class MergeGuardEngine:
                     other_dependents |= graph.get_dependents(module_form)
             # Check if target_pr's files appear in other_pr's dependents
             for cf in target_pr.changed_files:
+                if per_pair_count.get(other_pr.number, 0) >= max_per_pair:
+                    break
                 hit = cf.path in other_dependents
                 if not hit:
                     for mf in self._file_path_module_forms(cf.path):
@@ -677,7 +698,9 @@ class MergeGuardEngine:
                             recommendation=rec_b,
                         )
                     )
-                    break  # One transitive conflict per PR pair is enough
+                    per_pair_count[other_pr.number] = (
+                        per_pair_count.get(other_pr.number, 0) + 1
+                    )
 
         return transitive
 
@@ -687,7 +710,11 @@ class MergeGuardEngine:
         Normalizes total line changes so that CHURN_MAX_LINES+ lines = max churn (1.0).
         """
         total_changes = sum(cf.additions + cf.deletions for cf in pr.changed_files)
-        return min(1.0, total_changes / CHURN_MAX_LINES)
+        cfg = getattr(self, "_config", None)
+        max_lines = getattr(cfg, "churn_max_lines", None)
+        if not isinstance(max_lines, int):
+            max_lines = CHURN_MAX_LINES
+        return min(1.0, total_changes / max_lines)
 
     def _compute_pattern_deviation(self, pr: PRInfo) -> float:
         """Compute pattern deviation as 1 - symbol_name_similarity.
@@ -726,6 +753,121 @@ class MergeGuardEngine:
         similarity = symbol_name_similarity(novel_symbols, base_symbols)
         return 1.0 - similarity
 
+    def _detect_cross_file_conflicts(
+        self,
+        target_pr: PRInfo,
+        other_prs: list[PRInfo],
+        existing_conflicts: list[Conflict],
+    ) -> list[Conflict]:
+        """Detect conflicts across different files via import/symbol analysis.
+
+        For each changed symbol in target_pr with change_type == "modified_signature",
+        check if any other PR's files import that symbol by name → INTERFACE conflict.
+
+        For change_type == "modified_body", check if any other PR's functions
+        call the changed symbol cross-file → BEHAVIORAL conflict.
+        """
+        if not other_prs:
+            return []
+
+        graph = self._build_cross_pr_dependency_graph(target_pr, other_prs)
+        cross_file_conflicts: list[Conflict] = []
+
+        # Build index of other PRs' changed files for quick lookup
+        other_pr_file_index: dict[str, list[PRInfo]] = {}
+        for opr in other_prs:
+            for cf in opr.changed_files:
+                other_pr_file_index.setdefault(cf.path, []).append(opr)
+
+        # Already-detected pairs to avoid duplicates
+        existing_pairs: set[tuple[int, str, str | None]] = {
+            (c.target_pr, c.file_path, c.symbol_name) for c in existing_conflicts
+        }
+
+        for cs in target_pr.changed_symbols:
+            symbol_name = cs.symbol.name
+            source_file = cs.symbol.file_path
+
+            # Find all files that import this symbol (by name)
+            importers = graph.get_files_importing_symbol(source_file, symbol_name)
+            # Also check module-form paths
+            for mf in self._file_path_module_forms(source_file):
+                importers |= graph.get_files_importing_symbol(mf, symbol_name)
+
+            if not importers:
+                continue
+
+            for importer_file in importers:
+                # Find which other PRs change this importing file
+                importing_prs = other_pr_file_index.get(importer_file, [])
+                for other_pr in importing_prs:
+                    if other_pr.number == target_pr.number:
+                        continue
+
+                    pair_key = (other_pr.number, source_file, symbol_name)
+                    if pair_key in existing_pairs:
+                        continue
+                    existing_pairs.add(pair_key)
+
+                    if cs.change_type == "modified_signature":
+                        cross_file_conflicts.append(
+                            Conflict(
+                                conflict_type=ConflictType.INTERFACE,
+                                severity=ConflictSeverity.CRITICAL,
+                                source_pr=target_pr.number,
+                                target_pr=other_pr.number,
+                                file_path=source_file,
+                                symbol_name=symbol_name,
+                                description=(
+                                    f"PR #{target_pr.number} changes the signature of "
+                                    f"`{symbol_name}` in `{source_file}`, but "
+                                    f"PR #{other_pr.number} modifies `{importer_file}` "
+                                    f"which imports `{symbol_name}`."
+                                ),
+                                recommendation=(
+                                    f"Update usages of `{symbol_name}` in "
+                                    f"`{importer_file}` (PR #{other_pr.number}) to match "
+                                    f"the new signature, or merge PR #{target_pr.number} "
+                                    f"first and rebase."
+                                ),
+                                cross_file=True,
+                            )
+                        )
+                    elif cs.change_type == "modified_body":
+                        # Check if any of other_pr's changed symbols in importer_file
+                        # reference the changed symbol
+                        has_caller = any(
+                            ocs.symbol.file_path == importer_file
+                            and symbol_name in ocs.symbol.dependencies
+                            for ocs in other_pr.changed_symbols
+                        )
+                        if has_caller:
+                            cross_file_conflicts.append(
+                                Conflict(
+                                    conflict_type=ConflictType.BEHAVIORAL,
+                                    severity=ConflictSeverity.WARNING,
+                                    source_pr=target_pr.number,
+                                    target_pr=other_pr.number,
+                                    file_path=source_file,
+                                    symbol_name=symbol_name,
+                                    description=(
+                                        f"PR #{target_pr.number} modifies the body of "
+                                        f"`{symbol_name}` in `{source_file}`. "
+                                        f"PR #{other_pr.number} modifies callers of "
+                                        f"`{symbol_name}` in `{importer_file}`. "
+                                        f"Changes may interact unexpectedly."
+                                    ),
+                                    recommendation=(
+                                        f"Test changes to `{symbol_name}` together with "
+                                        f"the caller changes in `{importer_file}` before "
+                                        f"merging either PR."
+                                    ),
+                                    cross_file=True,
+                                )
+                            )
+
+        return cross_file_conflicts
+
     def _detect_all_conflicts(
         self,
         target_pr: PRInfo,
@@ -747,6 +889,16 @@ class MergeGuardEngine:
             if not conflicts:
                 no_conflict_prs.append(other_pr.number)
 
+        # Cross-file conflict detection (symbol-level imports)
+        cross_file = self._detect_cross_file_conflicts(
+            target_pr,
+            other_prs,
+            all_conflicts,
+        )
+        all_conflicts.extend(cross_file)
+        cross_file_prs = {c.target_pr for c in cross_file}
+        no_conflict_prs = [n for n in no_conflict_prs if n not in cross_file_prs]
+
         # Transitive conflict detection
         transitive = self._detect_transitive_conflicts(
             target_pr,
@@ -758,12 +910,13 @@ class MergeGuardEngine:
         no_conflict_prs = [n for n in no_conflict_prs if n not in transitive_prs]
 
         # Guardrails
-        if self._config.rules:
-            all_conflicts.extend(enforce_guardrails(target_pr, self._config))
+        cfg = getattr(self, "_config", None)
+        if cfg and cfg.rules:
+            all_conflicts.extend(enforce_guardrails(target_pr, cfg))
 
         # Regression detection
         own_log = False
-        if decisions_log is None and self._config.check_regressions:
+        if decisions_log is None and cfg and cfg.check_regressions:
             try:
                 decisions_log = DecisionsLog()
                 own_log = True
@@ -835,52 +988,79 @@ class MergeGuardEngine:
         other_prs: list[PRInfo],
         conflicts: list[Conflict],
     ) -> list[Conflict]:
-        """Use LLM to refine behavioral conflict severity."""
+        """Use LLM to refine behavioral conflict severity.
+
+        Uses holistic batch mode when > 3 conflicts exist for a target PR.
+        """
         llm = self._create_llm_analyzer()
         if llm is None:
             return conflicts
 
         other_pr_map = {pr.number: pr for pr in other_prs}
 
+        # Group conflicts by target PR for potential holistic analysis
+        from collections import defaultdict
+
+        by_target: dict[int, list[Conflict]] = defaultdict(list)
         for conflict in conflicts:
-            if conflict.conflict_type != ConflictType.BEHAVIORAL:
-                continue
-            if not conflict.symbol_name:
+            by_target[conflict.target_pr].append(conflict)
+
+        for target_pr_num, group in by_target.items():
+            # Holistic batch mode when > 3 conflicts per target PR
+            if len(group) > 3:
+                try:
+                    llm.analyze_conflict_batch(group)
+                except Exception:
+                    logger.debug(
+                        "Holistic LLM analysis failed for PR #%d",
+                        target_pr_num,
+                        exc_info=True,
+                    )
                 continue
 
-            other_pr = other_pr_map.get(conflict.target_pr)
-            if not other_pr:
-                continue
+            # Individual analysis for smaller groups
+            for conflict in group:
+                if conflict.conflict_type != ConflictType.BEHAVIORAL:
+                    continue
+                if not conflict.symbol_name:
+                    continue
 
-            source_diff = self._get_symbol_diff(target_pr, conflict.symbol_name, conflict.file_path)
-            target_diff = self._get_symbol_diff(other_pr, conflict.symbol_name, conflict.file_path)
-            if not source_diff or not target_diff:
-                continue
+                other_pr = other_pr_map.get(conflict.target_pr)
+                if not other_pr:
+                    continue
 
-            try:
-                llm_result = llm.analyze_behavioral_conflict(
-                    symbol_name=conflict.symbol_name,
-                    file_path=conflict.file_path,
-                    pr_a_number=conflict.source_pr,
-                    pr_a_diff=source_diff,
-                    pr_b_number=conflict.target_pr,
-                    pr_b_diff=target_diff,
+                source_diff = self._get_symbol_diff(
+                    target_pr, conflict.symbol_name, conflict.file_path
                 )
-                if llm_result is None:
-                    # LLM says changes are compatible — downgrade
-                    conflict.severity = ConflictSeverity.INFO
-                    conflict.description += " (LLM: changes are compatible)"
-                else:
-                    conflict.severity = llm_result.severity
-                    conflict.description = llm_result.description
-                    conflict.recommendation = llm_result.recommendation
-            except (httpx.HTTPError, ValueError, KeyError):
-                logger.debug(
-                    "LLM analysis failed for %s in %s",
-                    conflict.symbol_name,
-                    conflict.file_path,
-                    exc_info=True,
+                target_diff = self._get_symbol_diff(
+                    other_pr, conflict.symbol_name, conflict.file_path
                 )
+                if not source_diff or not target_diff:
+                    continue
+
+                try:
+                    llm_result = llm.analyze_behavioral_conflict(
+                        symbol_name=conflict.symbol_name,
+                        file_path=conflict.file_path,
+                        pr_a_number=conflict.source_pr,
+                        pr_a_diff=source_diff,
+                        pr_b_number=conflict.target_pr,
+                        pr_b_diff=target_diff,
+                    )
+                    if llm_result is None:
+                        conflict.severity = ConflictSeverity.INFO
+                        conflict.description += " (LLM: changes are compatible)"
+                    else:
+                        conflict.severity = llm_result.severity
+                        conflict.description = llm_result.description
+                        conflict.recommendation = llm_result.recommendation
+                except (httpx.HTTPError, ValueError, KeyError):
+                    logger.debug(
+                        "LLM analysis failed for %s in %s",
+                        conflict.symbol_name,
+                        conflict.file_path,
+                        exc_info=True,
+                    )
 
         return conflicts
 
@@ -1166,10 +1346,14 @@ class MergeGuardEngine:
             if parsed is None:
                 continue
             file_diffs, modified_ranges = parsed
+            cfg = getattr(self, "_config", None)
+            max_file = getattr(cfg, "max_file_size", None)
+            if not isinstance(max_file, int):
+                max_file = MAX_FILE_SIZE
             content = self._fetch_and_validate_content(
                 changed_file.path,
                 pr.base_branch,
-                MAX_FILE_SIZE,
+                max_file,
                 pr,
             )
             if content is None:

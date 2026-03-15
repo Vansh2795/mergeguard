@@ -31,12 +31,42 @@ class DependencyGraph:
     _forward: dict[str, set[str]] = field(default_factory=dict)
     # Reverse adjacency: file -> files that import it
     _reverse: dict[str, set[str]] = field(default_factory=dict)
+    # Symbol-level forward: file -> {target_file: {symbol_names}}
+    _symbol_forward: dict[str, dict[str, set[str]]] = field(default_factory=dict)
 
     def add_edge(self, edge: ImportEdge) -> None:
         """Add an import edge to the graph."""
         self.edges.append(edge)
         self._forward.setdefault(edge.source_file, set()).add(edge.target_file)
         self._reverse.setdefault(edge.target_file, set()).add(edge.source_file)
+        # Build symbol-level index
+        if edge.imported_names:
+            self._symbol_forward.setdefault(edge.source_file, {}).setdefault(
+                edge.target_file, set()
+            ).update(edge.imported_names)
+
+    def get_files_importing_symbol(self, target_file: str, symbol_name: str) -> set[str]:
+        """Find all files that import a specific symbol from target_file.
+
+        Checks both direct file paths and module-form paths.
+        """
+        importers: set[str] = set()
+        for source_file, targets in self._symbol_forward.items():
+            for target, names in targets.items():
+                if target == target_file and symbol_name in names:
+                    importers.add(source_file)
+        return importers
+
+    def get_all_importers_of_file(self, target_file: str) -> dict[str, set[str]]:
+        """Get all files that import from target_file, with their imported symbol names.
+
+        Returns {importing_file: {symbol_names}}.
+        """
+        result: dict[str, set[str]] = {}
+        for source_file, targets in self._symbol_forward.items():
+            if target_file in targets:
+                result[source_file] = targets[target_file]
+        return result
 
     def get_dependents(self, file_path: str, max_depth: int = 5) -> set[str]:
         """Find all files that transitively depend on the given file.
