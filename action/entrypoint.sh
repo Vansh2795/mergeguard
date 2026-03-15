@@ -11,15 +11,20 @@ fi
 PR_NUMBER=$(jq -r '.pull_request.number' "$GITHUB_EVENT_PATH")
 REPO_FULL_NAME=$(jq -r '.repository.full_name' "$GITHUB_EVENT_PATH")
 
-# Build CLI arguments
-ARGS="--repo $REPO_FULL_NAME --pr $PR_NUMBER --format json"
+# Global options (before subcommand)
+GLOBAL_OPTS="--platform github"
+if [ -n "${MERGEGUARD_GITHUB_URL:-}" ]; then
+  GLOBAL_OPTS="$GLOBAL_OPTS --github-url $MERGEGUARD_GITHUB_URL"
+fi
 
+# Subcommand options
+ANALYZE_OPTS="--repo $REPO_FULL_NAME --pr $PR_NUMBER --format json"
 if [ -n "${MERGEGUARD_CONFIG_PATH:-}" ]; then
-  ARGS="$ARGS --config $MERGEGUARD_CONFIG_PATH"
+  ANALYZE_OPTS="$ANALYZE_OPTS --config $MERGEGUARD_CONFIG_PATH"
 fi
 
 # Run MergeGuard and capture JSON output
-REPORT=$(mergeguard analyze $ARGS)
+REPORT=$(mergeguard $GLOBAL_OPTS analyze $ANALYZE_OPTS)
 
 # Extract outputs from JSON (truncate float score to integer for bash comparison)
 RISK_SCORE=$(echo "$REPORT" | jq -r '.risk_score')
@@ -41,7 +46,7 @@ EOF_MARKER="EOF_$(date +%s%N)"
 # Post PR comment if risk exceeds threshold
 THRESHOLD="${MERGEGUARD_RISK_THRESHOLD:-0}"
 if [ "$RISK_SCORE_INT" -ge "$THRESHOLD" ]; then
-  mergeguard analyze \
+  mergeguard $GLOBAL_OPTS analyze \
     --repo "$REPO_FULL_NAME" \
     --pr "$PR_NUMBER" \
     --post-comment
