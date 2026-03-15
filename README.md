@@ -9,7 +9,7 @@
 
 **Cross-PR intelligence for the agentic coding era.**
 
-MergeGuard detects conflicts between open pull requests *before* they become merge headaches. It analyzes overlapping code changes across PRs using AST-level understanding, computes risk scores, and integrates seamlessly as a GitHub Action or CLI tool.
+MergeGuard detects conflicts between open pull requests *before* they become merge headaches. It analyzes overlapping code changes across PRs using AST-level understanding — including cross-file symbol resolution — computes risk scores, and integrates seamlessly as a GitHub Action, CLI tool, or MCP server for AI agents.
 
 ![MergeGuard Demo](demo.gif)
 
@@ -20,11 +20,12 @@ As AI coding agents (Cursor, Copilot, Devin, Claude Code) generate more PRs in p
 MergeGuard fills this gap by:
 
 - **Detecting hard conflicts** — two PRs modify the same function body
-- **Catching interface conflicts** — one PR changes a function signature while another PR calls it
-- **Identifying behavioral conflicts** — incompatible logic changes in the same module
+- **Catching interface conflicts** — one PR changes a function signature while another PR calls it (including cross-file via import analysis)
+- **Identifying behavioral conflicts** — incompatible logic changes in the same module or across file boundaries
 - **Flagging duplications** — two PRs implementing the same feature independently
 - **Detecting regressions** — a PR re-introduces something recently removed
-- **Computing risk scores** — composite scoring based on conflict severity, blast radius, code churn, and AI attribution
+- **Enforcing guardrails** — configurable rules for import restrictions, complexity limits, forbidden patterns, and more
+- **Computing risk scores** — composite scoring with configurable weights based on conflict severity, blast radius, code churn, and AI attribution
 
 ## Quick Start
 
@@ -56,44 +57,68 @@ pip install py-mergeguard
 # Analyze a specific PR
 mergeguard analyze --repo owner/repo --pr 42 --token $GITHUB_TOKEN
 
-# Output as JSON or SARIF (for CI integration)
+# Output as JSON, SARIF, or HTML
 mergeguard analyze --repo owner/repo --pr 42 --token $GITHUB_TOKEN --format json
-mergeguard analyze --repo owner/repo --pr 42 --token $GITHUB_TOKEN --format sarif
+mergeguard analyze --repo owner/repo --pr 42 --token $GITHUB_TOKEN --format html
 
 # Show collision map of all open PRs
 mergeguard map --repo owner/repo --token $GITHUB_TOKEN
 
-# Collision map as JSON
-mergeguard map --repo owner/repo --token $GITHUB_TOKEN --format json
-
-# Risk dashboard for all open PRs
+# Risk dashboard (terminal or HTML)
 mergeguard dashboard --repo owner/repo --token $GITHUB_TOKEN
+mergeguard dashboard --repo owner/repo --token $GITHUB_TOKEN --format html
+
+# Suggest optimal merge order
+mergeguard suggest-order --repo owner/repo --token $GITHUB_TOKEN
+
+# Watch for changes and re-analyze automatically
+mergeguard watch --repo owner/repo --token $GITHUB_TOKEN
+
+# Interactive setup wizard
+mergeguard init
 ```
 
 ## How It Works
 
-1. **Fetch** — Retrieves all open PRs and their diffs from GitHub
+1. **Fetch** — Retrieves all open PRs and their diffs from GitHub, GitLab, or Bitbucket
 2. **Parse** — Uses Tree-sitter to build AST-level understanding of changed code
-3. **Detect** — Compares every pair of open PRs for overlapping changes
-4. **Classify** — Categorizes conflicts (hard, interface, behavioral, duplication, regression)
-5. **Score** — Computes a composite risk score (0-100) for each PR
-6. **Report** — Posts actionable comments on PRs or displays results in the terminal
+3. **Detect** — Compares every pair of open PRs for overlapping changes, including cross-file conflicts via import/symbol analysis
+4. **Classify** — Categorizes conflicts (hard, interface, behavioral, duplication, transitive, regression, guardrail)
+5. **Score** — Computes a composite risk score (0-100) with configurable weights
+6. **Report** — Posts actionable comments on PRs, renders terminal output with diff previews, generates HTML reports, or sends Slack/Teams notifications
+
+## Platforms
+
+| Platform | Status |
+|----------|--------|
+| GitHub (cloud + Enterprise Server) | Supported |
+| GitLab (cloud + self-hosted) | Supported |
+| Bitbucket Cloud | Supported |
 
 ## Configuration
 
-Create a `.mergeguard.yml` in your repository root:
+Create a `.mergeguard.yml` in your repository root (or run `mergeguard init` for guided setup):
 
 ```yaml
 risk_threshold: 50        # Only comment if risk score > 50
 check_regressions: true   # Detect regressions against recent merges
 max_open_prs: 30          # Performance limit
 llm_enabled: false        # Optional AI-powered semantic analysis
+max_transitive_per_pair: 5  # Max transitive conflicts per PR pair
 ignored_paths:
   - "*.lock"
   - "package-lock.json"
+
+# Custom risk weights (must sum to ~1.0)
+# risk_weights:
+#   conflict_severity: 0.40
+#   blast_radius: 0.20
+#   pattern_deviation: 0.15
+#   churn_risk: 0.15
+#   ai_attribution: 0.10
 ```
 
-See [Configuration Guide](docs/configuration.md) for all options.
+See [Configuration Guide](docs/configuration.md) for all options including guardrail rules, notifications, and performance tuning.
 
 ## Documentation
 
@@ -104,6 +129,8 @@ See [Configuration Guide](docs/configuration.md) for all options.
 - [Architecture](docs/architecture.md)
 - [Contributing](docs/contributing.md)
 - [FAQ](docs/faq.md)
+- [Changelog](CHANGELOG.md)
+- [Roadmap](ROADMAP.md)
 
 ## Development
 

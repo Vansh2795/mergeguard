@@ -141,6 +141,40 @@ Add an Anthropic API key to enable deeper semantic conflict detection:
     anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
+## GitHub Enterprise Server
+
+For self-hosted GitHub instances, set the `github-url` action input or `MERGEGUARD_GITHUB_URL` environment variable:
+
+```yaml
+- uses: Vansh2795/mergeguard@v0.1
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    github-url: "https://github.example.com"
+```
+
+Or via CLI:
+
+```bash
+mergeguard --github-url https://github.example.com analyze --repo owner/repo --pr 42
+```
+
+## Bitbucket Pipelines
+
+```yaml
+pipelines:
+  pull-requests:
+    '**':
+      - step:
+          name: MergeGuard
+          image: python:3.12-slim
+          script:
+            - pip install py-mergeguard
+            - mergeguard analyze --platform bitbucket --post-comment
+          variables:
+            BITBUCKET_USERNAME: $BITBUCKET_USERNAME
+            BITBUCKET_APP_PASSWORD: $BITBUCKET_APP_PASSWORD
+```
+
 ## Environment Variables
 
 See the [Configuration Guide](configuration.md) for the full list of environment variables and `.mergeguard.yml` options.

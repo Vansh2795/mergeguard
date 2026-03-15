@@ -1,0 +1,87 @@
+name: Bug Report
+description: Report a bug in MergeGuard
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug! Please fill out the details below.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear description of the bug.
+      placeholder: What happened? What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Minimal steps to reproduce the behavior.
+      placeholder: |
+        1. Run `mergeguard analyze --repo owner/repo --pr 42`
+        2. See error...
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: MergeGuard Version
+      description: Output of `mergeguard --version`
+      placeholder: "0.1.2"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - GitHub
+        - GitLab
+        - Bitbucket
+        - GitHub Enterprise
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: Installation Method
+      options:
+        - pip / uv (PyPI)
+        - GitHub Action
+        - From source
+    validations:
+      required: true
+
+  - type: input
+    id: python-version
+    attributes:
+      label: Python Version
+      placeholder: "3.12.4"
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating System
+      placeholder: "macOS 15.1 / Ubuntu 24.04 / Windows 11"
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / Error Output
+      description: Paste any relevant logs or error messages. Run with `--verbose` for debug output.
+      render: shell
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Configuration
+      description: Paste your `.mergeguard.yml` if relevant (remove any tokens/secrets).
+      render: yaml
