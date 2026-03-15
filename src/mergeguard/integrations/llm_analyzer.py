@@ -316,11 +316,10 @@ class LLMAnalyzer:
         recommendation = result.get("recommendation")
         if recommendation and isinstance(recommendation, str):
             assessment = result.get("overall_assessment", "")
+            first = conflicts[0]
             if assessment:
-                conflicts[0].description = (
-                    f"{conflicts[0].description}\n\n**Holistic assessment:** {assessment}"
-                )
-            conflicts[0].recommendation = recommendation
+                first.description = f"{first.description}\n\n**Holistic assessment:** {assessment}"
+            first.recommendation = recommendation
 
         return conflicts
 
