@@ -645,13 +645,9 @@ def watch(
                         if post_comment and token and report.conflicts:
                             from mergeguard.output.github_comment import format_report
 
-                            comment = format_report(
-                                report, repo, platform=resolved_platform
-                            )
+                            comment = format_report(report, repo, platform=resolved_platform)
                             client.post_pr_comment(pr_num, comment)
-                            console.print(
-                                f"[green]\u2713 Comment updated on PR #{pr_num}[/green]"
-                            )
+                            console.print(f"[green]\u2713 Comment updated on PR #{pr_num}[/green]")
                     except Exception:
                         console.print(
                             f"[red]Failed to analyze PR #{pr_num}[/red]",
@@ -767,29 +763,33 @@ def init(ctx: click.Context) -> None:
     if llm_enabled:
         config_lines.append('llm_model: "claude-sonnet-4-20250514"')
 
-    config_lines.extend([
-        "",
-        "ignored_paths:",
-        '  - "*.lock"',
-        '  - "*.min.js"',
-        '  - "*.min.css"',
-        '  - "package-lock.json"',
-        '  - "yarn.lock"',
-        '  - "pnpm-lock.yaml"',
-        '  - "poetry.lock"',
-    ])
+    config_lines.extend(
+        [
+            "",
+            "ignored_paths:",
+            '  - "*.lock"',
+            '  - "*.min.js"',
+            '  - "*.min.css"',
+            '  - "package-lock.json"',
+            '  - "yarn.lock"',
+            '  - "pnpm-lock.yaml"',
+            '  - "poetry.lock"',
+        ]
+    )
 
     if is_monorepo:
-        config_lines.extend([
-            "",
-            "# Monorepo guardrails (customize patterns for your project)",
-            "# rules:",
-            "#   - name: cross-module-boundary",
-            '#     pattern: "packages/billing/**"',
-            "#     cannot_import_from:",
-            '#       - "packages/auth/**"',
-            '#     message: "Billing must not import from auth directly"',
-        ])
+        config_lines.extend(
+            [
+                "",
+                "# Monorepo guardrails (customize patterns for your project)",
+                "# rules:",
+                "#   - name: cross-module-boundary",
+                '#     pattern: "packages/billing/**"',
+                "#     cannot_import_from:",
+                '#       - "packages/auth/**"',
+                '#     message: "Billing must not import from auth directly"',
+            ]
+        )
 
     config_text = "\n".join(config_lines) + "\n"
     config_path.write_text(config_text)
@@ -822,8 +822,7 @@ jobs:
         console.print(f"[green]\u2713 Created {workflow_path}[/green]")
 
     console.print(
-        "\n[bold green]Setup complete![/bold green] "
-        "Run `mergeguard analyze` to get started."
+        "\n[bold green]Setup complete![/bold green] Run `mergeguard analyze` to get started."
     )
 
 
@@ -853,9 +852,9 @@ def analyze_multi(
             f"Multi-repo config not found: {config_path}\n"
             f"Create a .mergeguard-multi.yml with:\n"
             f"  repos:\n"
-            f'    - name: shared-lib\n      repo: org/shared-lib\n'
-            f'    - name: service-a\n      repo: org/service-a\n'
-            f'      depends_on: [shared-lib]'
+            f"    - name: shared-lib\n      repo: org/shared-lib\n"
+            f"    - name: service-a\n      repo: org/service-a\n"
+            f"      depends_on: [shared-lib]"
         )
 
     with open(path) as f:
@@ -883,9 +882,7 @@ def analyze_multi(
         console.print(f"\n[bold cyan]Analyzing {repo_name} ({repo_path})...[/bold cyan]")
 
         cfg = load_config(".mergeguard.yml")
-        client = _create_client(
-            resolved_platform, token, repo_path, gitlab_url, github_url
-        )
+        client = _create_client(resolved_platform, token, repo_path, gitlab_url, github_url)
         engine = MergeGuardEngine(config=cfg, client=client)
 
         with console.status(f"[bold blue]Scanning {repo_name}...", spinner="dots"):
@@ -905,11 +902,7 @@ def analyze_multi(
 
     for repo_name, report in sorted(all_reports, key=lambda x: x[1].risk_score, reverse=True):
         risk_style = (
-            "red"
-            if report.risk_score >= 70
-            else "yellow"
-            if report.risk_score >= 40
-            else "green"
+            "red" if report.risk_score >= 70 else "yellow" if report.risk_score >= 40 else "green"
         )
         table.add_row(
             repo_name,

@@ -50,9 +50,7 @@ class GitHubClient:
             gh_kwargs["base_url"] = api_url
         self._gh = Github(**gh_kwargs)  # type: ignore[arg-type]
         self._repo = self._gh.get_repo(repo_full_name)
-        self._api_base = (
-            f"{base_url.rstrip('/')}/api/v3" if base_url else "https://api.github.com"
-        )
+        self._api_base = f"{base_url.rstrip('/')}/api/v3" if base_url else "https://api.github.com"
         self._http = httpx.Client(
             headers={"Accept": "application/vnd.github.v3+json"},
             timeout=float(timeout),

@@ -51,9 +51,7 @@ class BitbucketClient:
 
     # ── Public API (SCMClient protocol) ──
 
-    def get_open_prs(
-        self, max_count: int = 200, max_age_days: int | None = None
-    ) -> list[PRInfo]:
+    def get_open_prs(self, max_count: int = 200, max_age_days: int | None = None) -> list[PRInfo]:
         """Fetch open pull requests with metadata."""
         logger.debug(
             "Fetching open PRs (max %d, max_age_days=%s) from %s",
@@ -106,12 +104,8 @@ class BitbucketClient:
         # Get the PR to find the merge spec (source..destination)
         pr_resp = self._get(f"{self._base_url}/pullrequests/{pr_number}")
         pr_data = pr_resp.json()
-        source_hash = (
-            pr_data.get("source", {}).get("commit", {}).get("hash", "")
-        )
-        dest_hash = (
-            pr_data.get("destination", {}).get("commit", {}).get("hash", "")
-        )
+        source_hash = pr_data.get("source", {}).get("commit", {}).get("hash", "")
+        dest_hash = pr_data.get("destination", {}).get("commit", {}).get("hash", "")
         spec = f"{dest_hash}..{source_hash}"
 
         files: list[ChangedFile] = []

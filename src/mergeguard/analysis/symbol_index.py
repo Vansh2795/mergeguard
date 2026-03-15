@@ -166,9 +166,7 @@ class SymbolIndex:
                 if resolved:
                     cross_file_cg.setdefault(fp, {})[sym.name] = resolved
                     # Update the symbol's dependencies with qualified references
-                    sym.dependencies = list(
-                        set(sym.dependencies) | {r for r in resolved}
-                    )
+                    sym.dependencies = list(set(sym.dependencies) | {r for r in resolved})
 
         return cross_file_cg
 

@@ -92,8 +92,7 @@ def notify_slack(
         emoji = _SEVERITY_EMOJI.get(c.severity.value, "")
         symbol = f" `{c.symbol_name}`" if c.symbol_name else ""
         conflict_lines.append(
-            f"{emoji} *{c.conflict_type.value}* with #{c.target_pr}: "
-            f"`{c.file_path}`{symbol}"
+            f"{emoji} *{c.conflict_type.value}* with #{c.target_pr}: `{c.file_path}`{symbol}"
         )
 
     if conflict_lines:
