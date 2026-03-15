@@ -1,6 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 
+# If running against the mergeguard repo itself (dogfood), install from local source
+# to pick up unreleased fixes. Otherwise use the pre-installed PyPI version.
+if grep -q 'name = "py-mergeguard"' /github/workspace/pyproject.toml 2>/dev/null; then
+  pip install --no-cache-dir /github/workspace >/dev/null 2>&1
+fi
+
 # Extract PR number and repo from GitHub event
 PR_NUMBER=$(jq -r '.pull_request.number' "$GITHUB_EVENT_PATH")
 REPO_FULL_NAME=$(jq -r '.repository.full_name' "$GITHUB_EVENT_PATH")
