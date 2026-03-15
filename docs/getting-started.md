@@ -68,33 +68,55 @@ export GITHUB_TOKEN=ghp_your_token_here
 # Analyze a specific PR
 mergeguard analyze --repo owner/repo --pr 42
 
-# Output as SARIF for CI integration (e.g. GitHub Code Scanning)
-mergeguard analyze --repo owner/repo --pr 42 --format sarif
+# Output as JSON, SARIF, or HTML
+mergeguard analyze --repo owner/repo --pr 42 --format json
+mergeguard analyze --repo owner/repo --pr 42 --format html
 
 # Show the collision map of all open PRs
 mergeguard map --repo owner/repo
 
-# Collision map as JSON for scripting
-mergeguard map --repo owner/repo --format json
-
-# Risk dashboard for all open PRs
+# Risk dashboard (terminal or HTML with charts)
 mergeguard dashboard --repo owner/repo
+mergeguard dashboard --repo owner/repo --format html
+
+# Suggest optimal merge order
+mergeguard suggest-order --repo owner/repo
+
+# Watch for PR changes and re-analyze
+mergeguard watch --repo owner/repo
+
+# Interactive setup wizard
+mergeguard init
+```
+
+### Other Platforms
+
+```bash
+# GitLab
+mergeguard analyze --platform gitlab --repo group/project --pr 42 --token $GITLAB_TOKEN
+
+# Bitbucket Cloud
+mergeguard analyze --platform bitbucket --repo workspace/repo --pr 42 --token $BITBUCKET_APP_PASSWORD
+
+# GitHub Enterprise Server
+mergeguard --github-url https://github.example.com analyze --repo owner/repo --pr 42
 ```
 
 ## Configuration
 
-Create a `.mergeguard.yml` file in your repository root to customize behavior:
+Create a `.mergeguard.yml` file in your repository root (or run `mergeguard init` for guided setup):
 
 ```yaml
 risk_threshold: 50
 check_regressions: true
 max_open_prs: 30
+max_transitive_per_pair: 5
 ignored_paths:
   - "*.lock"
   - "package-lock.json"
 ```
 
-See the [Configuration Guide](configuration.md) for all options.
+See the [Configuration Guide](configuration.md) for all options including guardrail rules, risk weights, and performance tuning.
 
 ## What's Next?
 

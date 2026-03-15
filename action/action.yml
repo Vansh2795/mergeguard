@@ -21,6 +21,9 @@ inputs:
   config-path:
     description: "Path to .mergeguard.yml config file"
     default: ".mergeguard.yml"
+  github-url:
+    description: "GitHub Enterprise Server URL (e.g., https://github.example.com)"
+    required: false
 
 outputs:
   risk-score:
@@ -40,6 +43,7 @@ runs:
     MERGEGUARD_MAX_OPEN_PRS: ${{ inputs.max-open-prs }}
     MERGEGUARD_MAX_PR_AGE_DAYS: ${{ inputs.max-pr-age }}
     MERGEGUARD_CONFIG_PATH: ${{ inputs.config-path }}
+    MERGEGUARD_GITHUB_URL: ${{ inputs.github-url }}
 
 branding:
   icon: "shield"

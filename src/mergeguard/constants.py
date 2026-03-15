@@ -26,15 +26,6 @@ RISK_HIGH = 70
 RISK_MEDIUM = 40
 RISK_LOW = 0
 
-# Risk score weights (must sum to 1.0)
-DEFAULT_RISK_WEIGHTS = {
-    "conflict_severity": 0.30,
-    "blast_radius": 0.25,
-    "pattern_deviation": 0.20,
-    "churn_risk": 0.15,
-    "ai_attribution": 0.10,
-}
-
 # Supported file extensions for AST parsing
 SUPPORTED_EXTENSIONS = {
     ".py",

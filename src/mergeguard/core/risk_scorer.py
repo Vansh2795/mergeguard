@@ -32,6 +32,30 @@ CONCENTRATION_FLOOR = 0.6  # Min discount for concentrated criticals
 CONCENTRATION_VARIABLE = 0.4  # Variable portion of concentration discount
 
 
+_VALID_WEIGHT_KEYS = set(DEFAULT_WEIGHTS.keys())
+
+
+def _resolve_weights(custom_weights: dict[str, float] | None) -> dict[str, float]:
+    """Resolve custom weights, validating keys and approximate sum."""
+    if custom_weights is None:
+        return DEFAULT_WEIGHTS
+    # Validate keys
+    if set(custom_weights.keys()) != _VALID_WEIGHT_KEYS:
+        missing = _VALID_WEIGHT_KEYS - set(custom_weights.keys())
+        extra = set(custom_weights.keys()) - _VALID_WEIGHT_KEYS
+        parts = []
+        if missing:
+            parts.append(f"missing: {missing}")
+        if extra:
+            parts.append(f"unknown: {extra}")
+        raise ValueError(f"Invalid risk_weights: {', '.join(parts)}")
+    # Validate approximate sum
+    total = sum(custom_weights.values())
+    if not (0.95 <= total <= 1.05):
+        raise ValueError(f"risk_weights must sum to ~1.0, got {total:.3f}")
+    return custom_weights
+
+
 def compute_risk_score(
     pr: PRInfo,
     conflicts: list[Conflict],
@@ -44,7 +68,7 @@ def compute_risk_score(
 
     Returns (total_score, breakdown_dict) for transparency.
     """
-    weights = DEFAULT_WEIGHTS
+    weights = _resolve_weights(config.risk_weights)
     factors: dict[str, float] = {}
 
     # 1. Conflict severity (0-100)

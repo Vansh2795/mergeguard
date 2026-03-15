@@ -96,6 +96,34 @@ function names and line numbers. Respond in JSON format:
 
 Respond with ONLY the JSON array. No markdown formatting."""
 
+HOLISTIC_ANALYSIS_PROMPT = """You are analyzing multiple conflicts between two pull requests.
+These conflicts may be related — for example, they could all stem from a coordinated refactor,
+or they might be independent issues that happen to affect the same PR pair.
+
+Source PR: #{source_pr}
+Target PR: #{target_pr}
+
+Conflicts ({count} total):
+{conflict_details}
+
+Analyze these conflicts holistically:
+1. Are any of these conflicts related or part of the same change?
+2. Should any severities be adjusted when considering the full picture?
+3. What is the single best recommendation for the PR authors?
+
+Respond in JSON format:
+{{
+  "related_groups": [[0, 1], [2]],
+  "severity_adjustments": {{"0": "info", "2": "critical"}},
+  "overall_assessment": "Brief holistic assessment",
+  "recommendation": "Single actionable recommendation for the PR authors"
+}}
+
+Rules:
+- Only adjust severity if the holistic view genuinely changes the risk
+- Group conflicts that are clearly part of the same logical change
+- Keep the recommendation specific and actionable"""
+
 _DEFAULT_MODELS = {
     "openai": "gpt-4o",
     "anthropic": "claude-sonnet-4-20250514",
@@ -226,6 +254,74 @@ class LLMAnalyzer:
             ),
             recommendation=result.get("recommendation", "Review both changes before merging."),
         )
+
+    def analyze_conflict_batch(
+        self,
+        conflicts: list[Conflict],
+    ) -> list[Conflict]:
+        """Analyze a batch of conflicts holistically.
+
+        Sends all conflicts for a PR pair in one LLM call. The LLM identifies
+        related conflicts, reclassifies severity for the group, and provides
+        a single holistic recommendation.
+
+        Returns the conflicts with potentially updated severities and descriptions.
+        """
+        if len(conflicts) <= 1:
+            return conflicts
+
+        # Build conflict details for the prompt
+        conflict_lines = []
+        for i, c in enumerate(conflicts):
+            symbol_info = f" (symbol: `{c.symbol_name}`)" if c.symbol_name else ""
+            conflict_lines.append(
+                f"  {i}. [{c.conflict_type.value}] [{c.severity.value}] "
+                f"`{c.file_path}`{symbol_info}: {c.description}"
+            )
+
+        prompt = HOLISTIC_ANALYSIS_PROMPT.format(
+            source_pr=conflicts[0].source_pr,
+            target_pr=conflicts[0].target_pr,
+            count=len(conflicts),
+            conflict_details="\n".join(conflict_lines),
+        )
+
+        try:
+            raw = self._llm_call(prompt, max_tokens=800)
+            result = json.loads(raw)
+        except (json.JSONDecodeError, Exception):
+            logger.debug("Holistic analysis failed", exc_info=True)
+            return conflicts
+
+        if not isinstance(result, dict):
+            return conflicts
+
+        severity_map = {
+            "critical": ConflictSeverity.CRITICAL,
+            "warning": ConflictSeverity.WARNING,
+            "info": ConflictSeverity.INFO,
+        }
+
+        # Apply severity adjustments
+        adjustments = result.get("severity_adjustments", {})
+        for idx_str, new_severity in adjustments.items():
+            try:
+                idx = int(idx_str)
+                if 0 <= idx < len(conflicts) and new_severity in severity_map:
+                    conflicts[idx].severity = severity_map[new_severity]
+            except (ValueError, IndexError):
+                continue
+
+        # Add holistic recommendation to the first conflict
+        recommendation = result.get("recommendation")
+        if recommendation and isinstance(recommendation, str):
+            assessment = result.get("overall_assessment", "")
+            first = conflicts[0]
+            if assessment:
+                first.description = f"{first.description}\n\n**Holistic assessment:** {assessment}"
+            first.recommendation = recommendation
+
+        return conflicts
 
     def generate_fix_suggestion(
         self,

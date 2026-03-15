@@ -55,6 +55,46 @@ llm_enabled: true
 llm_model: "claude-sonnet-4-20250514"  # or any supported model
 ```
 
+### `max_transitive_per_pair` (default: `5`)
+
+Maximum number of transitive conflicts to detect per PR pair. Increase to see the full blast radius; decrease to reduce noise.
+
+```yaml
+max_transitive_per_pair: 5
+```
+
+### `risk_weights` (default: built-in weights)
+
+Custom weights for risk score computation. All 5 keys must be present and must sum to approximately 1.0 (0.95-1.05 tolerance).
+
+```yaml
+risk_weights:
+  conflict_severity: 0.40
+  blast_radius: 0.20
+  pattern_deviation: 0.15
+  churn_risk: 0.15
+  ai_attribution: 0.10
+```
+
+### `github_url` (default: `null`)
+
+GitHub Enterprise Server URL. Set this for self-hosted GitHub instances.
+
+```yaml
+github_url: "https://github.example.com"
+```
+
+### Performance Tuning
+
+```yaml
+max_file_size: 500000       # Skip files larger than this (bytes)
+max_diff_size: 100000       # Skip diffs larger than this (bytes)
+churn_max_lines: 500        # Normalization cap for churn risk factor
+max_cache_entries: 500      # Max entries in content cache
+api_timeout: 30             # API request timeout (seconds)
+max_workers: 8              # Parallel enrichment workers
+```
+
 ### `ignored_paths` (default: lock files)
 
 File patterns to exclude from analysis. Supports glob patterns.
@@ -74,7 +114,7 @@ ignored_paths:
 
 ### `rules` (default: `[]`)
 
-Guardrail rules for enforcing repository-specific policies. Each rule can target specific file patterns and enforce constraints.
+Guardrail rules for enforcing repository-specific policies. Each rule can target specific file patterns and enforce constraints. All 6 rule types are fully implemented:
 
 ```yaml
 rules:
@@ -90,21 +130,39 @@ rules:
     max_lines_changed: 500
     message: "AI-authored PRs are limited in scope for safety"
 
+  - name: "no-env-in-source"
+    pattern: "src/**"
+    must_not_contain:
+      - "os.environ"
+      - "process.env"
+    message: "Use config module instead of reading env vars directly"
+
   - name: "no-god-functions"
-    max_function_lines: 100
-    message: "Functions should not exceed 100 lines"
+    pattern: "src/**"
+    max_function_lines: 50
+    message: "Functions should not exceed 50 lines"
+
+  - name: "complexity-limit"
+    pattern: "src/**"
+    max_cyclomatic_complexity: 10
+    message: "Keep cyclomatic complexity under 10"
 ```
 
 ## Environment Variables
 
 | Variable | Description |
 |---|---|
-| `GITHUB_TOKEN` | GitHub token for API access (required) |
+| `GITHUB_TOKEN` | GitHub token for API access (required for GitHub) |
+| `GITLAB_TOKEN` | GitLab token for API access (required for GitLab) |
+| `BITBUCKET_USERNAME` | Bitbucket username for App Password auth |
+| `BITBUCKET_APP_PASSWORD` | Bitbucket App Password |
 | `ANTHROPIC_API_KEY` | Anthropic API key for LLM analysis (optional) |
+| `OPENAI_API_KEY` | OpenAI API key for LLM analysis (optional) |
 | `MERGEGUARD_CONFIG_PATH` | Override config file path |
 | `MERGEGUARD_RISK_THRESHOLD` | Override risk threshold |
 | `MERGEGUARD_MAX_OPEN_PRS` | Override max open PRs (safety cap) |
 | `MERGEGUARD_MAX_PR_AGE_DAYS` | Override max PR age in days |
+| `MERGEGUARD_GITHUB_URL` | GitHub Enterprise Server URL |
 
 ## GitHub Action Inputs
 
@@ -116,3 +174,4 @@ rules:
 | `max-open-prs` | No | `200` | Max open PRs to analyze (safety cap) |
 | `max-pr-age` | No | `30` | Only scan PRs updated within this many days |
 | `config-path` | No | `.mergeguard.yml` | Path to config file |
+| `github-url` | No | — | GitHub Enterprise Server URL |
