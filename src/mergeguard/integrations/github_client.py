@@ -137,6 +137,9 @@ class GitHubClient:
             if isinstance(content, list):
                 return None  # Directory, not a file
             return content.decoded_content.decode("utf-8")
+        except UnicodeDecodeError:
+            logger.debug("Binary file (not UTF-8): %s at %s", path, ref)
+            return None
         except UnknownObjectException:
             logger.debug("File not found: %s at %s", path, ref)
             return None  # File doesn't exist at this ref
