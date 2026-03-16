@@ -30,6 +30,7 @@ INFO_SEVERITY_SCORE = 15.0
 DIMINISHING_RETURN_BASE = 0.5  # Exponent base for diminishing returns
 CONCENTRATION_FLOOR = 0.6  # Min discount for concentrated criticals
 CONCENTRATION_VARIABLE = 0.4  # Variable portion of concentration discount
+NO_CONFLICT_DAMPENER = 0.25  # Scale factor when zero conflicts detected
 
 
 _VALID_WEIGHT_KEYS = set(DEFAULT_WEIGHTS.keys())
@@ -103,6 +104,12 @@ def compute_risk_score(
     # Weighted sum
     total = sum(factors[k] * weights[k] for k in weights)
     total = min(100.0, max(0.0, total))
+
+    # When no conflicts are detected, auxiliary factors (blast radius, churn,
+    # pattern deviation, AI) still provide useful context but shouldn't dominate.
+    # Scale to 25% so a conflict-free PR caps around ~10-15 instead of ~40-50.
+    if not conflicts:
+        total *= NO_CONFLICT_DAMPENER
 
     return total, factors
 
