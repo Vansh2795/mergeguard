@@ -178,9 +178,7 @@ class TestComputeRiskScore:
             ai_attribution=AIAttribution.AI_SUSPECTED,
         )
         # No conflicts, but high churn/pattern/depth to simulate PR #13 scenario
-        score, factors = compute_risk_score(
-            pr, [], 3, 1.0, 0.5, MergeGuardConfig()
-        )
+        score, factors = compute_risk_score(pr, [], 3, 1.0, 0.5, MergeGuardConfig())
         # Undampened: blast=45*0.25 + pattern=50*0.20 + churn=100*0.15 + ai=20*0.10
         #           = 11.25 + 10.0 + 15.0 + 2.0 = 38.25
         # Dampened:  38.25 * 0.25 = 9.5625
@@ -211,9 +209,7 @@ class TestComputeRiskScore:
             updated_at=datetime(2026, 1, 1),
         )
         conflicts = [make_conflict(ConflictSeverity.WARNING)]
-        score, factors = compute_risk_score(
-            pr, conflicts, 3, 1.0, 0.5, MergeGuardConfig()
-        )
+        score, factors = compute_risk_score(pr, conflicts, 3, 1.0, 0.5, MergeGuardConfig())
         # With conflicts, no dampening — score equals the raw weighted sum
         undampened = sum(
             factors[k] * w
