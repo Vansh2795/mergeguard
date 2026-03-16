@@ -1,6 +1,6 @@
 [project]
 name = "py-mergeguard"
-version = "0.1.2"
+version = "0.2.0"
 description = "Cross-PR intelligence for the agentic coding era"
 readme = "README.md"
 license = { text = "MIT" }
@@ -21,13 +21,15 @@ dependencies = [
     "rich>=13.0.0",
     "pydantic>=2.10.0",
     "httpx>=0.28.0",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
 llm = ["anthropic>=0.42.0", "openai>=1.0.0"]
 llm-anthropic = ["anthropic>=0.42.0"]
 llm-openai = ["openai>=1.0.0"]
-all = ["py-mergeguard[llm]"]
+mcp = ["mcp>=1.0.0"]
+all = ["py-mergeguard[llm]", "py-mergeguard[mcp]"]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=6.0",
@@ -69,7 +71,7 @@ python_version = "3.12"
 strict = true
 
 [[tool.mypy.overrides]]
-module = ["openai.*", "anthropic.*"]
+module = ["openai.*", "anthropic.*", "yaml.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

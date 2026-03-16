@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from mergeguard.core.risk_scorer import _score_conflicts, compute_risk_score
+from mergeguard.core.risk_scorer import (
+    NO_CONFLICT_DAMPENER,
+    _score_conflicts,
+    compute_risk_score,
+)
 from mergeguard.models import (
     AIAttribution,
     Conflict,
@@ -159,3 +163,62 @@ class TestComputeRiskScore:
         ]
         _, factors = compute_risk_score(pr, conflicts, 5, 0.0, 0.0, MergeGuardConfig())
         assert factors["blast_radius"] == 100.0
+
+    def test_no_conflict_dampening(self):
+        """High auxiliary scores are dampened when no conflicts exist."""
+        pr = PRInfo(
+            number=1,
+            title="t",
+            author="a",
+            base_branch="main",
+            head_branch="b",
+            head_sha="s",
+            created_at=datetime(2026, 1, 1),
+            updated_at=datetime(2026, 1, 1),
+            ai_attribution=AIAttribution.AI_SUSPECTED,
+        )
+        # No conflicts, but high churn/pattern/depth to simulate PR #13 scenario
+        score, factors = compute_risk_score(pr, [], 3, 1.0, 0.5, MergeGuardConfig())
+        # Undampened: blast=45*0.25 + pattern=50*0.20 + churn=100*0.15 + ai=20*0.10
+        #           = 11.25 + 10.0 + 15.0 + 2.0 = 38.25
+        # Dampened:  38.25 * 0.25 = 9.5625
+        assert score < 15.0  # Well below the undampened ~38
+        # Verify dampener was applied (score ≈ undampened * 0.25)
+        undampened = sum(
+            factors[k] * w
+            for k, w in [
+                ("conflict_severity", 0.30),
+                ("blast_radius", 0.25),
+                ("pattern_deviation", 0.20),
+                ("churn_risk", 0.15),
+                ("ai_attribution", 0.10),
+            ]
+        )
+        assert abs(score - undampened * NO_CONFLICT_DAMPENER) < 0.001
+
+    def test_dampening_not_applied_with_conflicts(self):
+        """Dampener does NOT apply when conflicts exist."""
+        pr = PRInfo(
+            number=1,
+            title="t",
+            author="a",
+            base_branch="main",
+            head_branch="b",
+            head_sha="s",
+            created_at=datetime(2026, 1, 1),
+            updated_at=datetime(2026, 1, 1),
+        )
+        conflicts = [make_conflict(ConflictSeverity.WARNING)]
+        score, factors = compute_risk_score(pr, conflicts, 3, 1.0, 0.5, MergeGuardConfig())
+        # With conflicts, no dampening — score equals the raw weighted sum
+        undampened = sum(
+            factors[k] * w
+            for k, w in [
+                ("conflict_severity", 0.30),
+                ("blast_radius", 0.25),
+                ("pattern_deviation", 0.20),
+                ("churn_risk", 0.15),
+                ("ai_attribution", 0.10),
+            ]
+        )
+        assert abs(score - undampened) < 0.001

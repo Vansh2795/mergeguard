@@ -47,6 +47,17 @@ For each pair of open PRs (`conflict.py`):
 2. Compute symbol overlap (which PRs modify the same functions)
 3. Classify conflicts by type and severity
 
+### Step 4a: Cross-File Conflict Detection
+
+MergeGuard goes beyond same-file conflicts by analyzing import graphs:
+1. Build a dependency graph from all PR files using `extract_imports`
+2. For each changed symbol in PR A, find all files that import it by name
+3. If any of those importing files are changed by PR B, emit a cross-file conflict:
+   - **INTERFACE** (CRITICAL) — when the changed symbol has a modified signature
+   - **BEHAVIORAL** (WARNING) — when only the function body changed
+
+This catches the most common real-world conflicts: PR A changes `User` class in `auth/models.py`, PR B calls `User` from `api/views.py`.
+
 ### Step 4b: Conflict Intelligence
 
 After raw conflict detection, MergeGuard applies a severity intelligence pipeline to reduce noise and surface only actionable conflicts:
@@ -63,21 +74,35 @@ After raw conflict detection, MergeGuard applies a severity intelligence pipelin
 
 ### Step 5: Risk Scoring
 
-The risk scorer (`risk_scorer.py`) computes a composite 0-100 score based on:
-- **Conflict severity** (30%): critical=100, warning=50, info=15
-- **Blast radius** (25%): how many downstream files depend on changed code
-- **Pattern deviation** (20%): how much the code deviates from existing patterns
-- **Churn risk** (15%): historically buggy files
-- **AI attribution** (10%): AI-generated PRs get a modest penalty
+The risk scorer (`risk_scorer.py`) computes a composite 0-100 score based on configurable weights:
+- **Conflict severity** (default 30%): critical=100, warning=50, info=15
+- **Blast radius** (default 25%): how many downstream files depend on changed code
+- **Pattern deviation** (default 20%): how much the code deviates from existing patterns
+- **Churn risk** (default 15%): historically buggy files
+- **AI attribution** (default 10%): AI-generated PRs get a modest penalty
+
+Teams can customize these weights via `.mergeguard.yml` — see [Configuration](configuration.md).
+
+### Step 5b: Guardrail Enforcement
+
+If guardrail rules are configured, MergeGuard enforces them:
+- **`max_files_changed` / `max_lines_changed`** — PR size limits
+- **`cannot_import_from`** — Forbidden import patterns (e.g., billing must not import auth)
+- **`must_not_contain`** — Forbidden strings in added lines (e.g., `os.environ`)
+- **`max_function_lines`** — Function length limits
+- **`max_cyclomatic_complexity`** — Complexity limits computed via Tree-sitter AST
 
 ### Step 6: Report
 
 Results are formatted as:
-- GitHub PR comments (with collapsible sections for low-severity issues)
-- Terminal output (Rich-based colored tables)
+- GitHub/GitLab PR comments (with collapsible sections for low-severity issues)
+- Terminal output (Rich-based colored tables with inline diff previews)
 - JSON reports (for CI integration)
 - SARIF v2.1.0 (for GitHub Code Scanning and other SARIF-aware CI tools)
+- Self-contained HTML reports (with risk gauges, sortable tables, syntax-highlighted diffs)
+- HTML dashboards (with Chart.js visualizations: risk distribution, conflict types, collision matrix)
 - SVG badges (for README embedding)
+- Slack/Teams webhook notifications (Block Kit / Adaptive Cards)
 
 The `map` command also supports JSON output (`--format json`), emitting a machine-readable list of PR pairs and their shared files.
 
@@ -91,7 +116,8 @@ For unsupported languages, a regex-based fallback extracts function and class de
 ## Data Flow Diagram
 
 ```
-GitHub API → Fetch PRs → Parse Diffs → AST Analysis → Conflict Detection → Risk Scoring → Report
+SCM API → Fetch PRs → Parse Diffs → AST Analysis → Same-File Conflicts → Cross-File Conflicts → Transitive Conflicts → Guardrails → Risk Scoring → Report
+  (GitHub/GitLab/Bitbucket)                            (symbol overlap)     (import graph)         (dependency chain)    (rules)
 ```
 
 Each stage is independently testable and cacheable for performance.

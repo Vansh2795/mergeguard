@@ -206,6 +206,17 @@ def classify_conflicts(
     # Check for PR-level duplication (title/description similarity)
     _check_pr_duplication(target_pr, other_pr, file_overlaps, conflicts)
 
+    # Populate diff previews for all conflicts
+    for conflict in conflicts:
+        if conflict.source_diff_preview is None:
+            conflict.source_diff_preview = _get_symbol_diff_preview(
+                target_pr, conflict.file_path, conflict.symbol_name
+            )
+        if conflict.target_diff_preview is None:
+            conflict.target_diff_preview = _get_symbol_diff_preview(
+                other_pr, conflict.file_path, conflict.symbol_name
+            )
+
     return conflicts
 
 
@@ -559,6 +570,29 @@ def _check_pr_duplication(
                 ),
             )
         )
+
+
+def _get_symbol_diff_preview(pr: PRInfo, file_path: str, symbol_name: str | None) -> str | None:
+    """Extract a diff preview for a symbol in a PR, truncated for display."""
+    if symbol_name is None:
+        # File-level: use first 10 lines of patch
+        for cf in pr.changed_files:
+            if cf.path == file_path and cf.patch:
+                lines = cf.patch.splitlines()[:10]
+                preview = "\n".join(lines)
+                if len(cf.patch.splitlines()) > 10:
+                    preview += "\n..."
+                return preview
+        return None
+    # Symbol-level: find the matching ChangedSymbol's raw_diff
+    for cs in pr.changed_symbols:
+        if cs.symbol.file_path == file_path and cs.symbol.name == symbol_name and cs.raw_diff:
+            lines = cs.raw_diff.splitlines()[:10]
+            preview = "\n".join(lines)
+            if len(cs.raw_diff.splitlines()) > 10:
+                preview += "\n..."
+            return preview
+    return None
 
 
 def _get_modified_ranges(pr: PRInfo, file_path: str) -> list[tuple[int, int]]:

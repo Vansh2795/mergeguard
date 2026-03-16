@@ -32,7 +32,13 @@ def _detect_platform_from_remote() -> str:
         return "github"
 
 
-def _create_client(platform: str, token: str | None, repo: str, gitlab_url: str) -> SCMClient:
+def _create_client(
+    platform: str,
+    token: str | None,
+    repo: str,
+    gitlab_url: str,
+    github_url: str | None = None,
+) -> SCMClient:
     """Create the appropriate SCM client based on platform."""
     if token is None:
         raise click.UsageError(
@@ -44,10 +50,14 @@ def _create_client(platform: str, token: str | None, repo: str, gitlab_url: str)
         from mergeguard.integrations.gitlab_client import GitLabClient
 
         return GitLabClient(token, repo, gitlab_url)
+    elif platform == "bitbucket":
+        from mergeguard.integrations.bitbucket_client import BitbucketClient
+
+        return BitbucketClient(token, repo)
     else:
         from mergeguard.integrations.github_client import GitHubClient
 
-        return GitHubClient(token, repo)
+        return GitHubClient(token, repo, base_url=github_url)
 
 
 def _auto_detect_repo_and_pr(
@@ -141,7 +151,7 @@ def _validate_repo(ctx: click.Context, param: click.Parameter, value: str | None
 @click.option("--verbose", "-v", is_flag=True, default=False, help="Enable debug logging.")
 @click.option(
     "--platform",
-    type=click.Choice(["github", "gitlab", "auto"]),
+    type=click.Choice(["github", "gitlab", "bitbucket", "auto"]),
     default="auto",
     help="SCM platform (auto-detected from git remote by default).",
 )
@@ -150,12 +160,20 @@ def _validate_repo(ctx: click.Context, param: click.Parameter, value: str | None
     default="https://gitlab.com",
     help="GitLab instance URL (for self-hosted).",
 )
+@click.option(
+    "--github-url",
+    default=None,
+    help="GitHub Enterprise Server URL (e.g., https://github.example.com).",
+)
 @click.pass_context
-def main(ctx: click.Context, verbose: bool, platform: str, gitlab_url: str) -> None:
+def main(
+    ctx: click.Context, verbose: bool, platform: str, gitlab_url: str, github_url: str | None
+) -> None:
     """MergeGuard: Cross-PR intelligence for the agentic coding era."""
     ctx.ensure_object(dict)
     ctx.obj["platform"] = platform
     ctx.obj["gitlab_url"] = gitlab_url
+    ctx.obj["github_url"] = github_url
     level = logging.DEBUG if verbose else logging.WARNING
     logging.basicConfig(
         level=level,
@@ -183,7 +201,7 @@ def main(ctx: click.Context, verbose: bool, platform: str, gitlab_url: str) -> N
 @click.option(
     "--format",
     "output_format",
-    type=click.Choice(["terminal", "json", "markdown", "sarif"]),
+    type=click.Choice(["terminal", "json", "markdown", "sarif", "html"]),
     default="terminal",
 )
 @click.option("--llm/--no-llm", default=False, help="Enable LLM-powered semantic analysis.")
@@ -223,6 +241,7 @@ def analyze(
     """Analyze a PR for cross-PR conflicts."""
     platform = ctx.obj.get("platform", "auto")
     gitlab_url = ctx.obj.get("gitlab_url", "https://gitlab.com")
+    github_url = ctx.obj.get("github_url")
     resolved_platform = platform if platform != "auto" else _detect_platform_from_remote()
     repo, pr = _auto_detect_repo_and_pr(repo, pr, token, platform=resolved_platform)
 
@@ -245,8 +264,10 @@ def analyze(
         cfg.max_open_prs = max_prs
     if max_pr_age is not None:
         cfg.max_pr_age_days = max_pr_age
+    if github_url:
+        cfg.github_url = github_url
 
-    client = _create_client(platform, token, repo, gitlab_url)
+    client = _create_client(platform, token, repo, gitlab_url, github_url)
     with console.status("[bold blue]Analyzing cross-PR conflicts...", spinner="dots"):
         engine = MergeGuardEngine(config=cfg, client=client)
         report = engine.analyze_pr(pr)
@@ -263,6 +284,10 @@ def analyze(
         from mergeguard.output.sarif import format_sarif
 
         click.echo(format_sarif(report))
+    elif output_format == "html":
+        from mergeguard.output.html_report import format_html_report
+
+        click.echo(format_html_report(report, repo))
 
     if post_comment and token:
         from mergeguard.output.github_comment import format_report
@@ -300,7 +325,8 @@ def map(
 
     platform = ctx.obj.get("platform", "auto")
     gitlab_url = ctx.obj.get("gitlab_url", "https://gitlab.com")
-    client = _create_client(platform, token, repo, gitlab_url)
+    github_url = ctx.obj.get("github_url")
+    client = _create_client(platform, token, repo, gitlab_url, github_url)
     prs = client.get_open_prs(max_count=max_prs or 200, max_age_days=max_pr_age or 30)
 
     # Enrich with file data (parallel)
@@ -375,6 +401,12 @@ def map(
 @click.option("--token", "-t", envvar=["GITHUB_TOKEN", "GITLAB_TOKEN"])
 @click.option("--max-prs", type=int, default=None, help="Max open PRs to scan (overrides config).")
 @click.option("--max-pr-age", type=int, default=None, help="Max PR age in days (overrides config).")
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["terminal", "html", "json"]),
+    default="terminal",
+)
 @click.pass_context
 def dashboard(
     ctx: click.Context,
@@ -382,6 +414,7 @@ def dashboard(
     token: str | None,
     max_prs: int | None,
     max_pr_age: int | None,
+    output_format: str,
 ) -> None:
     """Show risk scores for all open PRs."""
     repo = _auto_detect_repo(repo)
@@ -391,16 +424,39 @@ def dashboard(
 
     platform = ctx.obj.get("platform", "auto")
     gitlab_url = ctx.obj.get("gitlab_url", "https://gitlab.com")
+    github_url = ctx.obj.get("github_url")
     cfg = load_config(".mergeguard.yml")
     if max_prs is not None:
         cfg.max_open_prs = max_prs
     if max_pr_age is not None:
         cfg.max_pr_age_days = max_pr_age
-    client = _create_client(platform, token, repo, gitlab_url)
+    client = _create_client(platform, token, repo, gitlab_url, github_url)
     engine = MergeGuardEngine(config=cfg, client=client)
 
     with console.status("[bold blue]Analyzing all open PRs...", spinner="dots"):
         reports = engine.analyze_all_open_prs()
+
+    if output_format == "html":
+        from mergeguard.output.dashboard_html import format_dashboard_html
+
+        click.echo(format_dashboard_html(reports, repo))
+        return
+
+    if output_format == "json":
+        import json as _json
+
+        data = [
+            {
+                "pr": r.pr.number,
+                "title": r.pr.title,
+                "risk_score": round(r.risk_score, 1),
+                "conflicts": len(r.conflicts),
+                "ai": r.pr.ai_attribution.value,
+            }
+            for r in sorted(reports, key=lambda r: r.risk_score, reverse=True)
+        ]
+        click.echo(_json.dumps(data, indent=2))
+        return
 
     table = Table(title=f"PR Risk Dashboard \u2014 {repo}")
     table.add_column("PR", style="bold")
@@ -451,9 +507,409 @@ def _display_terminal(report: ConflictReport) -> None:
         console.print(f"    \U0001f4a1 {conflict.recommendation}")
         if conflict.fix_suggestion is not None:
             console.print(f"    \U0001f527 {conflict.fix_suggestion}")
+        if conflict.source_diff_preview or conflict.target_diff_preview:
+            from mergeguard.output.terminal import _render_diff_previews
+
+            _render_diff_previews(conflict)
         console.print()
 
     if report.pr.skipped_files:
         console.print("[dim]Files skipped (no patch data):[/dim]")
         for path in report.pr.skipped_files:
             console.print(f"  [dim]- {path}[/dim]")
+
+
+@main.command("suggest-order")
+@click.option("--repo", "-r", callback=_validate_repo, help="Repo (owner/repo).")
+@click.option("--token", "-t", envvar=["GITHUB_TOKEN", "GITLAB_TOKEN"])
+@click.option("--max-prs", type=int, default=None, help="Max open PRs to scan.")
+@click.option("--max-pr-age", type=int, default=None, help="Max PR age in days.")
+@click.pass_context
+def suggest_order(
+    ctx: click.Context,
+    repo: str | None,
+    token: str | None,
+    max_prs: int | None,
+    max_pr_age: int | None,
+) -> None:
+    """Suggest optimal merge order for open PRs."""
+    repo = _auto_detect_repo(repo)
+
+    from mergeguard.config import load_config
+    from mergeguard.core.engine import MergeGuardEngine
+
+    platform = ctx.obj.get("platform", "auto")
+    gitlab_url = ctx.obj.get("gitlab_url", "https://gitlab.com")
+    github_url = ctx.obj.get("github_url")
+    cfg = load_config(".mergeguard.yml")
+    if max_prs is not None:
+        cfg.max_open_prs = max_prs
+    if max_pr_age is not None:
+        cfg.max_pr_age_days = max_pr_age
+    client = _create_client(platform, token, repo, gitlab_url, github_url)
+    engine = MergeGuardEngine(config=cfg, client=client)
+
+    with console.status("[bold blue]Analyzing merge order...", spinner="dots"):
+        reports = engine.analyze_all_open_prs()
+
+    from mergeguard.core.merge_order import format_merge_order, suggest_merge_order
+
+    order = suggest_merge_order(reports)
+    console.print(format_merge_order(order, reports))
+
+
+@main.command()
+@click.option("--repo", "-r", callback=_validate_repo, help="Repo (owner/repo).")
+@click.option("--token", "-t", envvar=["GITHUB_TOKEN", "GITLAB_TOKEN"])
+@click.option("--interval", type=int, default=60, help="Poll interval in seconds.")
+@click.option("--max-prs", type=int, default=None, help="Max open PRs to scan.")
+@click.option("--max-pr-age", type=int, default=None, help="Max PR age in days.")
+@click.option(
+    "--post-comment/--no-post-comment",
+    default=True,
+    help="Auto-post/update PR comments.",
+)
+@click.pass_context
+def watch(
+    ctx: click.Context,
+    repo: str | None,
+    token: str | None,
+    interval: int,
+    max_prs: int | None,
+    max_pr_age: int | None,
+    post_comment: bool,
+) -> None:
+    """Watch for PR changes and re-analyze automatically."""
+    import time as _time
+
+    repo = _auto_detect_repo(repo)
+
+    from mergeguard.config import load_config
+    from mergeguard.core.engine import MergeGuardEngine
+
+    platform = ctx.obj.get("platform", "auto")
+    gitlab_url = ctx.obj.get("gitlab_url", "https://gitlab.com")
+    github_url = ctx.obj.get("github_url")
+    resolved_platform = platform if platform != "auto" else _detect_platform_from_remote()
+    cfg = load_config(".mergeguard.yml")
+    if max_prs is not None:
+        cfg.max_open_prs = max_prs
+    if max_pr_age is not None:
+        cfg.max_pr_age_days = max_pr_age
+    client = _create_client(platform, token, repo, gitlab_url, github_url)
+
+    # Track head SHAs to detect changes
+    known_shas: dict[int, str] = {}
+    console.print(f"[bold blue]Watching {repo} (every {interval}s)...[/bold blue]")
+    console.print("[dim]Press Ctrl+C to stop[/dim]\n")
+
+    try:
+        while True:
+            prs = client.get_open_prs(
+                max_count=max_prs or cfg.max_open_prs,
+                max_age_days=max_pr_age or cfg.max_pr_age_days,
+            )
+
+            changed_prs: list[int] = []
+            for pr_info in prs:
+                old_sha = known_shas.get(pr_info.number)
+                if old_sha != pr_info.head_sha:
+                    if old_sha is not None:
+                        changed_prs.append(pr_info.number)
+                    known_shas[pr_info.number] = pr_info.head_sha
+
+            # Detect new PRs
+            current_numbers = {p.number for p in prs}
+            new_prs = current_numbers - set(known_shas.keys())
+            if new_prs:
+                changed_prs.extend(new_prs)
+                for n in new_prs:
+                    pr_info = next(p for p in prs if p.number == n)
+                    known_shas[n] = pr_info.head_sha
+
+            # Remove closed PRs from tracking
+            closed = set(known_shas.keys()) - current_numbers
+            for n in closed:
+                del known_shas[n]
+
+            if changed_prs:
+                console.print(
+                    f"[yellow]Changes detected in PRs: "
+                    f"{', '.join(f'#{n}' for n in changed_prs)}[/yellow]"
+                )
+                engine = MergeGuardEngine(config=cfg, client=client)
+                for pr_num in changed_prs:
+                    try:
+                        report = engine.analyze_pr(pr_num)
+                        _display_terminal(report)
+                        if post_comment and token and report.conflicts:
+                            from mergeguard.output.github_comment import format_report
+
+                            comment = format_report(report, repo, platform=resolved_platform)
+                            client.post_pr_comment(pr_num, comment)
+                            console.print(f"[green]\u2713 Comment updated on PR #{pr_num}[/green]")
+                    except Exception:
+                        console.print(
+                            f"[red]Failed to analyze PR #{pr_num}[/red]",
+                        )
+            else:
+                console.print(f"[dim]{_time.strftime('%H:%M:%S')} — no changes[/dim]")
+
+            _time.sleep(interval)
+    except KeyboardInterrupt:
+        console.print("\n[bold]Watch stopped.[/bold]")
+
+
+@main.command()
+@click.option("--repo", "-r", callback=_validate_repo, help="Repo (owner/repo).")
+@click.option("--token", "-t", envvar=["GITHUB_TOKEN", "GITLAB_TOKEN"])
+@click.option("--limit", type=int, default=20, help="Number of history entries to show.")
+@click.pass_context
+def history(
+    ctx: click.Context,
+    repo: str | None,
+    token: str | None,
+    limit: int,
+) -> None:
+    """Show historical analysis results."""
+    from mergeguard.storage.decisions_log import DecisionsLog
+
+    try:
+        log = DecisionsLog()
+    except Exception:
+        console.print("[red]No decisions log found. Run an analysis first.[/red]")
+        return
+
+    decisions = log.get_recent_decisions(limit=limit)
+    log.close()
+
+    if not decisions:
+        console.print("[dim]No history entries found.[/dim]")
+        return
+
+    table = Table(title="Analysis History")
+    table.add_column("PR", style="bold")
+    table.add_column("Type")
+    table.add_column("Entity")
+    table.add_column("Merged At")
+    table.add_column("Author")
+
+    for entry in decisions:
+        table.add_row(
+            f"#{entry.pr_number}",
+            entry.decision_type.value,
+            entry.entity[:40],
+            entry.merged_at.strftime("%Y-%m-%d %H:%M"),
+            entry.author,
+        )
+
+    console.print(table)
+
+
+@main.command()
+@click.pass_context
+def init(ctx: click.Context) -> None:
+    """Interactive setup wizard — generates a .mergeguard.yml config."""
+    from pathlib import Path
+
+    config_path = Path(".mergeguard.yml")
+    if config_path.exists() and not click.confirm(".mergeguard.yml already exists. Overwrite?"):
+        return
+
+    # Detect repo characteristics
+    console.print("[bold]MergeGuard Setup Wizard[/bold]\n")
+
+    # Detect languages
+    try:
+        from mergeguard.integrations.git_local import GitLocalClient
+
+        GitLocalClient()  # Verify we're in a git repo
+        console.print("[dim]Detecting project languages...[/dim]")
+    except ValueError:
+        pass
+
+    # Ask workflow questions
+    risk_threshold = click.prompt(
+        "Risk threshold (only comment if score exceeds this)",
+        type=int,
+        default=50,
+    )
+    max_pr_age = click.prompt(
+        "Max PR age in days (only scan recent PRs)",
+        type=int,
+        default=30,
+    )
+    llm_enabled = click.confirm("Enable LLM-powered semantic analysis?", default=False)
+
+    # Check for monorepo indicators
+    is_monorepo = Path("packages").is_dir() or Path("apps").is_dir() or Path("services").is_dir()
+    if is_monorepo:
+        console.print("[yellow]Monorepo detected![/yellow] Adding cross-module guardrails.\n")
+
+    # Build config
+    config_lines = [
+        "# MergeGuard Configuration",
+        "# Generated by `mergeguard init`",
+        "",
+        f"risk_threshold: {risk_threshold}",
+        "check_regressions: true",
+        "max_open_prs: 200",
+        f"max_pr_age_days: {max_pr_age}",
+        "decisions_log_depth: 50",
+        "",
+        f"llm_enabled: {'true' if llm_enabled else 'false'}",
+    ]
+
+    if llm_enabled:
+        config_lines.append('llm_model: "claude-sonnet-4-20250514"')
+
+    config_lines.extend(
+        [
+            "",
+            "ignored_paths:",
+            '  - "*.lock"',
+            '  - "*.min.js"',
+            '  - "*.min.css"',
+            '  - "package-lock.json"',
+            '  - "yarn.lock"',
+            '  - "pnpm-lock.yaml"',
+            '  - "poetry.lock"',
+        ]
+    )
+
+    if is_monorepo:
+        config_lines.extend(
+            [
+                "",
+                "# Monorepo guardrails (customize patterns for your project)",
+                "# rules:",
+                "#   - name: cross-module-boundary",
+                '#     pattern: "packages/billing/**"',
+                "#     cannot_import_from:",
+                '#       - "packages/auth/**"',
+                '#     message: "Billing must not import from auth directly"',
+            ]
+        )
+
+    config_text = "\n".join(config_lines) + "\n"
+    config_path.write_text(config_text)
+    console.print(f"\n[green]\u2713 Created {config_path}[/green]")
+
+    # Offer to create GitHub Actions workflow
+    if click.confirm("\nCreate GitHub Actions workflow?", default=True):
+        workflows_dir = Path(".github/workflows")
+        workflows_dir.mkdir(parents=True, exist_ok=True)
+        workflow_path = workflows_dir / "mergeguard.yml"
+        workflow_text = """name: MergeGuard
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Vansh2795/mergeguard@main
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+"""
+        workflow_path.write_text(workflow_text)
+        console.print(f"[green]\u2713 Created {workflow_path}[/green]")
+
+    console.print(
+        "\n[bold green]Setup complete![/bold green] Run `mergeguard analyze` to get started."
+    )
+
+
+@main.command("analyze-multi")
+@click.option(
+    "--config",
+    "-c",
+    "config_path",
+    default=".mergeguard-multi.yml",
+    help="Multi-repo config file.",
+)
+@click.option("--token", "-t", envvar=["GITHUB_TOKEN", "GITLAB_TOKEN"], help="API token.")
+@click.pass_context
+def analyze_multi(
+    ctx: click.Context,
+    config_path: str,
+    token: str | None,
+) -> None:
+    """Analyze conflicts across multiple related repositories."""
+    from pathlib import Path
+
+    import yaml
+
+    path = Path(config_path)
+    if not path.exists():
+        raise click.UsageError(
+            f"Multi-repo config not found: {config_path}\n"
+            f"Create a .mergeguard-multi.yml with:\n"
+            f"  repos:\n"
+            f"    - name: shared-lib\n      repo: org/shared-lib\n"
+            f"    - name: service-a\n      repo: org/service-a\n"
+            f"      depends_on: [shared-lib]"
+        )
+
+    with open(path) as f:
+        multi_config = yaml.safe_load(f)
+
+    if not multi_config or "repos" not in multi_config:
+        raise click.UsageError("Invalid multi-repo config: missing 'repos' key")
+
+    from mergeguard.config import load_config
+    from mergeguard.core.engine import MergeGuardEngine
+
+    platform = ctx.obj.get("platform", "auto")
+    gitlab_url = ctx.obj.get("gitlab_url", "https://gitlab.com")
+    github_url = ctx.obj.get("github_url")
+    resolved_platform = platform if platform != "auto" else _detect_platform_from_remote()
+
+    all_reports = []
+    repo_names: dict[str, str] = {}  # repo_path -> friendly name
+
+    for repo_entry in multi_config["repos"]:
+        repo_path = repo_entry["repo"]
+        repo_name = repo_entry.get("name", repo_path)
+        repo_names[repo_path] = repo_name
+
+        console.print(f"\n[bold cyan]Analyzing {repo_name} ({repo_path})...[/bold cyan]")
+
+        cfg = load_config(".mergeguard.yml")
+        client = _create_client(resolved_platform, token, repo_path, gitlab_url, github_url)
+        engine = MergeGuardEngine(config=cfg, client=client)
+
+        with console.status(f"[bold blue]Scanning {repo_name}...", spinner="dots"):
+            reports = engine.analyze_all_open_prs()
+
+        for report in reports:
+            all_reports.append((repo_name, report))
+
+    # Display combined results
+    console.print(f"\n[bold]Multi-Repo Summary ({len(all_reports)} PRs)[/bold]\n")
+    table = Table(title="Cross-Repo Risk Dashboard")
+    table.add_column("Repo", style="cyan")
+    table.add_column("PR", style="bold")
+    table.add_column("Title")
+    table.add_column("Risk", justify="right")
+    table.add_column("Conflicts", justify="right")
+
+    for repo_name, report in sorted(all_reports, key=lambda x: x[1].risk_score, reverse=True):
+        risk_style = (
+            "red" if report.risk_score >= 70 else "yellow" if report.risk_score >= 40 else "green"
+        )
+        table.add_row(
+            repo_name,
+            f"#{report.pr.number}",
+            report.pr.title[:35],
+            f"[{risk_style}]{report.risk_score:.0f}[/{risk_style}]",
+            str(len(report.conflicts)),
+        )
+
+    console.print(table)

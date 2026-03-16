@@ -496,6 +496,124 @@ def _extract_callee_name(call_node: Node, language: str) -> str | None:
     return None
 
 
+# ── Cyclomatic complexity ──
+
+_BRANCH_NODE_TYPES: dict[str, set[str]] = {
+    "python": {
+        "if_statement",
+        "for_statement",
+        "while_statement",
+        "except_clause",
+        "boolean_operator",
+        "conditional_expression",
+    },
+    "javascript": {
+        "if_statement",
+        "for_statement",
+        "while_statement",
+        "for_in_statement",
+        "catch_clause",
+        "ternary_expression",
+        "switch_case",
+    },
+    "typescript": {
+        "if_statement",
+        "for_statement",
+        "while_statement",
+        "for_in_statement",
+        "catch_clause",
+        "ternary_expression",
+        "switch_case",
+    },
+    "tsx": {
+        "if_statement",
+        "for_statement",
+        "while_statement",
+        "for_in_statement",
+        "catch_clause",
+        "ternary_expression",
+        "switch_case",
+    },
+    "go": {
+        "if_statement",
+        "for_statement",
+        "select_statement",
+        "type_switch_statement",
+        "communication_case",
+        "expression_case",
+    },
+    "rust": {
+        "if_expression",
+        "for_expression",
+        "while_expression",
+        "match_arm",
+        "closure_expression",
+    },
+    "java": {
+        "if_statement",
+        "for_statement",
+        "while_statement",
+        "catch_clause",
+        "ternary_expression",
+        "switch_expression",
+    },
+    "c": {
+        "if_statement",
+        "for_statement",
+        "while_statement",
+        "case_statement",
+        "conditional_expression",
+    },
+    "cpp": {
+        "if_statement",
+        "for_statement",
+        "while_statement",
+        "catch_clause",
+        "case_statement",
+        "conditional_expression",
+    },
+    "c_sharp": {
+        "if_statement",
+        "for_statement",
+        "while_statement",
+        "catch_clause",
+        "case_switch_label",
+        "conditional_expression",
+    },
+}
+
+
+def _count_branches(node: Node, branch_types: set[str]) -> int:
+    """Recursively count branching nodes in an AST subtree."""
+    count = 1 if node.type in branch_types else 0
+    for child in node.children:
+        count += _count_branches(child, branch_types)
+    return count
+
+
+def compute_cyclomatic_complexity(source_code: str, file_path: str) -> int:
+    """Compute approximate cyclomatic complexity for a code snippet.
+
+    Counts branching nodes (if/for/while/and/or/except/case) + 1.
+    Works on partial source (e.g., diff hunks) by parsing what's available.
+    """
+    language_name = detect_language(file_path)
+    if language_name is None:
+        return 1
+
+    try:
+        parser = get_parser(cast("Any", language_name))
+    except Exception:
+        return 1
+
+    tree = parser.parse(source_code.encode("utf-8"))
+    branch_types = _BRANCH_NODE_TYPES.get(language_name, set())
+    if not branch_types:
+        return 1
+
+    return 1 + _count_branches(tree.root_node, branch_types)
+
+
 def map_diff_to_symbols(
     symbols: list[Symbol],
     modified_ranges: list[tuple[int, int]],

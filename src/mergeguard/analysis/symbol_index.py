@@ -103,6 +103,73 @@ class SymbolIndex:
                     callers.append(sym)
         return callers
 
+    def build_cross_file_call_graph(
+        self,
+        import_graph: object | None = None,
+        ref: str = "HEAD",
+    ) -> dict[str, dict[str, set[str]]]:
+        """Build cross-file call graph after all files are indexed.
+
+        For each function in the cache, resolves calls against symbols
+        in imported files (using the import graph to narrow search).
+
+        Returns {file_path: {function_name: {qualified_callee_refs}}}.
+        """
+        if import_graph is None:
+            return {}
+
+        from mergeguard.analysis.dependency import DependencyGraph
+
+        if not isinstance(import_graph, DependencyGraph):
+            return {}
+
+        graph: DependencyGraph = import_graph
+
+        # Collect all symbols across all files for this ref
+        all_symbols: dict[str, dict[str, str]] = {}  # file -> {symbol_name: qualified_name}
+        for (fp, cached_ref), symbols in self._cache.items():
+            if cached_ref != ref:
+                continue
+            for sym in symbols:
+                all_symbols.setdefault(fp, {})[sym.name] = f"{fp}:{sym.name}"
+
+        cross_file_cg: dict[str, dict[str, set[str]]] = {}
+
+        for (fp, cached_ref), symbols in self._cache.items():
+            if cached_ref != ref:
+                continue
+
+            # Get files this file imports
+            imported_files = graph._forward.get(fp, set())
+
+            # Get symbol-level imports
+            symbol_imports = graph._symbol_forward.get(fp, {})
+
+            for sym in symbols:
+                if not sym.dependencies:
+                    continue
+                resolved: set[str] = set()
+                for dep_name in sym.dependencies:
+                    # Check if this dependency is in an imported file
+                    for imp_file in imported_files:
+                        imp_symbols = all_symbols.get(imp_file, {})
+                        if dep_name in imp_symbols:
+                            resolved.add(imp_symbols[dep_name])
+                            break
+                    # Also check symbol-level imports for precise matching
+                    for imp_file, imported_names in symbol_imports.items():
+                        if dep_name in imported_names:
+                            file_syms = all_symbols.get(imp_file, {})
+                            if dep_name in file_syms:
+                                resolved.add(file_syms[dep_name])
+
+                if resolved:
+                    cross_file_cg.setdefault(fp, {})[sym.name] = resolved
+                    # Update the symbol's dependencies with qualified references
+                    sym.dependencies = list(set(sym.dependencies) | {r for r in resolved})
+
+        return cross_file_cg
+
     def clear(self) -> None:
         """Clear the entire symbol cache."""
         self._cache.clear()

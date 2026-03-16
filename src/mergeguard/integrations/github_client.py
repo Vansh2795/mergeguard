@@ -22,20 +22,38 @@ if TYPE_CHECKING:
 class GitHubClient:
     """Fetches PR data from GitHub REST API."""
 
-    def __init__(self, token: str, repo_full_name: str):
+    def __init__(
+        self,
+        token: str,
+        repo_full_name: str,
+        base_url: str | None = None,
+        timeout: int = 30,
+    ):
         """
         Args:
             token: GitHub personal access token or GITHUB_TOKEN
             repo_full_name: "owner/repo" format
+            base_url: GitHub Enterprise Server URL (e.g., https://github.example.com).
+                      When set, API calls go to {base_url}/api/v3.
+            timeout: HTTP timeout in seconds.
         """
         self._token = token
+        self._base_url = base_url
         auth = Auth.Token(token)
         retry = GithubRetry(secondary_rate_wait=60)
-        self._gh = Github(auth=auth, retry=retry)
+        gh_kwargs: dict[str, object] = {"auth": auth, "retry": retry}
+        if base_url:
+            # PyGithub expects base_url to end with /api/v3
+            api_url = base_url.rstrip("/")
+            if not api_url.endswith("/api/v3"):
+                api_url = f"{api_url}/api/v3"
+            gh_kwargs["base_url"] = api_url
+        self._gh = Github(**gh_kwargs)  # type: ignore[arg-type]
         self._repo = self._gh.get_repo(repo_full_name)
+        self._api_base = f"{base_url.rstrip('/')}/api/v3" if base_url else "https://api.github.com"
         self._http = httpx.Client(
             headers={"Accept": "application/vnd.github.v3+json"},
-            timeout=30.0,
+            timeout=float(timeout),
         )
 
     def get_open_prs(self, max_count: int = 200, max_age_days: int | None = None) -> list[PRInfo]:
@@ -99,7 +117,7 @@ class GitHubClient:
     def get_pr_diff(self, pr_number: int) -> str:
         """Fetch the full unified diff of a PR."""
         logger.debug("Fetching diff for PR #%d", pr_number)
-        url = f"https://api.github.com/repos/{self._repo.full_name}/pulls/{pr_number}"
+        url = f"{self._api_base}/repos/{self._repo.full_name}/pulls/{pr_number}"
         resp = self._http.get(
             url,
             headers={
@@ -119,6 +137,9 @@ class GitHubClient:
             if isinstance(content, list):
                 return None  # Directory, not a file
             return content.decoded_content.decode("utf-8")
+        except UnicodeDecodeError:
+            logger.debug("Binary file (not UTF-8): %s at %s", path, ref)
+            return None
         except UnknownObjectException:
             logger.debug("File not found: %s at %s", path, ref)
             return None  # File doesn't exist at this ref
