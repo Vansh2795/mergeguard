@@ -886,11 +886,11 @@ def serve(
 
     console.print(f"[bold blue]Starting MergeGuard webhook server on {host}:{port}[/bold blue]")
     console.print("[dim]Endpoints:[/dim]")
-    console.print(f"  POST /webhooks/github")
-    console.print(f"  POST /webhooks/gitlab")
-    console.print(f"  POST /webhooks/bitbucket")
-    console.print(f"  GET  /health")
-    console.print(f"  GET  /metrics")
+    console.print("  POST /webhooks/github")
+    console.print("  POST /webhooks/gitlab")
+    console.print("  POST /webhooks/bitbucket")
+    console.print("  GET  /health")
+    console.print("  GET  /metrics")
     console.print()
 
     uvicorn.run(

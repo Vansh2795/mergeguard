@@ -4,9 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import json
-
-import pytest
 
 from mergeguard.server.events import (
     EventAction,
@@ -19,7 +16,6 @@ from mergeguard.server.webhook import (
     verify_github_signature,
     verify_gitlab_token,
 )
-
 
 # ── Signature verification ──────────────────────────────────────────
 
