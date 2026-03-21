@@ -170,6 +170,24 @@ class TestPRLink:
         assert link == "[!10](https://gitlab.com/mygroup/myproject/-/merge_requests/10)"
 
 
+class TestInlineCountParam:
+    def test_inline_count_shows_annotation_note(self, sample_report):
+        """When inline_count > 0, the report includes annotation note."""
+        result = format_report(sample_report, "owner/repo", inline_count=3)
+        assert "3 conflict(s) annotated inline on the diff" in result
+        assert "See review comments for details" in result
+
+    def test_inline_count_zero_no_note(self, sample_report):
+        """When inline_count = 0, no annotation note appears."""
+        result = format_report(sample_report, "owner/repo", inline_count=0)
+        assert "annotated inline" not in result
+
+    def test_inline_count_default_no_note(self, sample_report):
+        """Default (no inline_count) produces no annotation note."""
+        result = format_report(sample_report, "owner/repo")
+        assert "annotated inline" not in result
+
+
 class TestGitLabFormatReport:
     def test_gitlab_report_contains_mr_links(self, sample_report):
         result = format_report(sample_report, "mygroup/myproject", platform="gitlab")

@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from github.PullRequest import PullRequest as GHPullRequest
 
+    from mergeguard.integrations.protocol import ReviewComment
+
 
 class GitHubClient:
     """Fetches PR data from GitHub REST API."""
@@ -159,6 +161,48 @@ class GitHubClient:
                 comment.edit(f"{marker}\n{body}")
                 return
         pr.create_issue_comment(f"{marker}\n{body}")
+
+    def post_pr_review(
+        self,
+        pr_number: int,
+        body: str,
+        comments: list[ReviewComment],
+        event: str = "COMMENT",
+    ) -> None:
+        """Post a review with inline comments on a PR."""
+        pr = self._repo.get_pull(pr_number)
+
+        # Dismiss previous MergeGuard review if exists
+        marker = "<!-- mergeguard-review -->"
+        for review in pr.get_reviews():
+            if marker in (review.body or ""):
+                review.dismiss("Superseded by new MergeGuard analysis")
+
+        # GitHub limits ~60 comments per review — batch if needed
+        from github.PullRequest import ReviewComment as GHReviewComment
+
+        batch_size = 50
+        gh_comments: list[GHReviewComment] = [
+            GHReviewComment(path=c.path, line=c.line, body=c.body, side=c.side)
+            for c in comments
+        ]
+
+        # First batch creates the review with body
+        first_batch = gh_comments[:batch_size]
+        pr.create_review(
+            body=f"{marker}\n{body}",
+            event=event,
+            comments=first_batch,
+        )
+
+        # Subsequent batches as additional reviews (rare — >50 conflicts)
+        for i in range(batch_size, len(gh_comments), batch_size):
+            batch = gh_comments[i : i + batch_size]
+            pr.create_review(
+                body=f"{marker}\n*(continued)*",
+                event="COMMENT",
+                comments=batch,
+            )
 
     def set_commit_status(
         self, sha: str, state: str, description: str, target_url: str = ""

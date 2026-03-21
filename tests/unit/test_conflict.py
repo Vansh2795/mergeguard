@@ -1225,3 +1225,142 @@ class TestClassDemotion:
         ]
         assert len(method_conflicts) == 1
         assert method_conflicts[0].severity == ConflictSeverity.WARNING
+
+
+class TestConflictLinePopulation:
+    """Verify source_lines/target_lines are populated on all conflict types."""
+
+    def test_hard_conflict_with_symbols_has_lines(self):
+        """HARD conflicts with shared symbols should have source/target lines from diff_lines."""
+        sym_a = ChangedSymbol(
+            symbol=Symbol(
+                name="process",
+                symbol_type=SymbolType.FUNCTION,
+                file_path="app.py",
+                start_line=10,
+                end_line=30,
+            ),
+            change_type="modified_body",
+            diff_lines=(15, 25),
+        )
+        sym_b = ChangedSymbol(
+            symbol=Symbol(
+                name="process",
+                symbol_type=SymbolType.FUNCTION,
+                file_path="app.py",
+                start_line=10,
+                end_line=30,
+            ),
+            change_type="modified_body",
+            diff_lines=(18, 28),
+        )
+        pr_a = make_pr(1, ["app.py"], symbols=[sym_a])
+        pr_b = make_pr(2, ["app.py"], symbols=[sym_b])
+        overlaps = [
+            FileOverlap(
+                file_path="app.py",
+                pr_a=1,
+                pr_b=2,
+                pr_a_lines=[(15, 25)],
+                pr_b_lines=[(18, 28)],
+            )
+        ]
+        conflicts = classify_conflicts(pr_a, pr_b, overlaps)
+        hard = [c for c in conflicts if c.conflict_type == ConflictType.HARD]
+        assert len(hard) == 1
+        assert hard[0].source_lines == (15, 25)
+        assert hard[0].target_lines == (18, 28)
+
+    def test_hard_conflict_file_level_has_lines(self):
+        """File-level HARD conflicts (no shared symbols) use FileOverlap lines."""
+        pr_a = make_pr(1, ["app.py"])
+        pr_b = make_pr(2, ["app.py"])
+        overlaps = [
+            FileOverlap(
+                file_path="app.py",
+                pr_a=1,
+                pr_b=2,
+                pr_a_lines=[(1, 10)],
+                pr_b_lines=[(5, 15)],
+            )
+        ]
+        conflicts = classify_conflicts(pr_a, pr_b, overlaps)
+        hard = [c for c in conflicts if c.conflict_type == ConflictType.HARD]
+        assert len(hard) == 1
+        assert hard[0].source_lines == (1, 10)
+        assert hard[0].target_lines == (5, 15)
+
+    def test_behavioral_conflict_has_lines(self):
+        """BEHAVIORAL conflicts should have source/target lines from diff_lines."""
+        sym_a = ChangedSymbol(
+            symbol=Symbol(
+                name="compute",
+                symbol_type=SymbolType.FUNCTION,
+                file_path="calc.py",
+                start_line=1,
+                end_line=20,
+            ),
+            change_type="modified_body",
+            diff_lines=(5, 10),
+        )
+        sym_b = ChangedSymbol(
+            symbol=Symbol(
+                name="compute",
+                symbol_type=SymbolType.FUNCTION,
+                file_path="calc.py",
+                start_line=1,
+                end_line=20,
+            ),
+            change_type="modified_body",
+            diff_lines=(15, 20),
+        )
+        pr_a = make_pr(1, ["calc.py"], symbols=[sym_a])
+        pr_b = make_pr(2, ["calc.py"], symbols=[sym_b])
+        overlaps = [
+            FileOverlap(
+                file_path="calc.py",
+                pr_a=1,
+                pr_b=2,
+                pr_a_lines=[(5, 10)],
+                pr_b_lines=[(15, 20)],
+            )
+        ]
+        conflicts = classify_conflicts(pr_a, pr_b, overlaps)
+        behavioral = [c for c in conflicts if c.conflict_type == ConflictType.BEHAVIORAL]
+        assert len(behavioral) == 1
+        assert behavioral[0].source_lines == (5, 10)
+        assert behavioral[0].target_lines == (15, 20)
+
+    def test_interface_conflict_has_lines(self):
+        """INTERFACE conflicts should have source/target lines from symbol start/end."""
+        sig_change = ChangedSymbol(
+            symbol=Symbol(
+                name="get_user",
+                symbol_type=SymbolType.FUNCTION,
+                file_path="users.py",
+                start_line=10,
+                end_line=25,
+                signature="def get_user(user_id: int, include_email: bool = False) -> User",
+            ),
+            change_type="modified_signature",
+            diff_lines=(10, 12),
+        )
+        caller = ChangedSymbol(
+            symbol=Symbol(
+                name="fetch_profile",
+                symbol_type=SymbolType.FUNCTION,
+                file_path="profile.py",
+                start_line=40,
+                end_line=55,
+                dependencies=["get_user"],
+            ),
+            change_type="modified_body",
+            diff_lines=(45, 50),
+        )
+        pr_a = make_pr(1, ["users.py"], symbols=[sig_change])
+        pr_b = make_pr(2, ["profile.py"], symbols=[caller])
+        conflicts = classify_conflicts(pr_a, pr_b, [])
+        interface = [c for c in conflicts if c.conflict_type == ConflictType.INTERFACE]
+        assert len(interface) == 1
+        assert interface[0].source_lines == (10, 25)
+        assert interface[0].target_lines == (40, 55)

@@ -325,3 +325,70 @@ class TestGitHubClientIntegration:
             raise AssertionError("Should have raised GithubException")
         except GithubException as e:
             assert e.status == 403
+
+    @patch("mergeguard.integrations.github_client.httpx.Client")
+    @patch("mergeguard.integrations.github_client.Github")
+    def test_post_pr_review(self, mock_github, mock_http_client):
+        """post_pr_review calls create_review with correct params."""
+        from mergeguard.integrations.protocol import ReviewComment
+
+        mock_repo = MagicMock()
+        mock_github.return_value.get_repo.return_value = mock_repo
+        mock_pr = MagicMock()
+        mock_repo.get_pull.return_value = mock_pr
+        mock_pr.get_reviews.return_value = []
+
+        client = GitHubClient("fake-token", "owner/repo")
+        comments = [
+            ReviewComment(path="src/app.py", line=10, body="Conflict here"),
+            ReviewComment(path="src/util.py", line=25, body="Another conflict"),
+        ]
+        client.post_pr_review(42, "Summary body", comments)
+
+        mock_pr.create_review.assert_called_once()
+        call_kwargs = mock_pr.create_review.call_args
+        assert "<!-- mergeguard-review -->" in call_kwargs.kwargs.get("body", call_kwargs[1].get("body", ""))
+
+    @patch("mergeguard.integrations.github_client.httpx.Client")
+    @patch("mergeguard.integrations.github_client.Github")
+    def test_post_pr_review_dismisses_previous(self, mock_github, mock_http_client):
+        """Previous MergeGuard reviews should be dismissed."""
+        from mergeguard.integrations.protocol import ReviewComment
+
+        mock_repo = MagicMock()
+        mock_github.return_value.get_repo.return_value = mock_repo
+        mock_pr = MagicMock()
+        mock_repo.get_pull.return_value = mock_pr
+
+        old_review = MagicMock()
+        old_review.body = "<!-- mergeguard-review -->\nOld review"
+        mock_pr.get_reviews.return_value = [old_review]
+
+        client = GitHubClient("fake-token", "owner/repo")
+        comments = [ReviewComment(path="a.py", line=1, body="test")]
+        client.post_pr_review(42, "New summary", comments)
+
+        old_review.dismiss.assert_called_once_with("Superseded by new MergeGuard analysis")
+        mock_pr.create_review.assert_called_once()
+
+    @patch("mergeguard.integrations.github_client.httpx.Client")
+    @patch("mergeguard.integrations.github_client.Github")
+    def test_post_pr_review_batching(self, mock_github, mock_http_client):
+        """Reviews with >50 comments should be batched."""
+        from mergeguard.integrations.protocol import ReviewComment
+
+        mock_repo = MagicMock()
+        mock_github.return_value.get_repo.return_value = mock_repo
+        mock_pr = MagicMock()
+        mock_repo.get_pull.return_value = mock_pr
+        mock_pr.get_reviews.return_value = []
+
+        client = GitHubClient("fake-token", "owner/repo")
+        comments = [
+            ReviewComment(path=f"f{i}.py", line=i, body=f"Comment {i}")
+            for i in range(75)
+        ]
+        client.post_pr_review(42, "Summary", comments)
+
+        # Should be called twice: first batch of 50, second batch of 25
+        assert mock_pr.create_review.call_count == 2

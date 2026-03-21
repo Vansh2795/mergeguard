@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from mergeguard.integrations.protocol import SCMClient
     from mergeguard.models import ConflictReport, PRInfo
 
+logger = logging.getLogger(__name__)
 console = Console(stderr=True)
 
 _DEFAULT_BRANCHES = {"main", "master", "develop", "HEAD"}
@@ -221,6 +222,11 @@ def main(
     default=False,
     help="Post results as a PR/MR comment.",
 )
+@click.option(
+    "--inline/--no-inline",
+    default=None,
+    help="Post inline annotations on PR diff.",
+)
 @click.option("--max-prs", type=int, default=None, help="Max open PRs to scan (overrides config).")
 @click.option("--max-pr-age", type=int, default=None, help="Max PR age in days (overrides config).")
 @click.pass_context
@@ -235,6 +241,7 @@ def analyze(
     fix_suggestions: bool,
     llm_provider: str,
     post_comment: bool,
+    inline: bool | None,
     max_prs: int | None,
     max_pr_age: int | None,
 ) -> None:
@@ -291,9 +298,38 @@ def analyze(
 
     if post_comment and token:
         from mergeguard.output.github_comment import format_report
+        from mergeguard.output.inline_annotations import (
+            format_review_comments,
+            format_review_summary,
+        )
 
-        client.post_pr_comment(pr, format_report(report, repo, platform=resolved_platform))
+        # Determine inline setting: CLI flag > config > default (True)
+        use_inline = inline if inline is not None else cfg.inline_annotations
+
+        review_comments = []
+        if use_inline:
+            review_comments = format_review_comments(report, repo, platform=resolved_platform)
+
+        # Post summary comment (always)
+        markdown_body = format_report(
+            report, repo, platform=resolved_platform, inline_count=len(review_comments),
+        )
+        client.post_pr_comment(pr, markdown_body)
         console.print("[green]\u2713 Comment posted to PR[/green]")
+
+        # Post inline review (if comments exist)
+        if review_comments:
+            review_body = format_review_summary(report, len(review_comments))
+            try:
+                client.post_pr_review(pr, review_body, review_comments)
+                console.print(
+                    f"[green]\u2713 {len(review_comments)} inline annotation(s) posted[/green]"
+                )
+            except Exception as exc:
+                logger.warning("Failed to post inline annotations: %s", exc)
+                console.print(
+                    "[yellow]\u26a0 Inline annotations failed (missing permissions?)[/yellow]"
+                )
 
 
 @main.command()

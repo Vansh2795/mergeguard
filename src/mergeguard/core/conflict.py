@@ -159,6 +159,12 @@ def classify_conflicts(
                                 "One PR should merge first, then the other "
                                 "should rebase and resolve conflicts."
                             ),
+                            source_lines=_extract_lines(
+                                target_pr, overlap.file_path, symbol_name, target_cs_map,
+                            ),
+                            target_lines=_extract_lines(
+                                other_pr, overlap.file_path, symbol_name, other_cs_map,
+                            ),
                         )
                     )
             else:
@@ -189,6 +195,8 @@ def classify_conflicts(
                         file_path=overlap.file_path,
                         description=description,
                         recommendation=recommendation,
+                        source_lines=overlap.pr_a_lines[0] if overlap.pr_a_lines else None,
+                        target_lines=overlap.pr_b_lines[0] if overlap.pr_b_lines else None,
                     )
                 )
         else:
@@ -251,6 +259,23 @@ def _is_comment_only_change(raw_diff: str | None, file_path: str) -> bool:
 def _build_cs_map(pr: PRInfo) -> dict[tuple[str, str], ChangedSymbol]:
     """Build a (file_path, symbol_name) → ChangedSymbol lookup dict."""
     return {(cs.symbol.file_path, cs.symbol.name): cs for cs in pr.changed_symbols}
+
+
+def _extract_lines(
+    pr: PRInfo,
+    file_path: str,
+    symbol_name: str | None,
+    cs_map: dict[tuple[str, str], ChangedSymbol] | None = None,
+    overlap_lines: list[tuple[int, int]] | None = None,
+) -> tuple[int, int] | None:
+    """Extract line range for a conflict from symbol or overlap data."""
+    if symbol_name:
+        cs = _find_changed_symbol(pr, file_path, symbol_name, cs_map)
+        if cs:
+            return cs.diff_lines
+    if overlap_lines:
+        return overlap_lines[0]
+    return None
 
 
 def _find_changed_symbol(
@@ -331,6 +356,12 @@ def _check_behavioral_conflict(
                     f"Changes may interact unexpectedly."
                 ),
                 recommendation=("Review both changes to ensure they are semantically compatible."),
+                source_lines=_extract_lines(
+                    target_pr, overlap.file_path, symbol_name, target_cs_map,
+                ),
+                target_lines=_extract_lines(
+                    other_pr, overlap.file_path, symbol_name, other_cs_map,
+                ),
             )
         )
 
@@ -442,6 +473,8 @@ def _check_interface_conflicts(
                                 "to match the new signature, or "
                                 "merge this PR first and rebase."
                             ),
+                            source_lines=(cs.symbol.start_line, cs.symbol.end_line),
+                            target_lines=(other_cs.symbol.start_line, other_cs.symbol.end_line),
                         )
                     )
 
@@ -501,6 +534,8 @@ def _check_duplication_conflicts(
                     "Review both PRs for duplicated functionality. "
                     "Consider consolidating into one implementation."
                 ),
+                source_lines=(new_sym.start_line, new_sym.end_line),
+                target_lines=(other_sym.start_line, other_sym.end_line),
             )
         )
 
