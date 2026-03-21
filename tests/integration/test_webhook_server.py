@@ -7,9 +7,12 @@ import hmac
 import json
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 
-from mergeguard.server.webhook import app, lifespan
+fastapi = pytest.importorskip("fastapi", reason="fastapi not installed (server extras)")
+
+from httpx import ASGITransport, AsyncClient  # noqa: E402
+
+from mergeguard.server.webhook import app, lifespan  # noqa: E402
 
 
 @pytest.fixture

@@ -137,9 +137,7 @@ def verify_github_signature(payload: bytes, signature: str | None, secret: str) 
     """Verify GitHub HMAC-SHA256 webhook signature."""
     if not signature or not signature.startswith("sha256="):
         return False
-    expected = "sha256=" + hmac.new(
-        secret.encode(), payload, hashlib.sha256
-    ).hexdigest()
+    expected = "sha256=" + hmac.new(secret.encode(), payload, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, signature)
 
 
@@ -154,9 +152,7 @@ def verify_bitbucket_signature(payload: bytes, signature: str | None, secret: st
     """Verify Bitbucket HMAC-SHA256 webhook signature (same scheme as GitHub)."""
     if not signature or not signature.startswith("sha256="):
         return False
-    expected = "sha256=" + hmac.new(
-        secret.encode(), payload, hashlib.sha256
-    ).hexdigest()
+    expected = "sha256=" + hmac.new(secret.encode(), payload, hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, signature)
 
 

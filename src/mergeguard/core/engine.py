@@ -375,8 +375,7 @@ class MergeGuardEngine:
 
         # Enrich others that need it (those without changed_symbols)
         unenriched = [
-            pr for pr in existing_prs
-            if pr.number != pr_number and not pr.changed_symbols
+            pr for pr in existing_prs if pr.number != pr_number and not pr.changed_symbols
         ]
         if unenriched:
             with ThreadPoolExecutor(max_workers=min(8, len(unenriched))) as executor:
@@ -385,9 +384,7 @@ class MergeGuardEngine:
                     future.result()
 
         prs_excluding_target = [p for p in existing_prs if p.number != pr_number]
-        all_conflicts, no_conflict_prs = self._detect_all_conflicts(
-            target_pr, prs_excluding_target
-        )
+        all_conflicts, no_conflict_prs = self._detect_all_conflicts(target_pr, prs_excluding_target)
         self._apply_template_suggestions(all_conflicts)
 
         dependency_depth = self._compute_dependency_depth(target_pr)

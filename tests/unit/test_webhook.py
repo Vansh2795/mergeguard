@@ -5,13 +5,17 @@ from __future__ import annotations
 import hashlib
 import hmac
 
-from mergeguard.server.events import (
+import pytest
+
+fastapi = pytest.importorskip("fastapi", reason="fastapi not installed (server extras)")
+
+from mergeguard.server.events import (  # noqa: E402
     EventAction,
     parse_bitbucket_event,
     parse_github_event,
     parse_gitlab_event,
 )
-from mergeguard.server.webhook import (
+from mergeguard.server.webhook import (  # noqa: E402
     verify_bitbucket_signature,
     verify_github_signature,
     verify_gitlab_token,
@@ -76,9 +80,7 @@ class TestGitHubEventParsing:
         }
 
     def test_opened(self):
-        event = parse_github_event(
-            {"x-github-event": "pull_request"}, self._make_payload("opened")
-        )
+        event = parse_github_event({"x-github-event": "pull_request"}, self._make_payload("opened"))
         assert event is not None
         assert event.action == EventAction.OPENED
         assert event.pr_number == 42
@@ -93,9 +95,7 @@ class TestGitHubEventParsing:
         assert event.action == EventAction.UPDATED
 
     def test_closed(self):
-        event = parse_github_event(
-            {"x-github-event": "pull_request"}, self._make_payload("closed")
-        )
+        event = parse_github_event({"x-github-event": "pull_request"}, self._make_payload("closed"))
         assert event is not None
         assert event.action == EventAction.CLOSED
 
@@ -140,9 +140,7 @@ class TestGitLabEventParsing:
         assert event.action == EventAction.UPDATED
 
     def test_ignored_event(self):
-        event = parse_gitlab_event(
-            {"x-gitlab-event": "Push Hook"}, self._make_payload()
-        )
+        event = parse_gitlab_event({"x-gitlab-event": "Push Hook"}, self._make_payload())
         assert event is None
 
 
@@ -159,18 +157,14 @@ class TestBitbucketEventParsing:
         }
 
     def test_created(self):
-        event = parse_bitbucket_event(
-            {"x-event-key": "pullrequest:created"}, self._make_payload()
-        )
+        event = parse_bitbucket_event({"x-event-key": "pullrequest:created"}, self._make_payload())
         assert event is not None
         assert event.action == EventAction.OPENED
         assert event.pr_number == 7
         assert event.platform == "bitbucket"
 
     def test_updated(self):
-        event = parse_bitbucket_event(
-            {"x-event-key": "pullrequest:updated"}, self._make_payload()
-        )
+        event = parse_bitbucket_event({"x-event-key": "pullrequest:updated"}, self._make_payload())
         assert event is not None
         assert event.action == EventAction.UPDATED
 
@@ -182,7 +176,5 @@ class TestBitbucketEventParsing:
         assert event.action == EventAction.CLOSED
 
     def test_ignored_event(self):
-        event = parse_bitbucket_event(
-            {"x-event-key": "repo:push"}, self._make_payload()
-        )
+        event = parse_bitbucket_event({"x-event-key": "repo:push"}, self._make_payload())
         assert event is None

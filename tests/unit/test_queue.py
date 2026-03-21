@@ -65,9 +65,7 @@ class TestAnalysisQueue:
         await queue.start()
 
         # Enqueue the first event (will start processing immediately)
-        await queue.enqueue(
-            _make_event(pr_number=1)
-        )
+        await queue.enqueue(_make_event(pr_number=1))
         # Wait for first handler to start
         await asyncio.sleep(0.05)
 
