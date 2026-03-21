@@ -865,6 +865,43 @@ jobs:
     )
 
 
+@main.command()
+@click.option("--host", default="0.0.0.0", help="Bind address.")
+@click.option("--port", type=int, default=8000, help="Port to listen on.")
+@click.option("--workers", type=int, default=1, help="Number of uvicorn workers.")
+@click.pass_context
+def serve(
+    ctx: click.Context,
+    host: str,
+    port: int,
+    workers: int,
+) -> None:
+    """Start the webhook server for real-time conflict detection."""
+    try:
+        import uvicorn
+    except ImportError:
+        raise click.UsageError(
+            "The server extra is required: pip install py-mergeguard[server]"
+        ) from None
+
+    console.print(f"[bold blue]Starting MergeGuard webhook server on {host}:{port}[/bold blue]")
+    console.print("[dim]Endpoints:[/dim]")
+    console.print(f"  POST /webhooks/github")
+    console.print(f"  POST /webhooks/gitlab")
+    console.print(f"  POST /webhooks/bitbucket")
+    console.print(f"  GET  /health")
+    console.print(f"  GET  /metrics")
+    console.print()
+
+    uvicorn.run(
+        "mergeguard.server.webhook:app",
+        host=host,
+        port=port,
+        workers=workers,
+        log_level="info",
+    )
+
+
 @main.command("analyze-multi")
 @click.option(
     "--config",

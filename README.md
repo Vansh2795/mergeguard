@@ -25,6 +25,7 @@ MergeGuard fills this gap by:
 - **Flagging duplications** — two PRs implementing the same feature independently
 - **Detecting regressions** — a PR re-introduces something recently removed
 - **Enforcing guardrails** — configurable rules for import restrictions, complexity limits, forbidden patterns, and more
+- **Posting inline annotations** — conflict warnings appear directly on the conflicting lines in PR diffs
 - **Computing risk scores** — composite scoring with configurable weights based on conflict severity, blast radius, code churn, and AI attribution
 
 ## Quick Start
@@ -57,6 +58,9 @@ pip install py-mergeguard
 # Analyze a specific PR
 mergeguard analyze --repo owner/repo --pr 42 --token $GITHUB_TOKEN
 
+# Analyze without inline annotations (summary comment only)
+mergeguard analyze --repo owner/repo --pr 42 --token $GITHUB_TOKEN --no-inline
+
 # Output as JSON, SARIF, or HTML
 mergeguard analyze --repo owner/repo --pr 42 --token $GITHUB_TOKEN --format json
 mergeguard analyze --repo owner/repo --pr 42 --token $GITHUB_TOKEN --format html
@@ -85,7 +89,7 @@ mergeguard init
 3. **Detect** — Compares every pair of open PRs for overlapping changes, including cross-file conflicts via import/symbol analysis
 4. **Classify** — Categorizes conflicts (hard, interface, behavioral, duplication, transitive, regression, guardrail)
 5. **Score** — Computes a composite risk score (0-100) with configurable weights
-6. **Report** — Posts actionable comments on PRs, renders terminal output with diff previews, generates HTML reports, or sends Slack/Teams notifications
+6. **Report** — Posts actionable comments on PRs with inline annotations on conflicting lines, renders terminal output with diff previews, generates HTML reports, or sends Slack/Teams notifications
 
 ## Platforms
 

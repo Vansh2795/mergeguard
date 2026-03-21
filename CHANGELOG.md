@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — v0.5: Inline PR Annotations
+- Inline PR annotations — conflict warnings posted as line-level review comments on the exact conflicting lines
+- `post_pr_review()` method on SCMClient protocol (GitHub, GitLab, Bitbucket)
+- `output/inline_annotations.py` formatter converting Conflicts to platform-agnostic ReviewComment objects
+- `inline_annotations` config option in `.mergeguard.yml` (default: true)
+- `--inline/--no-inline` CLI flag for `analyze` command
+- Graceful degradation — summary comment still posts if review API permissions are missing
+- Idempotent review posting — previous MergeGuard reviews are dismissed on re-analysis
+- Conflict `source_lines` and `target_lines` now populated for all conflict types (HARD, BEHAVIORAL, INTERFACE, DUPLICATION)
+
 ## [0.2.0] - 2026-03-15
 
 ### Added — v0.2: Accuracy & Core
