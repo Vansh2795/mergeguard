@@ -347,7 +347,8 @@ class TestGitHubClientIntegration:
 
         mock_pr.create_review.assert_called_once()
         call_kwargs = mock_pr.create_review.call_args
-        assert "<!-- mergeguard-review -->" in call_kwargs.kwargs.get("body", call_kwargs[1].get("body", ""))
+        body = call_kwargs.kwargs.get("body", call_kwargs[1].get("body", ""))
+        assert "<!-- mergeguard-review -->" in body
 
     @patch("mergeguard.integrations.github_client.httpx.Client")
     @patch("mergeguard.integrations.github_client.Github")
