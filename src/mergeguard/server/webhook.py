@@ -21,7 +21,13 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
-from fastapi import FastAPI, Header, HTTPException, Request, Response
+from fastapi import (
+    FastAPI,
+    Header,
+    HTTPException,
+    Request,
+    Response,
+)
 
 from mergeguard.server.events import (
     EventAction,
