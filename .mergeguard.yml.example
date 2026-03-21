@@ -23,6 +23,9 @@ llm_model: "claude-sonnet-4-20250514"
 # Max transitive conflicts detected per PR pair (default: 5)
 max_transitive_per_pair: 5
 
+# Post inline review comments on conflicting lines (default: true)
+inline_annotations: true
+
 # Custom risk scoring weights (must sum to ~1.0)
 # Uncomment to override defaults:
 # risk_weights:

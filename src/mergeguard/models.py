@@ -233,6 +233,16 @@ class GuardrailRule(BaseModel):
     message: str = ""
 
 
+class ServerConfig(BaseModel):
+    """Configuration for the webhook server."""
+
+    port: int = 8000
+    host: str = "0.0.0.0"
+    workers: int = 1
+    analysis_timeout: int = 300  # seconds
+    queue_backend: str = "asyncio"  # "asyncio" | "redis"
+
+
 class MergeGuardConfig(BaseModel):
     """Configuration loaded from .mergeguard.yml."""
 
@@ -267,3 +277,4 @@ class MergeGuardConfig(BaseModel):
     max_cache_entries: int = 500  # Max entries in analysis cache
     api_timeout: int = 30  # HTTP timeout in seconds
     max_workers: int = 8  # Max concurrent workers for parallel operations
+    server: ServerConfig = Field(default_factory=ServerConfig)

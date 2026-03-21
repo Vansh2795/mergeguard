@@ -63,6 +63,16 @@ Maximum number of transitive conflicts to detect per PR pair. Increase to see th
 max_transitive_per_pair: 5
 ```
 
+### `inline_annotations` (default: `true`)
+
+Post conflict warnings as inline review comments on the exact conflicting lines in PR diffs. When enabled, MergeGuard posts both a summary comment and line-level annotations via the platform's review API (GitHub Reviews, GitLab Discussions, Bitbucket Inline Comments).
+
+Disable with `--no-inline` CLI flag or set to `false` in config for summary-only mode.
+
+```yaml
+inline_annotations: true
+```
+
 ### `risk_weights` (default: built-in weights)
 
 Custom weights for risk score computation. All 5 keys must be present and must sum to approximately 1.0 (0.95-1.05 tolerance).
