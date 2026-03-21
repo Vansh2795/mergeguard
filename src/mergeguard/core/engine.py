@@ -348,6 +348,68 @@ class MergeGuardEngine:
 
         return report
 
+    def analyze_pr_targeted(
+        self,
+        pr_number: int,
+        existing_prs: list[PRInfo] | None = None,
+    ) -> ConflictReport:
+        """Targeted analysis: analyze a single PR against provided open PRs.
+
+        When `existing_prs` is provided, skips the get_open_prs() call and only
+        enriches PRs that haven't been enriched yet. This is the fast path for
+        webhook-triggered analysis where the server already knows the open PRs.
+
+        Falls back to full `analyze_pr()` when `existing_prs` is not provided.
+        """
+        if existing_prs is None:
+            return self.analyze_pr(pr_number)
+
+        start_time = time.monotonic()
+        logger.info("Targeted analysis for PR #%d against %d PRs", pr_number, len(existing_prs))
+
+        target_pr = self._client.get_pr(pr_number)
+        target_pr.changed_files = self._client.get_pr_files(pr_number)
+        self._backfill_truncated_patches(target_pr)
+        self._enrich_pr(target_pr)
+        target_pr.ai_attribution = detect_attribution(target_pr)
+
+        # Enrich others that need it (those without changed_symbols)
+        unenriched = [
+            pr for pr in existing_prs if pr.number != pr_number and not pr.changed_symbols
+        ]
+        if unenriched:
+            with ThreadPoolExecutor(max_workers=min(8, len(unenriched))) as executor:
+                futures = {executor.submit(self._fetch_and_enrich_pr, pr): pr for pr in unenriched}
+                for future in as_completed(futures, timeout=300):
+                    future.result()
+
+        prs_excluding_target = [p for p in existing_prs if p.number != pr_number]
+        all_conflicts, no_conflict_prs = self._detect_all_conflicts(target_pr, prs_excluding_target)
+        self._apply_template_suggestions(all_conflicts)
+
+        dependency_depth = self._compute_dependency_depth(target_pr)
+        churn_score = self._compute_churn_score(target_pr)
+        pattern_deviation_score = self._compute_pattern_deviation(target_pr)
+
+        risk_score, risk_factors = compute_risk_score(
+            pr=target_pr,
+            conflicts=all_conflicts,
+            dependency_depth=dependency_depth,
+            churn_score=churn_score,
+            pattern_deviation_score=pattern_deviation_score,
+            config=self._config,
+        )
+
+        elapsed_ms = int((time.monotonic() - start_time) * 1000)
+        return ConflictReport(
+            pr=target_pr,
+            conflicts=all_conflicts,
+            risk_score=risk_score,
+            risk_factors=risk_factors,
+            no_conflict_prs=no_conflict_prs,
+            analysis_duration_ms=elapsed_ms,
+        )
+
     def analyze_all_open_prs(self) -> list[ConflictReport]:
         """Batch: fetch and enrich all PRs once, then run pairwise conflict detection."""
         all_prs = self._client.get_open_prs(

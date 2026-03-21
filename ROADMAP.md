@@ -37,13 +37,23 @@ Focus: integrations, reporting, and developer experience.
 - :white_check_mark: **`mergeguard init` wizard** — Interactive setup that detects your stack and generates a tailored config.
 - :white_check_mark: **Static web dashboard** — Single HTML file with Chart.js visualizations, deployable to GitHub Pages (`mergeguard dashboard --format html`).
 
-## v0.5 — Next (Planned)
+## v0.5 — Enterprise Workflows (In Progress)
 
-- :calendar: **Azure DevOps support** — Extend platform coverage to Azure DevOps REST API.
-- :calendar: **VS Code extension** — Real-time conflict warnings in the editor as you code.
-- :calendar: **Conflict resolution assistant** — LLM-powered merge conflict resolution suggestions with diff generation.
-- :calendar: **Custom conflict types** — Plugin system for defining domain-specific conflict detection rules.
-- :calendar: **Performance dashboard** — Historical trends of conflict frequency, resolution time, and team hotspots.
+Focus: real-time workflows, inline developer experience, and deployment infrastructure.
+
+- :white_check_mark: **Inline PR annotations** — Line-level conflict warnings posted directly on PR diffs (GitHub, GitLab, Bitbucket review APIs)
+- :calendar: **Webhook-driven real-time analysis** — Instant conflict detection on PR open/update/close via webhook server
+- :calendar: **CODEOWNERS-aware routing** — Route conflict notifications to file owners
+- :calendar: **Merge queue integration** — Conflict-aware merge ordering
+- :calendar: **Stacked PR support** — Detect conflicts within PR stacks
+- :calendar: **Blast radius visualization** — Interactive dependency graph showing conflict impact
+- :calendar: **Policy engine** — Customizable merge policies based on conflict analysis
+- :calendar: **DORA metrics** — Track conflict resolution time and merge frequency
+- :calendar: **Secret scanning** — Detect accidentally committed secrets in PR diffs
+- :calendar: **Self-hosted runner** — On-prem deployment option
+- :calendar: **AI conflict resolution** — LLM-powered merge conflict resolution suggestions
+- :calendar: **IDE integration** — VS Code extension for real-time conflict warnings
+- :calendar: **Service mesh awareness** — Cross-service conflict detection for microservices
 
 ---
 

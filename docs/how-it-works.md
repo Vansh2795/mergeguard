@@ -104,6 +104,12 @@ Results are formatted as:
 - SVG badges (for README embedding)
 - Slack/Teams webhook notifications (Block Kit / Adaptive Cards)
 
+When `inline_annotations` is enabled (default), MergeGuard also posts **line-level review comments** on the exact conflicting lines in PR diffs:
+- Conflicts with `source_lines` are converted to `ReviewComment` objects via `output/inline_annotations.py`
+- Comments are grouped into a single review per analysis run (GitHub) or posted as discussions (GitLab) / inline comments (Bitbucket)
+- Previous MergeGuard reviews are dismissed/resolved on re-analysis for idempotency
+- Conflicts without line info still appear in the summary comment
+
 The `map` command also supports JSON output (`--format json`), emitting a machine-readable list of PR pairs and their shared files.
 
 ## Supported Languages

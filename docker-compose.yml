@@ -1,0 +1,20 @@
+services:
+  server:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GITLAB_TOKEN=${GITLAB_TOKEN:-}
+      - BITBUCKET_APP_PASSWORD=${BITBUCKET_APP_PASSWORD:-}
+      - MERGEGUARD_WEBHOOK_SECRET_GITHUB=${MERGEGUARD_WEBHOOK_SECRET_GITHUB:-}
+      - MERGEGUARD_WEBHOOK_SECRET_GITLAB=${MERGEGUARD_WEBHOOK_SECRET_GITLAB:-}
+      - MERGEGUARD_WEBHOOK_SECRET_BITBUCKET=${MERGEGUARD_WEBHOOK_SECRET_BITBUCKET:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health').raise_for_status()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
