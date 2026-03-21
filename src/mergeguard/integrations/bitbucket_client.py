@@ -9,11 +9,14 @@ from __future__ import annotations
 import logging
 import time
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from mergeguard.models import ChangedFile, FileChangeStatus, PRInfo
+
+if TYPE_CHECKING:
+    from mergeguard.integrations.protocol import ReviewComment
 
 logger = logging.getLogger(__name__)
 
@@ -179,6 +182,37 @@ class BitbucketClient:
             json={"content": {"raw": f"{marker}\n{body}"}},
         )
         post_resp.raise_for_status()
+
+    def post_pr_review(
+        self,
+        pr_number: int,
+        body: str,
+        comments: list[ReviewComment],
+        event: str = "COMMENT",
+    ) -> None:
+        """Post inline comments on a pull request."""
+        marker = "<!-- mergeguard-review -->"
+        comments_url = f"{self._base_url}/pullrequests/{pr_number}/comments"
+
+        # Delete previous MergeGuard inline comments
+        url: str | None = comments_url
+        params: dict[str, str | int] = {"pagelen": _PAGE_LEN}
+        while url:
+            resp = self._get(url, params=params)
+            data = resp.json()
+            for c in data.get("values", []):
+                if marker in c.get("content", {}).get("raw", ""):
+                    self._http.delete(f"{comments_url}/{c['id']}")
+            url = data.get("next")
+            params = {}
+
+        # Post each inline comment
+        for comment in comments:
+            payload: dict[str, Any] = {
+                "content": {"raw": f"{marker}\n{comment.body}"},
+                "inline": {"to": comment.line, "path": comment.path},
+            }
+            self._http.post(comments_url, json=payload).raise_for_status()
 
     # ── Private helpers ──
 

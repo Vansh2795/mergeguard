@@ -236,6 +236,7 @@ class GuardrailRule(BaseModel):
 class MergeGuardConfig(BaseModel):
     """Configuration loaded from .mergeguard.yml."""
 
+    inline_annotations: bool = True  # Post line-level review comments alongside summary
     risk_threshold: int = 50  # Only comment if risk > threshold
     check_regressions: bool = True
     max_open_prs: int = 200  # Safety cap (not the primary filter)

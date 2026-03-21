@@ -36,7 +36,13 @@ def _pr_link(repo: str, number: int, platform: str = "github") -> str:
     return f"[#{number}](https://github.com/{repo}/pull/{number})"
 
 
-def format_report(report: ConflictReport, repo_full_name: str, *, platform: str = "github") -> str:
+def format_report(
+    report: ConflictReport,
+    repo_full_name: str,
+    *,
+    platform: str = "github",
+    inline_count: int = 0,
+) -> str:
     """Format a ConflictReport as a Markdown comment.
 
     Design principles:
@@ -60,6 +66,11 @@ def format_report(report: ConflictReport, repo_full_name: str, *, platform: str 
             f"**Risk Score: {report.risk_score:.0f}/100** | "
             f"{len(report.conflicts)} conflict(s) detected"
         )
+        if inline_count > 0:
+            lines.append(
+                f"> {inline_count} conflict(s) annotated inline on the diff. "
+                f"See review comments for details."
+            )
         lines.append("")
 
     # Critical and warning conflicts — grouped by target PR

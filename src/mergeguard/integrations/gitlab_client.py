@@ -10,11 +10,14 @@ import logging
 import time
 import urllib.parse
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from mergeguard.models import ChangedFile, FileChangeStatus, PRInfo
+
+if TYPE_CHECKING:
+    from mergeguard.integrations.protocol import ReviewComment
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +162,54 @@ class GitLabClient:
         # Create new note
         post_resp = self._http.post(notes_url, json={"body": f"{marker}\n{body}"})
         post_resp.raise_for_status()
+
+    def post_pr_review(
+        self,
+        pr_number: int,
+        body: str,
+        comments: list[ReviewComment],
+        event: str = "COMMENT",
+    ) -> None:
+        """Post inline discussions on a merge request."""
+        marker = "<!-- mergeguard-review -->"
+
+        # Resolve previous MergeGuard discussions
+        notes_url = f"{self._base_url}/merge_requests/{pr_number}/discussions"
+        resp = self._get(notes_url, params={"per_page": 100})
+        for disc in resp.json():
+            for note in disc.get("notes", []):
+                if marker in note.get("body", ""):
+                    self._http.put(
+                        f"{notes_url}/{disc['id']}",
+                        json={"resolved": True},
+                    )
+                    break
+
+        # Get MR metadata for position info
+        mr_resp = self._get(f"{self._base_url}/merge_requests/{pr_number}")
+        mr = mr_resp.json()
+        diff_refs = mr.get("diff_refs", {})
+
+        # Post each comment as a new discussion with position
+        for comment in comments:
+            position: dict[str, str | int] = {
+                "position_type": "text",
+                "base_sha": diff_refs.get("base_sha", ""),
+                "head_sha": diff_refs.get("head_sha", ""),
+                "start_sha": diff_refs.get("start_sha", ""),
+                "new_path": comment.path,
+                "old_path": comment.path,
+                "new_line": comment.line,
+            }
+            disc_body = f"{marker}\n{comment.body}"
+            self._http.post(
+                notes_url,
+                json={"body": disc_body, "position": position},
+            ).raise_for_status()
+
+        # Post summary as a regular note
+        summary_url = f"{self._base_url}/merge_requests/{pr_number}/notes"
+        self._http.post(summary_url, json={"body": f"{marker}\n{body}"}).raise_for_status()
 
     # ── Private helpers ──
 

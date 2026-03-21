@@ -6,6 +6,7 @@ enabling dependency injection in the engine.
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
@@ -14,6 +15,16 @@ if TYPE_CHECKING:
 
 class SCMError(Exception):
     """Base exception for SCM client API errors."""
+
+
+@dataclass
+class ReviewComment:
+    """A single inline comment on a PR diff."""
+
+    path: str
+    line: int  # Line number in the new file
+    body: str
+    side: str = field(default="RIGHT")  # RIGHT = new file, LEFT = old file
 
 
 @runtime_checkable
@@ -33,3 +44,11 @@ class SCMClient(Protocol):
     def get_file_content(self, path: str, ref: str) -> str | None: ...
 
     def post_pr_comment(self, pr_number: int, body: str) -> None: ...
+
+    def post_pr_review(
+        self,
+        pr_number: int,
+        body: str,
+        comments: list[ReviewComment],
+        event: str = "COMMENT",
+    ) -> None: ...
