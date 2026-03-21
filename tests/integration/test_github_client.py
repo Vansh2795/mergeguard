@@ -385,10 +385,7 @@ class TestGitHubClientIntegration:
         mock_pr.get_reviews.return_value = []
 
         client = GitHubClient("fake-token", "owner/repo")
-        comments = [
-            ReviewComment(path=f"f{i}.py", line=i, body=f"Comment {i}")
-            for i in range(75)
-        ]
+        comments = [ReviewComment(path=f"f{i}.py", line=i, body=f"Comment {i}") for i in range(75)]
         client.post_pr_review(42, "Summary", comments)
 
         # Should be called twice: first batch of 50, second batch of 25

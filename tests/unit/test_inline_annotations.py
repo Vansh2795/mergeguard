@@ -86,9 +86,7 @@ class TestFormatReviewComments:
 
     def test_max_comments_cap(self):
         """Output is capped at max_comments."""
-        conflicts = [
-            _make_conflict(file_path=f"f{i}.py") for i in range(10)
-        ]
+        conflicts = [_make_conflict(file_path=f"f{i}.py") for i in range(10)]
         report = ConflictReport(
             pr=_make_pr(),
             conflicts=conflicts,

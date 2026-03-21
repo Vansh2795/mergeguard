@@ -312,7 +312,10 @@ def analyze(
 
         # Post summary comment (always)
         markdown_body = format_report(
-            report, repo, platform=resolved_platform, inline_count=len(review_comments),
+            report,
+            repo,
+            platform=resolved_platform,
+            inline_count=len(review_comments),
         )
         client.post_pr_comment(pr, markdown_body)
         console.print("[green]\u2713 Comment posted to PR[/green]")

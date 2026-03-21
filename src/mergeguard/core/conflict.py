@@ -160,10 +160,16 @@ def classify_conflicts(
                                 "should rebase and resolve conflicts."
                             ),
                             source_lines=_extract_lines(
-                                target_pr, overlap.file_path, symbol_name, target_cs_map,
+                                target_pr,
+                                overlap.file_path,
+                                symbol_name,
+                                target_cs_map,
                             ),
                             target_lines=_extract_lines(
-                                other_pr, overlap.file_path, symbol_name, other_cs_map,
+                                other_pr,
+                                overlap.file_path,
+                                symbol_name,
+                                other_cs_map,
                             ),
                         )
                     )
@@ -357,10 +363,16 @@ def _check_behavioral_conflict(
                 ),
                 recommendation=("Review both changes to ensure they are semantically compatible."),
                 source_lines=_extract_lines(
-                    target_pr, overlap.file_path, symbol_name, target_cs_map,
+                    target_pr,
+                    overlap.file_path,
+                    symbol_name,
+                    target_cs_map,
                 ),
                 target_lines=_extract_lines(
-                    other_pr, overlap.file_path, symbol_name, other_cs_map,
+                    other_pr,
+                    overlap.file_path,
+                    symbol_name,
+                    other_cs_map,
                 ),
             )
         )

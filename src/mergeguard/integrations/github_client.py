@@ -183,8 +183,7 @@ class GitHubClient:
 
         batch_size = 50
         gh_comments: list[GHReviewComment] = [
-            GHReviewComment(path=c.path, line=c.line, body=c.body, side=c.side)
-            for c in comments
+            GHReviewComment(path=c.path, line=c.line, body=c.body, side=c.side) for c in comments
         ]
 
         # First batch creates the review with body

@@ -65,8 +65,7 @@ def format_review_summary(report: ConflictReport, inline_count: int) -> str:
     """Format the review body (top-level summary for the review)."""
     total = len(report.conflicts)
     lines = [
-        f"**MergeGuard** found **{total}** conflict(s) "
-        f"(risk score: {report.risk_score:.0f}/100).",
+        f"**MergeGuard** found **{total}** conflict(s) (risk score: {report.risk_score:.0f}/100).",
     ]
     skipped = total - inline_count
     if skipped > 0:
@@ -77,9 +76,7 @@ def format_review_summary(report: ConflictReport, inline_count: int) -> str:
     return "\n".join(lines)
 
 
-def _format_annotation_body(
-    conflict: Conflict, repo: str, platform: str
-) -> str:
+def _format_annotation_body(conflict: Conflict, repo: str, platform: str) -> str:
     """Format a single inline annotation body."""
     emoji = SEVERITY_EMOJI[conflict.severity]
     type_label = TYPE_LABELS[conflict.conflict_type]
