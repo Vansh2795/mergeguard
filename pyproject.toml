@@ -76,6 +76,10 @@ strict = true
 module = ["openai.*", "anthropic.*", "yaml.*", "fastapi.*", "uvicorn.*"]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = ["mergeguard.server.*"]
+disallow_untyped_decorators = false
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
