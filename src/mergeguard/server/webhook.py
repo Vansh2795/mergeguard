@@ -240,6 +240,14 @@ async def _handle_analysis(event: WebhookEvent | MergeGroupEvent) -> None:
         if cfg.merge_queue.enabled:
             _post_merge_status(client, report, cfg)
 
+        # Evaluate and execute policy engine actions
+        if cfg.policy.enabled:
+            from mergeguard.core.policy import evaluate_policies, execute_policy_actions
+
+            evaluation = evaluate_policies(report, cfg.policy)
+            if evaluation.actions:
+                execute_policy_actions(report, evaluation, client, event.repo_full_name, platform)
+
     elif event.action == EventAction.CLOSED:
         logger.info(
             "PR %s #%d closed — conflict graph will update on next analysis",
