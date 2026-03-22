@@ -46,8 +46,8 @@ Focus: real-time workflows, inline developer experience, and deployment infrastr
 - :white_check_mark: **CODEOWNERS-aware routing** — Route conflict notifications to file owners
 - :white_check_mark: **Merge queue integration** — Conflict-aware merge ordering with commit status checks and priority overrides
 - :white_check_mark: **Stacked PR support** — Detect stacked PR groups, demote intra-stack conflicts, stack-aware merge ordering
-- :calendar: **Blast radius visualization** — Interactive dependency graph showing conflict impact
-- :calendar: **Policy engine** — Customizable merge policies based on conflict analysis
+- :white_check_mark: **Blast radius visualization** — Interactive D3.js force-directed graph showing PR conflict topology with transitive blast radius and file-level dependency drill-down
+- :white_check_mark: **Policy engine** — Declarative conditions-and-actions system for automated merge policies based on conflict analysis
 - :calendar: **DORA metrics** — Track conflict resolution time and merge frequency
 - :calendar: **Secret scanning** — Detect accidentally committed secrets in PR diffs
 - :calendar: **Self-hosted runner** — On-prem deployment option

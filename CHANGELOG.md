@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — v0.5: Policy Engine
+- Declarative policy engine with conditions-and-actions system for automated merge workflow decisions
+- `PolicyConditionOp` enum: `gte`, `lte`, `eq`, `gt`, `lt`, `contains` (set membership), `matches` (glob patterns)
+- `PolicyActionType` enum: `block_merge`, `require_reviewers`, `add_labels`, `notify_slack`, `notify_teams`, `post_comment`, `set_status`
+- 13 field extractors: `risk_score`, `conflict_count`, `critical_count`, `warning_count`, `has_severity`, `has_conflict_type`, `affected_teams`, `ai_authored`, `files_changed`, `labels`, `author`, `file_count`, `lines_changed`
+- `evaluate_policies()` evaluates all rules with AND-ed conditions and accumulates actions from matched policies
+- `execute_policy_actions()` dispatches actions to SCM clients with graceful `hasattr` fallbacks
+- `add_labels()` and `request_reviewers()` methods added to `SCMClient` protocol and all three platform clients (GitHub, GitLab, Bitbucket)
+- `policy-check` CLI command with `--dry-run/--execute`, `--format terminal|json`, Rich table output
+- Policy evaluation integrated into webhook handler (runs after merge queue status)
+- `PolicyConfig` section in `.mergeguard.yml` for declarative policy definitions
+- Audit trail in evaluation results (actual vs expected values per condition)
+- Bitbucket `add_labels` gracefully no-ops with warning (unsupported by platform)
+
+### Added — v0.5: Blast Radius Visualization
+- Interactive D3.js force-directed graph visualization of PR conflict topology (`mergeguard blast-radius`)
+- `BlastRadiusNode`, `BlastRadiusEdge`, `BlastRadiusData` models for graph data
+- `build_file_dependency_graph()` public method on `MergeGuardEngine` for file-level dependency extraction
+- Transitive blast radius computation via BFS on conflict adjacency graph
+- Three output formats: HTML (interactive graph, default), terminal (Rich tables + ASCII adjacency), JSON (raw data)
+- HTML features: zoom/pan, drag nodes, severity filtering, PR search, intra-stack toggle, stack cluster hulls, node/edge tooltips, detail sidebar, Shift+click file dependency expansion
+- `--output` flag for writing HTML/JSON to file
+- File-level dependency edges from import graph overlaid on conflict topology
+
 ### Added — v0.5: Stacked PR Support
 - Stacked PR detection with three strategies: branch chain, label-based, and Graphite metadata
 - `StackGroup` and `StackedPRConfig` models for stack configuration

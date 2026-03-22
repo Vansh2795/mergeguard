@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -56,6 +57,26 @@ class AIAttribution(StrEnum):
     AI_CONFIRMED = "ai_confirmed"  # Agent Trace or commit metadata
     AI_SUSPECTED = "ai_suspected"  # Heuristic detection
     UNKNOWN = "unknown"
+
+
+class PolicyConditionOp(StrEnum):
+    GTE = "gte"
+    LTE = "lte"
+    EQ = "eq"
+    GT = "gt"
+    LT = "lt"
+    CONTAINS = "contains"  # set/list membership
+    MATCHES = "matches"  # glob pattern on file paths
+
+
+class PolicyActionType(StrEnum):
+    BLOCK_MERGE = "block_merge"
+    REQUIRE_REVIEWERS = "require_reviewers"
+    ADD_LABELS = "add_labels"
+    NOTIFY_SLACK = "notify_slack"
+    NOTIFY_TEAMS = "notify_teams"
+    POST_COMMENT = "post_comment"
+    SET_STATUS = "set_status"
 
 
 # ──────────────────────────────────────────────
@@ -139,6 +160,50 @@ class StackGroup(BaseModel):
     base_branch: str  # Ultimate target (e.g., "main")
     detection_method: str  # "branch_chain" | "labels" | "graphite"
     is_complete: bool = True  # False if middle PRs are missing
+
+
+# ──────────────────────────────────────────────
+# Blast Radius Models
+# ──────────────────────────────────────────────
+
+
+class BlastRadiusNode(BaseModel):
+    """A node in the blast radius graph (one per PR)."""
+
+    pr_number: int
+    title: str
+    author: str
+    risk_score: float
+    conflict_count: int
+    direct_blast: int  # PRs directly conflicting
+    transitive_blast: int  # PRs reachable through conflict chains
+    severity_max: str  # Highest severity among conflicts
+    stack_group: str | None = None
+    ai_authored: bool = False
+    files_changed: list[str] = Field(default_factory=list)
+
+
+class BlastRadiusEdge(BaseModel):
+    """An edge in the blast radius graph (conflict between two PRs)."""
+
+    source_pr: int
+    target_pr: int
+    conflict_count: int
+    severity_max: str
+    conflict_types: list[str]
+    is_intra_stack: bool = False
+    files: list[str] = Field(default_factory=list)
+
+
+class BlastRadiusData(BaseModel):
+    """Complete blast radius graph data."""
+
+    nodes: list[BlastRadiusNode]
+    edges: list[BlastRadiusEdge]
+    file_edges: list[dict[str, Any]] = Field(default_factory=list)
+    stack_groups: list[dict[str, Any]] = Field(default_factory=list)
+    repo: str
+    generated_at: datetime
 
 
 # ──────────────────────────────────────────────
@@ -293,6 +358,68 @@ class StackedPRConfig(BaseModel):
     label_pattern: str = "stack:"
 
 
+class PolicyCondition(BaseModel):
+    """A single condition in a policy rule."""
+
+    field: str  # "risk_score", "conflict_count", "has_severity", etc.
+    operator: PolicyConditionOp = PolicyConditionOp.GTE
+    value: Any
+
+
+class PolicyAction(BaseModel):
+    """An action to execute when a policy rule matches."""
+
+    action: PolicyActionType
+    reviewers: list[str] = Field(default_factory=list)
+    labels: list[str] = Field(default_factory=list)
+    webhook_url: str = ""
+    message: str = ""
+    status_state: str = "failure"
+    status_context: str = "mergeguard/policy"
+
+
+class PolicyRule(BaseModel):
+    """A named policy rule with conditions and actions."""
+
+    name: str
+    description: str = ""
+    conditions: list[PolicyCondition]
+    actions: list[PolicyAction]
+    enabled: bool = True
+
+
+class PolicyResult(BaseModel):
+    """Evaluation result for a single policy rule."""
+
+    policy_name: str
+    matched: bool
+    conditions_evaluated: list[dict[str, Any]] = Field(default_factory=list)
+    actions_to_execute: list[PolicyAction] = Field(default_factory=list)
+
+
+class PolicyEvaluationResult(BaseModel):
+    """Aggregate result of evaluating all policy rules."""
+
+    results: list[PolicyResult] = Field(default_factory=list)
+    actions: list[PolicyAction] = Field(default_factory=list)
+    evaluated_at: datetime
+
+    @property
+    def has_block(self) -> bool:
+        return any(a.action == PolicyActionType.BLOCK_MERGE for a in self.actions)
+
+    @property
+    def matched_policies(self) -> list[str]:
+        return [r.policy_name for r in self.results if r.matched]
+
+
+class PolicyConfig(BaseModel):
+    """Configuration for the policy engine."""
+
+    enabled: bool = False
+    policies: list[PolicyRule] = Field(default_factory=list)
+
+
 class MergeGuardConfig(BaseModel):
     """Configuration loaded from .mergeguard.yml."""
 
@@ -331,3 +458,4 @@ class MergeGuardConfig(BaseModel):
     codeowners: CodeownersConfig = Field(default_factory=CodeownersConfig)
     merge_queue: MergeQueueConfig = Field(default_factory=MergeQueueConfig)
     stacked_prs: StackedPRConfig = Field(default_factory=StackedPRConfig)
+    policy: PolicyConfig = Field(default_factory=PolicyConfig)

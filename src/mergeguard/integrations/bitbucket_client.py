@@ -258,6 +258,39 @@ class BitbucketClient:
                 return
             raise
 
+    def add_labels(self, pr_number: int, labels: list[str]) -> None:
+        """No-op: Bitbucket Cloud does not support PR labels."""
+        logger.warning(
+            "Bitbucket Cloud does not support PR labels — skipping add_labels(%s, %s)",
+            pr_number,
+            labels,
+        )
+
+    def request_reviewers(self, pr_number: int, reviewers: list[str]) -> None:
+        """Request reviewers on a pull request by looking up user UUIDs."""
+        url = f"{self._base_url}/pullrequests/{pr_number}"
+        resp = self._get(url)
+        pr_data = resp.json()
+
+        # Build updated reviewers list
+        existing = pr_data.get("reviewers", [])
+        existing_uuids = {r.get("uuid") for r in existing if r.get("uuid")}
+
+        new_reviewers = list(existing)
+        for username in reviewers:
+            username = username.lstrip("@")
+            user_url = f"https://api.bitbucket.org/2.0/users/{username}"
+            try:
+                user_resp = self._get(user_url)
+                user_data = user_resp.json()
+                if user_data.get("uuid") not in existing_uuids:
+                    new_reviewers.append({"uuid": user_data["uuid"]})
+            except Exception:
+                logger.warning("Bitbucket user not found: %s", username)
+
+        put_resp = self._http.put(url, json={"reviewers": new_reviewers})
+        put_resp.raise_for_status()
+
     # ── Private helpers ──
 
     def _get(
