@@ -30,6 +30,7 @@ MergeGuard fills this gap by:
 - **CODEOWNERS-aware routing** — conflict notifications routed to the specific code owners, with per-team Slack channels
 - **Stacked PR support** — detects PR stacks (branch chains, labels, Graphite), demotes expected intra-stack conflicts, and enforces stack-aware merge ordering
 - **Merge queue integration** — commit status checks that block conflicting PRs from merging, with priority override via labels and GitHub merge group support
+- **Policy engine** — declarative conditions-and-actions system: block merges when AI-authored PRs have critical conflicts, auto-label high-risk PRs, require additional reviewers for infrastructure changes, notify Slack channels based on affected teams
 - **Computing risk scores** — composite scoring with configurable weights based on conflict severity, blast radius, code churn, and AI attribution
 
 ## Quick Start
@@ -85,6 +86,10 @@ mergeguard watch --repo owner/repo --token $GITHUB_TOKEN
 # Interactive setup wizard
 mergeguard init
 
+# Evaluate policy rules against a PR (dry-run by default)
+mergeguard policy-check --repo owner/repo --pr 42 --token $GITHUB_TOKEN
+mergeguard policy-check --repo owner/repo --pr 42 --token $GITHUB_TOKEN --execute
+
 # Start webhook server for real-time analysis
 mergeguard serve --port 8000
 ```
@@ -127,6 +132,40 @@ ignored_paths:
 #   pattern_deviation: 0.15
 #   churn_risk: 0.15
 #   ai_attribution: 0.10
+```
+
+### Policy Engine
+
+Define automated merge policies that evaluate conflict analysis results:
+
+```yaml
+policy:
+  enabled: true
+  policies:
+    - name: block-critical-ai-prs
+      conditions:
+        - field: ai_authored
+          operator: eq
+          value: true
+        - field: has_severity
+          operator: contains
+          value: critical
+      actions:
+        - action: block_merge
+          message: "AI-authored PR has critical conflicts"
+        - action: require_reviewers
+          reviewers: ["@platform-team"]
+
+    - name: label-high-risk
+      conditions:
+        - field: risk_score
+          operator: gte
+          value: 80
+      actions:
+        - action: add_labels
+          labels: ["high-risk"]
+        - action: notify_slack
+          webhook_url: "https://hooks.slack.com/..."
 ```
 
 See [Configuration Guide](docs/configuration.md) for all options including guardrail rules, notifications, and performance tuning.

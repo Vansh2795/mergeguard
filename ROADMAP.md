@@ -47,7 +47,7 @@ Focus: real-time workflows, inline developer experience, and deployment infrastr
 - :white_check_mark: **Merge queue integration** — Conflict-aware merge ordering with commit status checks and priority overrides
 - :white_check_mark: **Stacked PR support** — Detect stacked PR groups, demote intra-stack conflicts, stack-aware merge ordering
 - :calendar: **Blast radius visualization** — Interactive dependency graph showing conflict impact
-- :calendar: **Policy engine** — Customizable merge policies based on conflict analysis
+- :white_check_mark: **Policy engine** — Declarative conditions-and-actions system for automated merge policies based on conflict analysis
 - :calendar: **DORA metrics** — Track conflict resolution time and merge frequency
 - :calendar: **Secret scanning** — Detect accidentally committed secrets in PR diffs
 - :calendar: **Self-hosted runner** — On-prem deployment option
