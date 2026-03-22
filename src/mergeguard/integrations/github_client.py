@@ -203,16 +203,21 @@ class GitHubClient:
                 comments=batch,
             )
 
-    def set_commit_status(
-        self, sha: str, state: str, description: str, target_url: str = ""
+    def post_commit_status(
+        self,
+        sha: str,
+        state: str,
+        description: str,
+        target_url: str = "",
+        context: str = "mergeguard/cross-pr-analysis",
     ) -> None:
-        """Set commit status (success/failure/pending/error)."""
+        """Post commit status (success/failure/pending/error)."""
         commit = self._repo.get_commit(sha)
         commit.create_status(
             state=state,
             description=description[:140],  # GitHub limit
             target_url=target_url,
-            context="mergeguard/cross-pr-analysis",
+            context=context,
         )
 
     @property

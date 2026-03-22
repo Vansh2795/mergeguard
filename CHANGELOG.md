@@ -17,6 +17,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Idempotent review posting — previous MergeGuard reviews are dismissed on re-analysis
 - Conflict `source_lines` and `target_lines` now populated for all conflict types (HARD, BEHAVIORAL, INTERFACE, DUPLICATION)
 
+### Added — v0.5: Webhook Server
+- FastAPI webhook server for real-time conflict detection (`mergeguard serve`)
+- Webhook endpoints: `/webhooks/github`, `/webhooks/gitlab`, `/webhooks/bitbucket`
+- HMAC-SHA256 signature verification for all platforms
+- Async background analysis queue with per-repo rate limiting and deduplication
+- Targeted single-PR analysis mode (`analyze_pr_targeted()`) for webhook efficiency
+- Prometheus metrics endpoint (`/metrics`) and health check (`/health`)
+- `ServerConfig` model with `port`, `host`, `workers`, `analysis_timeout`, `queue_backend`
+- Docker deployment support (Dockerfile + docker-compose.yml)
+- `[server]` optional dependency group (fastapi, uvicorn)
+
+### Added — v0.5: Merge Queue Integration
+- Merge queue integration with commit status checks on all three platforms (GitHub, GitLab, Bitbucket)
+- `MergeQueueConfig` model with `enabled`, `block_on_conflicts`, `block_severity`, `status_context`, `priority_labels`, `auto_recheck_on_close`
+- `post_commit_status()` method added to `SCMClient` protocol and all platform clients
+- `MergeReadiness` dataclass and `compute_merge_readiness()` function for merge blocking logic
+- `MergeGroupEvent` model for handling GitHub `merge_group` webhook events
+- `merge_group` webhook event parsing with PR number extraction from `head_ref` and commit messages
+- Priority override via PR labels (`merge-priority:high` / `merge-priority:low`)
+- Pending → success/failure status transitions during webhook analysis
+- GitHub Action inputs: `merge-queue` and `block-severity`
+- GitHub Action `merge_group` event support in `entrypoint.sh`
+- Prometheus metrics: `statuses_posted`, `statuses_failed`, `merge_groups_analyzed`
+- Graceful degradation on 401/403 for GitLab and Bitbucket status APIs
+
+### Added — v0.5: CODEOWNERS-Aware Routing
+- CODEOWNERS parser supporting GitHub and GitLab formats (`analysis/codeowners.py`)
+- Auto-detection of CODEOWNERS file location (`.github/CODEOWNERS`, `CODEOWNERS`, `docs/CODEOWNERS`)
+- Last-match-wins pattern resolution (GitHub) and section-scoped matching (GitLab)
+- `owners` field on `Conflict` model — code owners for each conflicting file
+- `affected_teams` field on `ConflictReport` — aggregated list of all teams with conflicts
+- `CodeownersConfig` model with `enabled`, `path`, and `team_channels` settings
+- Owner @mentions in GitHub PR comments (both detailed and compact formats)
+- Owner info in Slack and Teams notification payloads
+- `notify_slack_per_team()` — targeted Slack notifications routed to team-specific channels
+- Graceful degradation when CODEOWNERS file is missing
+
 ## [0.2.0] - 2026-03-15
 
 ### Added — v0.2: Accuracy & Core

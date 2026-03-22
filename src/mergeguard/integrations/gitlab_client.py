@@ -211,6 +211,44 @@ class GitLabClient:
         summary_url = f"{self._base_url}/merge_requests/{pr_number}/notes"
         self._http.post(summary_url, json={"body": f"{marker}\n{body}"}).raise_for_status()
 
+    def post_commit_status(
+        self,
+        sha: str,
+        state: str,
+        description: str,
+        target_url: str = "",
+        context: str = "mergeguard/cross-pr-analysis",
+    ) -> None:
+        """Post a commit status via GitLab pipeline status API.
+
+        Maps GitHub-style states to GitLab states:
+        - "failure" → "failed"
+        - "pending", "success", "error" → passed through as-is
+        """
+        gitlab_state_map = {"failure": "failed"}
+        gl_state = gitlab_state_map.get(state, state)
+
+        url = f"{self._base_url}/statuses/{sha}"
+        payload: dict[str, str] = {
+            "state": gl_state,
+            "description": description[:140],
+            "name": context,
+        }
+        if target_url:
+            payload["target_url"] = target_url
+
+        try:
+            resp = self._http.post(url, json=payload)
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code in (401, 403):
+                logger.warning(
+                    "Insufficient permissions to post commit status on GitLab (%d)",
+                    exc.response.status_code,
+                )
+                return
+            raise
+
     # ── Private helpers ──
 
     def _get(

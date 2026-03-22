@@ -6,10 +6,11 @@ unified WebhookEvent that the analysis pipeline can consume.
 
 from __future__ import annotations
 
+import re
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class EventAction(StrEnum):
@@ -17,6 +18,7 @@ class EventAction(StrEnum):
     UPDATED = "updated"  # synchronize / push
     CLOSED = "closed"
     REOPENED = "reopened"
+    MERGE_GROUP_CHECKS_REQUESTED = "merge_group_checks_requested"
 
 
 class WebhookEvent(BaseModel):
@@ -31,12 +33,63 @@ class WebhookEvent(BaseModel):
     sender: str  # username that triggered the event
 
 
-def parse_github_event(headers: dict[str, str], payload: dict[str, Any]) -> WebhookEvent | None:
-    """Parse a GitHub webhook payload into a WebhookEvent.
+class MergeGroupEvent(BaseModel):
+    """GitHub merge_group webhook event."""
+
+    platform: str = "github"
+    action: EventAction
+    repo_full_name: str
+    head_sha: str
+    base_branch: str
+    sender: str
+    pr_numbers: list[int] = Field(default_factory=list)
+
+
+def _extract_pr_numbers_from_merge_group(payload: dict[str, Any]) -> list[int]:
+    """Extract PR numbers from merge group head_ref and head_commit message."""
+    pr_numbers: set[int] = set()
+    merge_group = payload.get("merge_group", {})
+
+    # Extract from head_ref (e.g., "refs/heads/gh-readonly-queue/main/pr-42-...")
+    head_ref = merge_group.get("head_ref", "")
+    for match in re.finditer(r"/pr-(\d+)", head_ref):
+        pr_numbers.add(int(match.group(1)))
+
+    # Extract from head_commit message (e.g., "Merge pull request #42 ...")
+    head_commit = merge_group.get("head_commit", {})
+    message = head_commit.get("message", "")
+    for match in re.finditer(r"#(\d+)", message):
+        pr_numbers.add(int(match.group(1)))
+
+    return sorted(pr_numbers)
+
+
+def parse_github_event(
+    headers: dict[str, str], payload: dict[str, Any]
+) -> WebhookEvent | MergeGroupEvent | None:
+    """Parse a GitHub webhook payload into a WebhookEvent or MergeGroupEvent.
 
     Returns None for events we don't handle.
     """
     event_type = headers.get("x-github-event", "")
+
+    if event_type == "merge_group":
+        raw_action = payload.get("action", "")
+        if raw_action != "checks_requested":
+            return None
+        merge_group = payload.get("merge_group")
+        if not merge_group:
+            return None
+        repo = payload.get("repository", {})
+        return MergeGroupEvent(
+            action=EventAction.MERGE_GROUP_CHECKS_REQUESTED,
+            repo_full_name=repo.get("full_name", ""),
+            head_sha=merge_group.get("head_sha", ""),
+            base_branch=merge_group.get("base_ref", "").removeprefix("refs/heads/"),
+            sender=payload.get("sender", {}).get("login", ""),
+            pr_numbers=_extract_pr_numbers_from_merge_group(payload),
+        )
+
     if event_type != "pull_request":
         return None
 

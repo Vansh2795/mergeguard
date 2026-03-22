@@ -61,6 +61,9 @@ class Metrics:
         self.analyses_failed = _Counter()
         self.analysis_duration = _Histogram()
         self.queue_depth = _Counter()  # inc on enqueue, we track total enqueued
+        self.statuses_posted = _Counter()
+        self.statuses_failed = _Counter()
+        self.merge_groups_analyzed = _Counter()
         self._start_time = time.monotonic()
 
     def render(self) -> str:
@@ -95,6 +98,18 @@ class Metrics:
             "# TYPE mergeguard_analysis_duration_seconds summary",
             f"mergeguard_analysis_duration_seconds_count {self.analysis_duration.count}",
             f"mergeguard_analysis_duration_seconds_sum {self.analysis_duration.total:.3f}",
+            "",
+            "# HELP mergeguard_statuses_posted_total Commit statuses posted.",
+            "# TYPE mergeguard_statuses_posted_total counter",
+            f"mergeguard_statuses_posted_total {self.statuses_posted.value}",
+            "",
+            "# HELP mergeguard_statuses_failed_total Commit status post failures.",
+            "# TYPE mergeguard_statuses_failed_total counter",
+            f"mergeguard_statuses_failed_total {self.statuses_failed.value}",
+            "",
+            "# HELP mergeguard_merge_groups_analyzed_total Merge groups analyzed.",
+            "# TYPE mergeguard_merge_groups_analyzed_total counter",
+            f"mergeguard_merge_groups_analyzed_total {self.merge_groups_analyzed.value}",
             "",
         ]
         return "\n".join(lines) + "\n"

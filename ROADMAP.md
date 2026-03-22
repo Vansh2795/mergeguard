@@ -42,9 +42,9 @@ Focus: integrations, reporting, and developer experience.
 Focus: real-time workflows, inline developer experience, and deployment infrastructure.
 
 - :white_check_mark: **Inline PR annotations** — Line-level conflict warnings posted directly on PR diffs (GitHub, GitLab, Bitbucket review APIs)
-- :calendar: **Webhook-driven real-time analysis** — Instant conflict detection on PR open/update/close via webhook server
-- :calendar: **CODEOWNERS-aware routing** — Route conflict notifications to file owners
-- :calendar: **Merge queue integration** — Conflict-aware merge ordering
+- :white_check_mark: **Webhook-driven real-time analysis** — Instant conflict detection on PR open/update/close via webhook server
+- :white_check_mark: **CODEOWNERS-aware routing** — Route conflict notifications to file owners
+- :white_check_mark: **Merge queue integration** — Conflict-aware merge ordering with commit status checks and priority overrides
 - :calendar: **Stacked PR support** — Detect conflicts within PR stacks
 - :calendar: **Blast radius visualization** — Interactive dependency graph showing conflict impact
 - :calendar: **Policy engine** — Customizable merge policies based on conflict analysis

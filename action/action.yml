@@ -24,6 +24,12 @@ inputs:
   github-url:
     description: "GitHub Enterprise Server URL (e.g., https://github.example.com)"
     required: false
+  merge-queue:
+    description: "Enable merge queue integration (posts commit status)"
+    default: "false"
+  block-severity:
+    description: "Minimum severity to block merge (critical/warning/info)"
+    default: "critical"
 
 outputs:
   risk-score:
@@ -44,6 +50,8 @@ runs:
     MERGEGUARD_MAX_PR_AGE_DAYS: ${{ inputs.max-pr-age }}
     MERGEGUARD_CONFIG_PATH: ${{ inputs.config-path }}
     MERGEGUARD_GITHUB_URL: ${{ inputs.github-url }}
+    MERGEGUARD_MERGE_QUEUE: ${{ inputs.merge-queue }}
+    MERGEGUARD_BLOCK_SEVERITY: ${{ inputs.block-severity }}
 
 branding:
   icon: "shield"

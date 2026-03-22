@@ -153,6 +153,7 @@ class Conflict(BaseModel):
     cross_file: bool = False  # True if conflict spans different files
     source_diff_preview: str | None = None  # Code preview from source PR
     target_diff_preview: str | None = None  # Code preview from target PR
+    owners: list[str] = Field(default_factory=list)  # Code owners for conflicting files
 
 
 class ConflictReport(BaseModel):
@@ -163,6 +164,7 @@ class ConflictReport(BaseModel):
     risk_score: float = 0.0  # 0-100
     risk_factors: dict[str, float] = Field(default_factory=dict)
     no_conflict_prs: list[int] = Field(default_factory=list)
+    affected_teams: list[str] = Field(default_factory=list)  # All teams with conflicts
     analysis_duration_ms: int = 0
     analyzed_at: datetime = Field(default_factory=lambda: datetime.now(tz=None))
 
@@ -243,6 +245,30 @@ class ServerConfig(BaseModel):
     queue_backend: str = "asyncio"  # "asyncio" | "redis"
 
 
+class CodeownersConfig(BaseModel):
+    """Configuration for CODEOWNERS-aware routing."""
+
+    enabled: bool = True
+    path: str | None = None  # Auto-detect if None
+    team_channels: dict[str, str] = Field(default_factory=dict)  # @team → Slack channel/webhook
+
+
+class MergeQueueConfig(BaseModel):
+    """Configuration for merge queue integration."""
+
+    enabled: bool = False
+    block_on_conflicts: bool = True
+    block_severity: str = "critical"  # "critical" | "warning" | "info"
+    status_context: str = "mergeguard/cross-pr-analysis"
+    priority_labels: dict[str, int] = Field(
+        default_factory=lambda: {
+            "merge-priority:high": 100,
+            "merge-priority:low": -100,
+        }
+    )
+    auto_recheck_on_close: bool = True
+
+
 class MergeGuardConfig(BaseModel):
     """Configuration loaded from .mergeguard.yml."""
 
@@ -278,3 +304,5 @@ class MergeGuardConfig(BaseModel):
     api_timeout: int = 30  # HTTP timeout in seconds
     max_workers: int = 8  # Max concurrent workers for parallel operations
     server: ServerConfig = Field(default_factory=ServerConfig)
+    codeowners: CodeownersConfig = Field(default_factory=CodeownersConfig)
+    merge_queue: MergeQueueConfig = Field(default_factory=MergeQueueConfig)

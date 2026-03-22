@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from mergeguard.server.events import WebhookEvent
+    from mergeguard.server.events import MergeGroupEvent, WebhookEvent
 
 from mergeguard.server.metrics import metrics
 
@@ -28,7 +28,7 @@ _DEFAULT_COOLDOWN = 5.0
 class AnalysisTask:
     """A queued analysis job."""
 
-    event: WebhookEvent
+    event: WebhookEvent | MergeGroupEvent
     enqueued_at: float = field(default_factory=time.monotonic)
 
 
@@ -68,12 +68,17 @@ class AnalysisQueue:
             await self._worker_task
         logger.info("Analysis queue worker stopped")
 
-    async def enqueue(self, event: WebhookEvent) -> None:
+    async def enqueue(self, event: WebhookEvent | MergeGroupEvent) -> None:
         """Add an analysis task to the queue.
 
-        Deduplicates by replacing pending tasks for the same PR.
+        Deduplicates by replacing pending tasks for the same PR or merge group.
         """
-        key = f"{event.repo_full_name}:{event.pr_number}"
+        from mergeguard.server.events import MergeGroupEvent
+
+        if isinstance(event, MergeGroupEvent):
+            key = f"{event.repo_full_name}:merge_group:{event.head_sha}"
+        else:
+            key = f"{event.repo_full_name}:{event.pr_number}"
         task = AnalysisTask(event=event)
         self._pending[key] = task
         metrics.queue_depth.inc()
@@ -88,7 +93,12 @@ class AnalysisQueue:
                 break
 
             event = task.event
-            key = f"{event.repo_full_name}:{event.pr_number}"
+            from mergeguard.server.events import MergeGroupEvent
+
+            if isinstance(event, MergeGroupEvent):
+                key = f"{event.repo_full_name}:merge_group:{event.head_sha}"
+            else:
+                key = f"{event.repo_full_name}:{event.pr_number}"
 
             # Skip if a newer task has superseded this one
             if self._pending.get(key) is not task:
@@ -111,18 +121,28 @@ class AnalysisQueue:
                 duration = time.monotonic() - start
                 metrics.analysis_duration.observe(duration)
                 metrics.analyses_completed.inc()
+                event_label = (
+                    f"merge_group:{event.head_sha[:8]}"
+                    if isinstance(event, MergeGroupEvent)
+                    else f"#{event.pr_number}"
+                )
                 logger.info(
-                    "Analysis completed for %s #%d in %.1fs",
+                    "Analysis completed for %s %s in %.1fs",
                     event.repo_full_name,
-                    event.pr_number,
+                    event_label,
                     duration,
                 )
             except Exception:
                 metrics.analyses_failed.inc()
+                event_label = (
+                    f"merge_group:{event.head_sha[:8]}"
+                    if isinstance(event, MergeGroupEvent)
+                    else f"#{event.pr_number}"
+                )
                 logger.exception(
-                    "Analysis failed for %s #%d",
+                    "Analysis failed for %s %s",
                     event.repo_full_name,
-                    event.pr_number,
+                    event_label,
                 )
             finally:
                 self._queue.task_done()

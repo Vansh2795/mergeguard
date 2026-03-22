@@ -31,6 +31,7 @@ from fastapi import (
 
 from mergeguard.server.events import (
     EventAction,
+    MergeGroupEvent,
     WebhookEvent,
     parse_bitbucket_event,
     parse_github_event,
@@ -45,7 +46,128 @@ _queue: AnalysisQueue | None = None
 _start_time: float = 0.0
 
 
-async def _handle_analysis(event: WebhookEvent) -> None:
+def _post_status_safe(
+    client: Any,
+    sha: str,
+    state: str,
+    description: str,
+    target_url: str = "",
+    context: str = "mergeguard/cross-pr-analysis",
+) -> None:
+    """Safely post a commit status, logging warnings on failure."""
+    if not hasattr(client, "post_commit_status"):
+        logger.warning("Client %s does not support post_commit_status", type(client).__name__)
+        return
+    try:
+        client.post_commit_status(
+            sha=sha,
+            state=state,
+            description=description,
+            target_url=target_url,
+            context=context,
+        )
+        metrics.statuses_posted.inc()
+    except Exception:
+        metrics.statuses_failed.inc()
+        logger.warning("Failed to post commit status on %s", sha, exc_info=True)
+
+
+def _post_merge_status(
+    client: Any,
+    report: Any,
+    cfg: Any,
+) -> None:
+    """Post merge readiness status for a single PR report."""
+    from mergeguard.core.merge_order import compute_merge_readiness
+
+    readiness = compute_merge_readiness(
+        pr_number=report.pr.number,
+        reports=[report],
+        block_severity=cfg.merge_queue.block_severity,
+        priority_labels=cfg.merge_queue.priority_labels,
+    )
+    _post_status_safe(
+        client,
+        sha=report.pr.head_sha,
+        state=readiness.status_state,
+        description=readiness.status_description,
+        context=cfg.merge_queue.status_context,
+    )
+
+
+async def _handle_merge_group(
+    event: MergeGroupEvent,
+    cfg: Any,
+    client: Any,
+    engine: Any,
+) -> None:
+    """Handle a merge_group webhook event."""
+    metrics.merge_groups_analyzed.inc()
+
+    if not cfg.merge_queue.enabled:
+        # Don't block the queue if merge queue integration isn't enabled
+        _post_status_safe(
+            client,
+            sha=event.head_sha,
+            state="success",
+            description="MergeGuard merge queue not enabled",
+            context=cfg.merge_queue.status_context,
+        )
+        return
+
+    # Post pending status
+    _post_status_safe(
+        client,
+        sha=event.head_sha,
+        state="pending",
+        description="Analyzing cross-PR conflicts...",
+        context=cfg.merge_queue.status_context,
+    )
+
+    # Analyze each PR in the merge group
+    from mergeguard.core.merge_order import compute_merge_readiness
+
+    any_blocked = False
+    all_reports = []
+    for pr_num in event.pr_numbers:
+        try:
+            report = engine.analyze_pr(pr_num)
+            all_reports.append(report)
+        except Exception:
+            logger.warning("Failed to analyze PR #%d in merge group", pr_num, exc_info=True)
+
+    # Check if any PR has blocking conflicts
+    block_severity = cfg.merge_queue.block_severity
+    for report in all_reports:
+        readiness = compute_merge_readiness(
+            pr_number=report.pr.number,
+            reports=all_reports,
+            block_severity=block_severity,
+            priority_labels=cfg.merge_queue.priority_labels,
+        )
+        if readiness.is_blocked:
+            any_blocked = True
+            break
+
+    if any_blocked:
+        _post_status_safe(
+            client,
+            sha=event.head_sha,
+            state="failure",
+            description=f"Cross-PR conflicts detected in merge group ({len(event.pr_numbers)} PRs)",
+            context=cfg.merge_queue.status_context,
+        )
+    else:
+        _post_status_safe(
+            client,
+            sha=event.head_sha,
+            state="success",
+            description=f"No blocking conflicts ({len(event.pr_numbers)} PRs analyzed)",
+            context=cfg.merge_queue.status_context,
+        )
+
+
+async def _handle_analysis(event: WebhookEvent | MergeGroupEvent) -> None:
     """Run MergeGuard analysis for a webhook event.
 
     Called by the queue worker in the background.
@@ -61,10 +183,24 @@ async def _handle_analysis(event: WebhookEvent) -> None:
         return
 
     client = _create_client_for_event(platform, token, event.repo_full_name)
-
     engine = MergeGuardEngine(config=cfg, client=client)
 
+    # Route merge group events to dedicated handler
+    if isinstance(event, MergeGroupEvent):
+        await _handle_merge_group(event, cfg, client, engine)
+        return
+
     if event.action in (EventAction.OPENED, EventAction.UPDATED, EventAction.REOPENED):
+        # Post pending status if merge queue is enabled
+        if cfg.merge_queue.enabled:
+            _post_status_safe(
+                client,
+                sha=event.head_sha,
+                state="pending",
+                description="Analyzing cross-PR conflicts...",
+                context=cfg.merge_queue.status_context,
+            )
+
         report = engine.analyze_pr(event.pr_number)
 
         if report.conflicts:
@@ -99,6 +235,10 @@ async def _handle_analysis(event: WebhookEvent) -> None:
                         event.pr_number,
                         exc_info=True,
                     )
+
+        # Post merge readiness status after analysis
+        if cfg.merge_queue.enabled:
+            _post_merge_status(client, report, cfg)
 
     elif event.action == EventAction.CLOSED:
         logger.info(
@@ -227,6 +367,9 @@ async def github_webhook(
 
     assert _queue is not None
     await _queue.enqueue(event)
+
+    if isinstance(event, MergeGroupEvent):
+        return {"status": "queued", "type": "merge_group", "prs": event.pr_numbers}
     return {"status": "queued", "pr": event.pr_number}
 
 

@@ -118,6 +118,36 @@ class TestGitHubWebhook:
         assert resp.status_code == 200
 
 
+class TestGitHubMergeGroupWebhook:
+    def _merge_group_payload(self) -> dict:
+        return {
+            "action": "checks_requested",
+            "merge_group": {
+                "head_sha": "merge_sha_123",
+                "base_ref": "refs/heads/main",
+                "head_ref": "refs/heads/gh-readonly-queue/main/pr-42-abc",
+                "head_commit": {
+                    "message": "Merge pull request #42",
+                },
+            },
+            "repository": {"full_name": "owner/repo"},
+            "sender": {"login": "github-merge-queue[bot]"},
+        }
+
+    @pytest.mark.asyncio
+    async def test_merge_group_queued(self, client):
+        resp = await client.post(
+            "/webhooks/github",
+            json=self._merge_group_payload(),
+            headers={"x-github-event": "merge_group"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "queued"
+        assert data["type"] == "merge_group"
+        assert 42 in data["prs"]
+
+
 class TestGitLabWebhook:
     def _gitlab_payload(self) -> dict:
         return {

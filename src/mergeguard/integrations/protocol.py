@@ -52,3 +52,12 @@ class SCMClient(Protocol):
         comments: list[ReviewComment],
         event: str = "COMMENT",
     ) -> None: ...
+
+    def post_commit_status(
+        self,
+        sha: str,
+        state: str,
+        description: str,
+        target_url: str = "",
+        context: str = "mergeguard/cross-pr-analysis",
+    ) -> None: ...

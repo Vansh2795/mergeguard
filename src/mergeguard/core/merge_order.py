@@ -9,6 +9,7 @@ recalculated for the remaining nodes.
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import dataclass, field
 
 from mergeguard.models import ConflictReport, ConflictSeverity
 
@@ -105,6 +106,129 @@ def suggest_merge_order(
         _remove_pr(best, graph)
 
     return order
+
+
+# ── Merge readiness (merge queue integration) ──────────────────────
+
+
+_SEVERITY_RANK: dict[str, int] = {"critical": 2, "warning": 1, "info": 0}
+
+
+@dataclass
+class MergeReadiness:
+    """Whether a PR is ready to merge based on cross-PR conflict analysis."""
+
+    pr_number: int
+    is_blocked: bool
+    blocking_prs: list[int] = field(default_factory=list)
+    reasons: list[str] = field(default_factory=list)
+    priority_override: bool = False
+    suggested_position: int = 1
+    status_description: str = ""
+
+    @property
+    def status_state(self) -> str:
+        if self.priority_override or not self.is_blocked:
+            return "success"
+        return "failure"
+
+
+def compute_merge_readiness(
+    pr_number: int,
+    reports: list[ConflictReport],
+    block_severity: str = "critical",
+    priority_labels: dict[str, int] | None = None,
+) -> MergeReadiness:
+    """Compute whether a PR is ready to merge based on conflict analysis.
+
+    Args:
+        pr_number: The PR to check readiness for.
+        reports: Conflict reports (can be a single PR's report in a list).
+        block_severity: Minimum severity that blocks merging.
+        priority_labels: Label → score mapping. Positive total = override blocking.
+
+    Returns:
+        MergeReadiness with blocking status and status description.
+    """
+    if priority_labels is None:
+        priority_labels = {}
+
+    # Find the target PR's report
+    target_report: ConflictReport | None = None
+    for r in reports:
+        if r.pr.number == pr_number:
+            target_report = r
+            break
+
+    if target_report is None:
+        return MergeReadiness(
+            pr_number=pr_number,
+            is_blocked=False,
+            status_description="No conflict data — OK to merge",
+        )
+
+    # Filter conflicts at or above block_severity
+    block_rank = _SEVERITY_RANK.get(block_severity, 2)
+    blocking_conflicts = [
+        c
+        for c in target_report.conflicts
+        if _SEVERITY_RANK.get(c.severity.value, 0) >= block_rank
+    ]
+
+    # Determine blocking PRs
+    blocking_prs = sorted({c.target_pr for c in blocking_conflicts})
+
+    # Check priority labels for override
+    priority_score = 0
+    for label in target_report.pr.labels:
+        priority_score += priority_labels.get(label, 0)
+    priority_override = priority_score > 0 and len(blocking_prs) > 0
+
+    # Get merge order position
+    order = suggest_merge_order(reports)
+    suggested_position = 1
+    for pos, (pn, _reason) in enumerate(order, start=1):
+        if pn == pr_number:
+            suggested_position = pos
+            break
+
+    # Determine if blocked — any conflicts at or above severity = blocked
+    is_blocked = len(blocking_prs) > 0 and not priority_override
+
+    # Build status description (max 140 chars for GitHub)
+    if not blocking_prs:
+        desc = "No cross-PR conflicts detected"
+    elif priority_override:
+        pr_list = ", ".join(f"#{p}" for p in blocking_prs[:5])
+        desc = f"Priority override — conflicts with {pr_list}"
+    elif is_blocked:
+        pr_list = ", ".join(f"#{p}" for p in blocking_prs[:5])
+        n = len(blocking_conflicts)
+        desc = f"Blocked: {n} conflict(s) with {pr_list}"
+        if len(blocking_prs) > 5:
+            desc += f" +{len(blocking_prs) - 5} more"
+    else:
+        desc = f"Position #{suggested_position} in merge order — OK"
+
+    # Truncate to 140
+    if len(desc) > 140:
+        desc = desc[:137] + "..."
+
+    reasons: list[str] = []
+    if blocking_prs:
+        reasons.append(f"Conflicts with PRs: {', '.join(f'#{p}' for p in blocking_prs)}")
+    if priority_override:
+        reasons.append("Priority label override active")
+
+    return MergeReadiness(
+        pr_number=pr_number,
+        is_blocked=is_blocked,
+        blocking_prs=blocking_prs,
+        reasons=reasons,
+        priority_override=priority_override,
+        suggested_position=suggested_position,
+        status_description=desc,
+    )
 
 
 def format_merge_order(

@@ -158,6 +158,69 @@ rules:
     message: "Keep cyclomatic complexity under 10"
 ```
 
+### `codeowners` (CODEOWNERS-aware routing)
+
+Configuration for CODEOWNERS-based conflict routing and team notifications.
+
+```yaml
+codeowners:
+  enabled: true              # Enable CODEOWNERS resolution (default: true)
+  path: null                 # Auto-detect if null; or explicit path like ".github/CODEOWNERS"
+  team_channels:             # Map @team handles to Slack webhook URLs
+    "@backend-team": "https://hooks.slack.com/services/T.../B.../..."
+    "@frontend-team": "https://hooks.slack.com/services/T.../B.../..."
+```
+
+When enabled, MergeGuard will:
+- Auto-detect CODEOWNERS from `.github/CODEOWNERS`, `CODEOWNERS`, or `docs/CODEOWNERS`
+- Resolve file owners for each conflict using last-match-wins (GitHub) or section-scoped (GitLab) rules
+- Tag owners in PR comments and include owner info in Slack/Teams notifications
+- Route per-team Slack notifications to dedicated channels via `team_channels`
+
+### `merge_queue` (merge queue integration)
+
+Configuration for merge queue integration with commit status checks.
+
+```yaml
+merge_queue:
+  enabled: false               # Enable merge queue status checks
+  block_on_conflicts: true      # Block PRs with conflicts from merging
+  block_severity: "critical"    # Minimum severity to block: "critical", "warning", or "info"
+  status_context: "mergeguard/cross-pr-analysis"  # GitHub status check context name
+  priority_labels:              # PR labels that override blocking
+    "merge-priority:high": 100
+    "merge-priority:low": -100
+  auto_recheck_on_close: true   # Re-check affected PRs when a conflicting PR is closed
+```
+
+When enabled, MergeGuard will:
+- Post `pending` commit status when analysis starts
+- Post `success` when no blocking conflicts are found
+- Post `failure` when conflicts at or above `block_severity` are detected
+- Allow priority override via PR labels (positive score = override blocking)
+- Handle GitHub `merge_group` webhook events to validate merge queue entries
+
+### `server` (webhook server settings)
+
+Configuration for the real-time webhook server (`mergeguard serve`).
+
+```yaml
+server:
+  port: 8000               # Port to listen on
+  host: "0.0.0.0"          # Bind address
+  workers: 1               # Number of uvicorn workers
+  analysis_timeout: 300    # Max seconds per analysis (default: 300)
+  queue_backend: "asyncio" # "asyncio" (in-process) or "redis"
+```
+
+Webhook secrets are configured via environment variables:
+
+| Variable | Description |
+|---|---|
+| `MERGEGUARD_WEBHOOK_SECRET_GITHUB` | GitHub webhook secret for HMAC-SHA256 verification |
+| `MERGEGUARD_WEBHOOK_SECRET_GITLAB` | GitLab webhook secret token |
+| `MERGEGUARD_WEBHOOK_SECRET_BITBUCKET` | Bitbucket webhook secret |
+
 ## Environment Variables
 
 | Variable | Description |
@@ -185,3 +248,5 @@ rules:
 | `max-pr-age` | No | `30` | Only scan PRs updated within this many days |
 | `config-path` | No | `.mergeguard.yml` | Path to config file |
 | `github-url` | No | — | GitHub Enterprise Server URL |
+| `merge-queue` | No | `false` | Enable merge queue integration (posts commit status) |
+| `block-severity` | No | `critical` | Minimum severity to block merge (critical/warning/info) |

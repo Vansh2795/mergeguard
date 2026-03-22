@@ -45,6 +45,33 @@ ignored_paths:
   - "pnpm-lock.yaml"
   - "poetry.lock"
 
+# CODEOWNERS-aware routing
+# codeowners:
+#   enabled: true
+#   path: null                    # Auto-detect, or set explicit path
+#   team_channels:                # Map @team → Slack webhook URL
+#     "@backend-team": "https://hooks.slack.com/services/..."
+#     "@frontend-team": "https://hooks.slack.com/services/..."
+
+# Merge queue integration (commit status checks)
+# merge_queue:
+#   enabled: false
+#   block_on_conflicts: true
+#   block_severity: "critical"        # "critical" | "warning" | "info"
+#   status_context: "mergeguard/cross-pr-analysis"
+#   priority_labels:
+#     "merge-priority:high": 100
+#     "merge-priority:low": -100
+#   auto_recheck_on_close: true
+
+# Webhook server settings (for `mergeguard serve`)
+# server:
+#   port: 8000
+#   host: "0.0.0.0"
+#   workers: 1
+#   analysis_timeout: 300
+#   queue_backend: "asyncio"   # "asyncio" or "redis"
+
 # Guardrail rules
 # rules:
 #   - name: "no-cross-module-imports"

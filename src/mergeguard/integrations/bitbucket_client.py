@@ -214,6 +214,50 @@ class BitbucketClient:
             }
             self._http.post(comments_url, json=payload).raise_for_status()
 
+    def post_commit_status(
+        self,
+        sha: str,
+        state: str,
+        description: str,
+        target_url: str = "",
+        context: str = "mergeguard/cross-pr-analysis",
+    ) -> None:
+        """Post a build status on a Bitbucket commit.
+
+        Maps GitHub-style states to Bitbucket states:
+        - "pending" → "INPROGRESS"
+        - "success" → "SUCCESSFUL"
+        - "failure" → "FAILED"
+        - "error"   → "FAILED"
+        """
+        bb_state_map = {
+            "pending": "INPROGRESS",
+            "success": "SUCCESSFUL",
+            "failure": "FAILED",
+            "error": "FAILED",
+        }
+        bb_state = bb_state_map.get(state, "FAILED")
+
+        url = f"{self._base_url}/commit/{sha}/statuses/build"
+        payload: dict[str, str] = {
+            "state": bb_state,
+            "key": context,
+            "description": description[:140],
+            "url": target_url or "https://github.com/Vansh2795/mergeguard",
+        }
+
+        try:
+            resp = self._http.post(url, json=payload)
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code in (401, 403):
+                logger.warning(
+                    "Insufficient permissions to post commit status on Bitbucket (%d)",
+                    exc.response.status_code,
+                )
+                return
+            raise
+
     # ── Private helpers ──
 
     def _get(
