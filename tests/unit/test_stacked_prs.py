@@ -452,7 +452,7 @@ class TestDemoteIntraStackConflicts:
         conflicts = [
             _make_conflict(10, 11, ConflictSeverity.CRITICAL),  # intra-stack
             _make_conflict(10, 20, ConflictSeverity.CRITICAL),  # cross-stack
-            _make_conflict(11, 12, ConflictSeverity.WARNING),   # intra-stack
+            _make_conflict(11, 12, ConflictSeverity.WARNING),  # intra-stack
         ]
         _demote_intra_stack_conflicts(conflicts, lookup)
 
@@ -487,12 +487,16 @@ class TestBuildStackLookup:
 
     def test_multiple_groups(self):
         g1 = StackGroup(
-            group_id="chain-a", pr_numbers=[10, 11],
-            base_branch="main", detection_method="branch_chain",
+            group_id="chain-a",
+            pr_numbers=[10, 11],
+            base_branch="main",
+            detection_method="branch_chain",
         )
         g2 = StackGroup(
-            group_id="chain-b", pr_numbers=[20, 21],
-            base_branch="main", detection_method="branch_chain",
+            group_id="chain-b",
+            pr_numbers=[20, 21],
+            base_branch="main",
+            detection_method="branch_chain",
         )
         lookup = build_stack_lookup([g1, g2])
 

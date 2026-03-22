@@ -107,9 +107,7 @@ class CodeOwners:
                 continue
             pattern = parts[0]
             owners = [p for p in parts[1:] if not p.startswith("#")]
-            rules.append(
-                CodeOwnerRule(pattern=pattern, owners=owners, section=current_section)
-            )
+            rules.append(CodeOwnerRule(pattern=pattern, owners=owners, section=current_section))
         return rules
 
     def resolve_owners(self, file_path: str) -> list[str]:
@@ -147,9 +145,7 @@ def _pattern_matches(pattern: str, file_path: str) -> bool:
     # If pattern has no slash, it can match at any depth
     if "/" not in p:
         # e.g., "*.py" should match "src/foo.py"
-        return fnmatch.fnmatch(file_path, p) or fnmatch.fnmatch(
-            file_path.rsplit("/", 1)[-1], p
-        )
+        return fnmatch.fnmatch(file_path, p) or fnmatch.fnmatch(file_path.rsplit("/", 1)[-1], p)
 
     # Pattern has a slash — match against full path
     if anchored:

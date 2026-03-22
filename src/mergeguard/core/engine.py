@@ -331,9 +331,7 @@ class MergeGuardEngine:
         stack_groups: list[StackGroup] = []
         stack_lookup: dict[int, StackGroup] = {}
         if self._config.stacked_prs.enabled:
-            stack_groups = detect_stacks(
-                [target_pr] + other_prs, self._config.stacked_prs
-            )
+            stack_groups = detect_stacks([target_pr] + other_prs, self._config.stacked_prs)
             stack_lookup = build_stack_lookup(stack_groups)
 
         # Step 2: Enrich with diff data and symbols
@@ -414,11 +412,7 @@ class MergeGuardEngine:
             no_conflict_prs=no_conflict_prs,
             analysis_duration_ms=elapsed_ms,
             stack_group=target_stack.group_id if target_stack else None,
-            stack_position=(
-                target_stack.pr_numbers.index(pr_number) + 1
-                if target_stack
-                else None
-            ),
+            stack_position=(target_stack.pr_numbers.index(pr_number) + 1 if target_stack else None),
             stack_pr_numbers=target_stack.pr_numbers if target_stack else [],
         )
 
@@ -473,9 +467,7 @@ class MergeGuardEngine:
         stack_groups: list[StackGroup] = []
         stack_lookup: dict[int, StackGroup] = {}
         if self._config.stacked_prs.enabled:
-            stack_groups = detect_stacks(
-                [target_pr] + existing_prs, self._config.stacked_prs
-            )
+            stack_groups = detect_stacks([target_pr] + existing_prs, self._config.stacked_prs)
             stack_lookup = build_stack_lookup(stack_groups)
 
         prs_excluding_target = [p for p in existing_prs if p.number != pr_number]
@@ -509,11 +501,7 @@ class MergeGuardEngine:
             no_conflict_prs=no_conflict_prs,
             analysis_duration_ms=elapsed_ms,
             stack_group=target_stack.group_id if target_stack else None,
-            stack_position=(
-                target_stack.pr_numbers.index(pr_number) + 1
-                if target_stack
-                else None
-            ),
+            stack_position=(target_stack.pr_numbers.index(pr_number) + 1 if target_stack else None),
             stack_pr_numbers=target_stack.pr_numbers if target_stack else [],
         )
 
@@ -592,9 +580,7 @@ class MergeGuardEngine:
                 analysis_duration_ms=int((time.monotonic() - start) * 1000),
                 stack_group=target_stack.group_id if target_stack else None,
                 stack_position=(
-                    target_stack.pr_numbers.index(target_pr.number) + 1
-                    if target_stack
-                    else None
+                    target_stack.pr_numbers.index(target_pr.number) + 1 if target_stack else None
                 ),
                 stack_pr_numbers=target_stack.pr_numbers if target_stack else [],
             )

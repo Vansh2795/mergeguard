@@ -84,9 +84,7 @@ def format_report(
         stack_str = " \u2192 ".join(stack_parts)
         pos = report.stack_position or 0
         total = len(report.stack_pr_numbers)
-        lines.append(
-            f"> \U0001f4e6 **Part of stack:** {stack_str} (position {pos}/{total})"
-        )
+        lines.append(f"> \U0001f4e6 **Part of stack:** {stack_str} (position {pos}/{total})")
         lines.append("")
 
     # Critical and warning conflicts — grouped by target PR (excluding intra-stack)
@@ -146,17 +144,14 @@ def format_report(
                 if conflict.original_severity
                 else "Same stack"
             )
-            lines.append(
-                _format_conflict_compact(conflict, repo_full_name) + f"\n*{orig}*"
-            )
+            lines.append(_format_conflict_compact(conflict, repo_full_name) + f"\n*{orig}*")
             lines.append("")
         lines.append("</details>")
         lines.append("")
 
     # Info-level conflicts — collapsed, also grouped (excluding intra-stack)
     info_conflicts = [
-        c for c in report.conflicts
-        if c.severity == ConflictSeverity.INFO and not c.is_intra_stack
+        c for c in report.conflicts if c.severity == ConflictSeverity.INFO and not c.is_intra_stack
     ]
     if info_conflicts:
         lines.append("<details>")

@@ -125,7 +125,8 @@ def _walk_chain(
     for _ in range(_MAX_CHAIN_LENGTH):
         # Find PRs whose base_branch == current.head_branch
         children = [
-            p for p in base_to_prs.get(current.head_branch, [])
+            p
+            for p in base_to_prs.get(current.head_branch, [])
             if p.number != current.number and p.number not in visited
         ]
 
@@ -137,9 +138,7 @@ def _walk_chain(
         next_pr = children[0]
 
         if next_pr.number in visited:
-            logger.warning(
-                "Circular reference detected in stack at PR #%d", next_pr.number
-            )
+            logger.warning("Circular reference detected in stack at PR #%d", next_pr.number)
             break
 
         visited.add(next_pr.number)
@@ -167,7 +166,7 @@ def _detect_by_labels(prs: list[PRInfo], label_pattern: str) -> list[StackGroup]
     for pr in prs:
         for label in pr.labels:
             if label.startswith(label_pattern):
-                value = label[len(label_pattern):]
+                value = label[len(label_pattern) :]
                 if value:
                     label_groups[value].append(pr)
 
@@ -258,10 +257,7 @@ def _walk_graphite_chain(
     current = root
 
     for _ in range(_MAX_CHAIN_LENGTH):
-        children = [
-            p for p in children_of.get(current.head_branch, [])
-            if p.number not in visited
-        ]
+        children = [p for p in children_of.get(current.head_branch, []) if p.number not in visited]
         if not children:
             break
 

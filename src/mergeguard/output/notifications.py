@@ -291,10 +291,7 @@ def notify_slack_per_team(
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": (
-                        f"*{report.pr.title}*\n"
-                        f"{len(conflicts)} conflict(s) affecting {team}"
-                    ),
+                    "text": (f"*{report.pr.title}*\n{len(conflicts)} conflict(s) affecting {team}"),
                 },
             },
         ]

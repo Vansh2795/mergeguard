@@ -122,8 +122,7 @@ def suggest_merge_order(
     while remaining:
         # Only consider candidates whose stack predecessors are already selected
         candidates = [
-            p for p in remaining
-            if all(pred in selected for pred in predecessors.get(p, []))
+            p for p in remaining if all(pred in selected for pred in predecessors.get(p, []))
         ]
         if not candidates:
             # Fallback: shouldn't happen, but pick from remaining to avoid infinite loop
@@ -211,8 +210,7 @@ def compute_merge_readiness(
     blocking_conflicts = [
         c
         for c in target_report.conflicts
-        if _SEVERITY_RANK.get(c.severity.value, 0) >= block_rank
-        and not c.is_intra_stack
+        if _SEVERITY_RANK.get(c.severity.value, 0) >= block_rank and not c.is_intra_stack
     ]
 
     # Determine blocking PRs

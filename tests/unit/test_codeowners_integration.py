@@ -196,9 +196,7 @@ class TestSlackNotificationOwners:
         assert result is True
         # Check the payload includes owner info
         payload = mock_post.call_args[1]["json"]
-        all_text = " ".join(
-            b["text"]["text"] for b in payload["blocks"] if b["type"] == "section"
-        )
+        all_text = " ".join(b["text"]["text"] for b in payload["blocks"] if b["type"] == "section")
         assert "@backend-team" in all_text
 
 

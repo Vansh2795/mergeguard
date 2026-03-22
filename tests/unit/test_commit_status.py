@@ -105,9 +105,7 @@ class TestGitLabCommitStatus:
         client._http = mock_http
 
         # Should not raise
-        client.post_commit_status(
-            sha="def456", state="success", description="OK"
-        )
+        client.post_commit_status(sha="def456", state="success", description="OK")
 
 
 # ── Bitbucket ───────────────────────────────────────────────────────
@@ -150,9 +148,7 @@ class TestBitbucketCommitStatus:
         client._base_url = "https://api.bitbucket.org/2.0/repositories/ws/repo"
         client._http = mock_http
 
-        client.post_commit_status(
-            sha="ghi789", state="success", description="OK"
-        )
+        client.post_commit_status(sha="ghi789", state="success", description="OK")
 
         call_args = mock_http.post.call_args
         payload = call_args.kwargs.get("json") or call_args[1].get("json")
@@ -170,9 +166,7 @@ class TestBitbucketCommitStatus:
         client._base_url = "https://api.bitbucket.org/2.0/repositories/ws/repo"
         client._http = mock_http
 
-        client.post_commit_status(
-            sha="ghi789", state="failure", description="Blocked"
-        )
+        client.post_commit_status(sha="ghi789", state="failure", description="Blocked")
 
         call_args = mock_http.post.call_args
         payload = call_args.kwargs.get("json") or call_args[1].get("json")
@@ -194,6 +188,4 @@ class TestBitbucketCommitStatus:
         client._http = mock_http
 
         # Should not raise
-        client.post_commit_status(
-            sha="ghi789", state="success", description="OK"
-        )
+        client.post_commit_status(sha="ghi789", state="success", description="OK")
