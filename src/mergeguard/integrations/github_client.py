@@ -220,6 +220,18 @@ class GitHubClient:
             context=context,
         )
 
+    def add_labels(self, pr_number: int, labels: list[str]) -> None:
+        """Add labels to a PR (via the issue API)."""
+        self._repo.get_issue(pr_number).add_to_labels(*labels)
+
+    def request_reviewers(self, pr_number: int, reviewers: list[str]) -> None:
+        """Request reviewers on a PR. Handles both users and team slugs (@org/team)."""
+        pr = self._repo.get_pull(pr_number)
+        users = [r for r in reviewers if not r.startswith("@")]
+        teams = [r.lstrip("@") for r in reviewers if r.startswith("@")]
+        if users or teams:
+            pr.create_review_request(reviewers=users or None, team_reviewers=teams or None)
+
     @property
     def rate_limit_remaining(self) -> int:
         """Current remaining API rate limit."""
