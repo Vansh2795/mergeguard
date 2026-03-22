@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 import httpx
 
 if TYPE_CHECKING:
-    from mergeguard.models import ConflictReport
+    from mergeguard.models import Conflict, ConflictReport
 
 logger = logging.getLogger(__name__)
 
@@ -254,7 +254,7 @@ def notify_slack_per_team(
         return {}
 
     # Group conflicts by owner team
-    team_conflicts: dict[str, list] = {}
+    team_conflicts: dict[str, list[Conflict]] = {}
     for c in matching:
         if c.owners:
             for owner in c.owners:
