@@ -520,6 +520,108 @@ def dashboard(
     console.print(table)
 
 
+@main.command("policy-check")
+@click.option(
+    "--repo",
+    "-r",
+    callback=_validate_repo,
+    help="Repo (owner/repo). Auto-detected from git remote.",
+)
+@click.option(
+    "--pr",
+    "-p",
+    type=click.IntRange(min=1),
+    help="PR/MR number to analyze. Defaults to current branch.",
+)
+@click.option("--token", "-t", envvar=["GITHUB_TOKEN", "GITLAB_TOKEN"], help="GitHub/GitLab token.")
+@click.option("--config", "-c", default=".mergeguard.yml", help="Config file path.")
+@click.option(
+    "--dry-run/--execute",
+    default=True,
+    help="Dry run (default) shows what would happen; --execute runs actions.",
+)
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["terminal", "json"]),
+    default="terminal",
+)
+@click.pass_context
+def policy_check(
+    ctx: click.Context,
+    repo: str | None,
+    pr: int | None,
+    token: str | None,
+    config: str,
+    dry_run: bool,
+    output_format: str,
+) -> None:
+    """Evaluate policy rules against a PR's conflict analysis."""
+    platform = ctx.obj.get("platform", "auto")
+    gitlab_url = ctx.obj.get("gitlab_url", "https://gitlab.com")
+    github_url = ctx.obj.get("github_url")
+    resolved_platform = platform if platform != "auto" else _detect_platform_from_remote()
+    repo, pr = _auto_detect_repo_and_pr(repo, pr, token, platform=resolved_platform)
+
+    from mergeguard.config import load_config
+    from mergeguard.core.engine import MergeGuardEngine
+
+    cfg = load_config(config)
+    if not cfg.policy.enabled:
+        console.print("[yellow]Policy engine is not enabled in config.[/yellow]")
+        console.print("[dim]Add 'policy.enabled: true' to .mergeguard.yml[/dim]")
+        return
+
+    if github_url:
+        cfg.github_url = github_url
+
+    client = _create_client(platform, token, repo, gitlab_url, github_url)
+    with console.status("[bold blue]Analyzing PR and evaluating policies...", spinner="dots"):
+        engine = MergeGuardEngine(config=cfg, client=client)
+        report = engine.analyze_pr(pr)
+
+        from mergeguard.core.policy import evaluate_policies, execute_policy_actions
+
+        evaluation = evaluate_policies(report, cfg.policy)
+
+    if output_format == "json":
+        click.echo(evaluation.model_dump_json(indent=2))
+        return
+
+    # Terminal output
+    table = Table(title=f"Policy Evaluation — PR #{pr}")
+    table.add_column("Policy", style="bold")
+    table.add_column("Match", justify="center")
+    table.add_column("Actions")
+
+    for result in evaluation.results:
+        match_str = "[green]YES[/green]" if result.matched else "[dim]no[/dim]"
+        actions_str = (
+            ", ".join(a.action.value for a in result.actions_to_execute) if result.matched else ""
+        )
+        table.add_row(result.policy_name, match_str, actions_str)
+
+    console.print(table)
+
+    if evaluation.has_block:
+        console.print("\n[red bold]MERGE BLOCKED by policy.[/red bold]")
+
+    if evaluation.matched_policies:
+        console.print(
+            f"\n[bold]{len(evaluation.matched_policies)} policy/policies matched, "
+            f"{len(evaluation.actions)} action(s) queued.[/bold]"
+        )
+    else:
+        console.print("\n[green]No policies triggered.[/green]")
+
+    if not dry_run and evaluation.actions:
+        console.print("\n[bold blue]Executing actions...[/bold blue]")
+        log = execute_policy_actions(report, evaluation, client, repo, resolved_platform)
+        for entry in log:
+            status = "[green]OK[/green]" if entry.get("success") else "[red]FAIL[/red]"
+            console.print(f"  {status} {entry['action']}")
+
+
 def _display_terminal(report: ConflictReport) -> None:
     """Rich terminal display for a single PR analysis."""
 

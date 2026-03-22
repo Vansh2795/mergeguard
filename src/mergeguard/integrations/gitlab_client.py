@@ -249,6 +249,36 @@ class GitLabClient:
                 return
             raise
 
+    def add_labels(self, pr_number: int, labels: list[str]) -> None:
+        """Add labels to a merge request (merges with existing labels)."""
+        url = f"{self._base_url}/merge_requests/{pr_number}"
+        resp = self._get(url)
+        current_labels: list[str] = resp.json().get("labels", [])
+        merged = sorted(set(current_labels) | set(labels))
+        put_resp = self._http.put(url, json={"labels": ",".join(merged)})
+        put_resp.raise_for_status()
+
+    def request_reviewers(self, pr_number: int, reviewers: list[str]) -> None:
+        """Request reviewers on a merge request by username."""
+        url = f"{self._base_url}/merge_requests/{pr_number}"
+        # Look up user IDs by username
+        reviewer_ids: list[int] = []
+        for username in reviewers:
+            username = username.lstrip("@")
+            user_url = f"{self._gitlab_url}/api/v4/users"
+            resp = self._get(user_url, params={"username": username})
+            users = resp.json()
+            if users:
+                reviewer_ids.append(users[0]["id"])
+            else:
+                logger.warning("GitLab user not found: %s", username)
+        if reviewer_ids:
+            put_resp = self._http.put(
+                url,
+                json={"reviewer_ids": reviewer_ids},
+            )
+            put_resp.raise_for_status()
+
     # ── Private helpers ──
 
     def _get(
