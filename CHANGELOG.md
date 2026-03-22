@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — v0.5: Blast Radius Visualization
+- Interactive D3.js force-directed graph visualization of PR conflict topology (`mergeguard blast-radius`)
+- `BlastRadiusNode`, `BlastRadiusEdge`, `BlastRadiusData` models for graph data
+- `build_file_dependency_graph()` public method on `MergeGuardEngine` for file-level dependency extraction
+- Transitive blast radius computation via BFS on conflict adjacency graph
+- Three output formats: HTML (interactive graph, default), terminal (Rich tables + ASCII adjacency), JSON (raw data)
+- HTML features: zoom/pan, drag nodes, severity filtering, PR search, intra-stack toggle, stack cluster hulls, node/edge tooltips, detail sidebar, Shift+click file dependency expansion
+- `--output` flag for writing HTML/JSON to file
+- File-level dependency edges from import graph overlaid on conflict topology
+
 ### Added — v0.5: Stacked PR Support
 - Stacked PR detection with three strategies: branch chain, label-based, and Graphite metadata
 - `StackGroup` and `StackedPRConfig` models for stack configuration

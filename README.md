@@ -30,6 +30,7 @@ MergeGuard fills this gap by:
 - **CODEOWNERS-aware routing** — conflict notifications routed to the specific code owners, with per-team Slack channels
 - **Stacked PR support** — detects PR stacks (branch chains, labels, Graphite), demotes expected intra-stack conflicts, and enforces stack-aware merge ordering
 - **Merge queue integration** — commit status checks that block conflicting PRs from merging, with priority override via labels and GitHub merge group support
+- **Blast radius visualization** — interactive D3.js force-directed graph showing PR conflict topology with transitive blast radius computation (`mergeguard blast-radius`)
 - **Computing risk scores** — composite scoring with configurable weights based on conflict severity, blast radius, code churn, and AI attribution
 
 ## Quick Start
@@ -78,6 +79,11 @@ mergeguard dashboard --repo owner/repo --token $GITHUB_TOKEN --format html
 
 # Suggest optimal merge order
 mergeguard suggest-order --repo owner/repo --token $GITHUB_TOKEN
+
+# Blast radius visualization (interactive HTML graph)
+mergeguard blast-radius --repo owner/repo --token $GITHUB_TOKEN
+mergeguard blast-radius --repo owner/repo --token $GITHUB_TOKEN --format terminal
+mergeguard blast-radius --repo owner/repo --token $GITHUB_TOKEN -o blast-radius.html
 
 # Watch for changes and re-analyze automatically
 mergeguard watch --repo owner/repo --token $GITHUB_TOKEN

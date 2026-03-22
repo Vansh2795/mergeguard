@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -139,6 +140,50 @@ class StackGroup(BaseModel):
     base_branch: str  # Ultimate target (e.g., "main")
     detection_method: str  # "branch_chain" | "labels" | "graphite"
     is_complete: bool = True  # False if middle PRs are missing
+
+
+# ──────────────────────────────────────────────
+# Blast Radius Models
+# ──────────────────────────────────────────────
+
+
+class BlastRadiusNode(BaseModel):
+    """A node in the blast radius graph (one per PR)."""
+
+    pr_number: int
+    title: str
+    author: str
+    risk_score: float
+    conflict_count: int
+    direct_blast: int  # PRs directly conflicting
+    transitive_blast: int  # PRs reachable through conflict chains
+    severity_max: str  # Highest severity among conflicts
+    stack_group: str | None = None
+    ai_authored: bool = False
+    files_changed: list[str] = Field(default_factory=list)
+
+
+class BlastRadiusEdge(BaseModel):
+    """An edge in the blast radius graph (conflict between two PRs)."""
+
+    source_pr: int
+    target_pr: int
+    conflict_count: int
+    severity_max: str
+    conflict_types: list[str]
+    is_intra_stack: bool = False
+    files: list[str] = Field(default_factory=list)
+
+
+class BlastRadiusData(BaseModel):
+    """Complete blast radius graph data."""
+
+    nodes: list[BlastRadiusNode]
+    edges: list[BlastRadiusEdge]
+    file_edges: list[dict[str, Any]] = Field(default_factory=list)
+    stack_groups: list[dict[str, Any]] = Field(default_factory=list)
+    repo: str
+    generated_at: datetime
 
 
 # ──────────────────────────────────────────────

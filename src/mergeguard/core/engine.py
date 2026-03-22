@@ -633,6 +633,16 @@ class MergeGuardEngine:
             max_depth = max(max_depth, depth)
         return max_depth
 
+    def build_file_dependency_graph(self, prs: list[PRInfo]) -> DependencyGraph:
+        """Build a file-level dependency graph for the given PRs.
+
+        Public wrapper around _build_cross_pr_dependency_graph for use
+        by blast radius visualization.
+        """
+        if not prs:
+            return DependencyGraph()
+        return self._build_cross_pr_dependency_graph(prs[0], prs[1:])
+
     def _build_cross_pr_dependency_graph(
         self,
         target_pr: PRInfo,

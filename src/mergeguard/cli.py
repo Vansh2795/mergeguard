@@ -520,6 +520,92 @@ def dashboard(
     console.print(table)
 
 
+@main.command("blast-radius")
+@click.option(
+    "--repo",
+    "-r",
+    callback=_validate_repo,
+    help="Repo (owner/repo). Auto-detected from git remote.",
+)
+@click.option("--token", "-t", envvar=["GITHUB_TOKEN", "GITLAB_TOKEN"], help="GitHub/GitLab token.")
+@click.option("--max-prs", type=int, default=None, help="Max open PRs to scan.")
+@click.option("--max-pr-age", type=int, default=None, help="Max PR age in days.")
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["terminal", "html", "json"]),
+    default="html",
+)
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(),
+    default=None,
+    help="Write output to file instead of stdout.",
+)
+@click.pass_context
+def blast_radius(
+    ctx: click.Context,
+    repo: str | None,
+    token: str | None,
+    max_prs: int | None,
+    max_pr_age: int | None,
+    output_format: str,
+    output: str | None,
+) -> None:
+    """Visualize the blast radius of PR conflicts as an interactive graph."""
+    repo = _auto_detect_repo(repo)
+
+    from mergeguard.config import load_config
+    from mergeguard.core.engine import MergeGuardEngine
+    from mergeguard.output.blast_radius import (
+        build_blast_radius_data,
+        format_blast_radius_html,
+        format_blast_radius_json,
+        format_blast_radius_terminal,
+    )
+
+    platform = ctx.obj.get("platform", "auto")
+    gitlab_url = ctx.obj.get("gitlab_url", "https://gitlab.com")
+    github_url = ctx.obj.get("github_url")
+    cfg = load_config(".mergeguard.yml")
+    if max_prs is not None:
+        cfg.max_open_prs = max_prs
+    if max_pr_age is not None:
+        cfg.max_pr_age_days = max_pr_age
+    client = _create_client(platform, token, repo, gitlab_url, github_url)
+    engine = MergeGuardEngine(config=cfg, client=client)
+
+    with console.status("[bold blue]Analyzing blast radius...", spinner="dots"):
+        reports = engine.analyze_all_open_prs()
+        file_graph = None
+        if output_format == "html":
+            prs = [r.pr for r in reports]
+            file_graph = engine.build_file_dependency_graph(prs)
+        data = build_blast_radius_data(reports, repo, file_graph)
+
+    if output_format == "terminal":
+        format_blast_radius_terminal(data)
+    elif output_format == "json":
+        result = format_blast_radius_json(data)
+        if output:
+            from pathlib import Path
+
+            Path(output).write_text(result)
+            console.print(f"[green]\u2713 JSON written to {output}[/green]")
+        else:
+            click.echo(result)
+    else:
+        result = format_blast_radius_html(data)
+        if output:
+            from pathlib import Path
+
+            Path(output).write_text(result)
+            console.print(f"[green]\u2713 HTML written to {output}[/green]")
+        else:
+            click.echo(result)
+
+
 def _display_terminal(report: ConflictReport) -> None:
     """Rich terminal display for a single PR analysis."""
 
