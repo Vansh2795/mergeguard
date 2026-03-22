@@ -28,12 +28,23 @@ def display_report(report: ConflictReport) -> None:
         return
 
     console.print(f"\n[bold]MergeGuard Report \u2014 PR #{report.pr.number}[/bold]")
-    console.print(f"Risk Score: {report.risk_score:.0f}/100\n")
+    console.print(f"Risk Score: {report.risk_score:.0f}/100")
+
+    # Stack context
+    if report.stack_group and report.stack_pr_numbers:
+        stack_str = " \u2192 ".join(f"#{n}" for n in report.stack_pr_numbers)
+        console.print(f"\U0001f4e6 Stack: {stack_str}")
+
+    console.print()
 
     from itertools import groupby
     from operator import attrgetter
 
-    sorted_conflicts = sorted(report.conflicts, key=attrgetter("target_pr"))
+    # Split into cross-stack and intra-stack conflicts
+    cross_stack = [c for c in report.conflicts if not c.is_intra_stack]
+    intra_stack = [c for c in report.conflicts if c.is_intra_stack]
+
+    sorted_conflicts = sorted(cross_stack, key=attrgetter("target_pr"))
     for target_pr, conflicts_iter in groupby(sorted_conflicts, key=attrgetter("target_pr")):
         conflicts_list = list(conflicts_iter)
         if len(conflicts_list) > 4:
@@ -61,6 +72,23 @@ def display_report(report: ConflictReport) -> None:
             if conflict.source_diff_preview or conflict.target_diff_preview:
                 _render_diff_previews(conflict)
             console.print()
+
+    # Intra-stack conflicts (dimmed)
+    if intra_stack:
+        console.print(
+            f"  [dim]\U0001f4e6 {len(intra_stack)} intra-stack conflict(s) (expected):[/dim]"
+        )
+        for conflict in intra_stack:
+            orig = (
+                f" (was {conflict.original_severity.value.upper()})"
+                if conflict.original_severity
+                else ""
+            )
+            console.print(
+                f"    [dim]\u25cf {conflict.conflict_type.value} "
+                f"with #{conflict.target_pr} — {conflict.file_path}{orig}[/dim]"
+            )
+        console.print()
 
     if report.pr.skipped_files:
         console.print("[dim]Files skipped (no patch data):[/dim]")

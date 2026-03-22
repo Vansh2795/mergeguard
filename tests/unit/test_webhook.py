@@ -128,9 +128,7 @@ class TestMergeGroupEventParsing:
         }
 
     def test_checks_requested_parsed(self):
-        event = parse_github_event(
-            {"x-github-event": "merge_group"}, self._make_payload()
-        )
+        event = parse_github_event({"x-github-event": "merge_group"}, self._make_payload())
         assert event is not None
         assert isinstance(event, MergeGroupEvent)
         assert event.action == EventAction.MERGE_GROUP_CHECKS_REQUESTED
@@ -145,9 +143,7 @@ class TestMergeGroupEventParsing:
         assert event is None
 
     def test_pr_numbers_extracted_from_head_ref(self):
-        event = parse_github_event(
-            {"x-github-event": "merge_group"}, self._make_payload()
-        )
+        event = parse_github_event({"x-github-event": "merge_group"}, self._make_payload())
         assert isinstance(event, MergeGroupEvent)
         assert 42 in event.pr_numbers
 
@@ -155,9 +151,7 @@ class TestMergeGroupEventParsing:
         payload = self._make_payload()
         payload["merge_group"]["head_ref"] = "refs/heads/gh-readonly-queue/main/entry"
         payload["merge_group"]["head_commit"]["message"] = "Merge #99 and #100"
-        event = parse_github_event(
-            {"x-github-event": "merge_group"}, payload
-        )
+        event = parse_github_event({"x-github-event": "merge_group"}, payload)
         assert isinstance(event, MergeGroupEvent)
         assert 99 in event.pr_numbers
         assert 100 in event.pr_numbers
@@ -168,9 +162,7 @@ class TestMergeGroupEventParsing:
             "repository": {"full_name": "owner/repo"},
             "sender": {"login": "bot"},
         }
-        event = parse_github_event(
-            {"x-github-event": "merge_group"}, payload
-        )
+        event = parse_github_event({"x-github-event": "merge_group"}, payload)
         assert event is None
 
 

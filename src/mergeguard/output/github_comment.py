@@ -73,11 +73,26 @@ def format_report(
             )
         lines.append("")
 
-    # Critical and warning conflicts — grouped by target PR
+    # Stack context banner
+    if report.stack_group and report.stack_pr_numbers:
+        stack_parts = []
+        for pr_num in report.stack_pr_numbers:
+            if pr_num == report.pr.number:
+                stack_parts.append(f"**#{pr_num}**")
+            else:
+                stack_parts.append(f"#{pr_num}")
+        stack_str = " \u2192 ".join(stack_parts)
+        pos = report.stack_position or 0
+        total = len(report.stack_pr_numbers)
+        lines.append(f"> \U0001f4e6 **Part of stack:** {stack_str} (position {pos}/{total})")
+        lines.append("")
+
+    # Critical and warning conflicts — grouped by target PR (excluding intra-stack)
     important = [
         c
         for c in report.conflicts
         if c.severity in (ConflictSeverity.CRITICAL, ConflictSeverity.WARNING)
+        and not c.is_intra_stack
     ]
     if important:
         grouped = groupby(
@@ -114,8 +129,30 @@ def format_report(
                     lines.append(_format_conflict_compact(conflict, repo_full_name))
                     lines.append("")
 
-    # Info-level conflicts — collapsed, also grouped
-    info_conflicts = [c for c in report.conflicts if c.severity == ConflictSeverity.INFO]
+    # Intra-stack conflicts — collapsed section
+    intra_stack_conflicts = [c for c in report.conflicts if c.is_intra_stack]
+    if intra_stack_conflicts:
+        lines.append("<details>")
+        lines.append(
+            f"<summary>\U0001f4e6 {len(intra_stack_conflicts)} intra-stack "
+            f"conflict(s) (expected)</summary>"
+        )
+        lines.append("")
+        for conflict in intra_stack_conflicts:
+            orig = (
+                f"Originally {conflict.original_severity.value.upper()} \u2014 demoted (same stack)"
+                if conflict.original_severity
+                else "Same stack"
+            )
+            lines.append(_format_conflict_compact(conflict, repo_full_name) + f"\n*{orig}*")
+            lines.append("")
+        lines.append("</details>")
+        lines.append("")
+
+    # Info-level conflicts — collapsed, also grouped (excluding intra-stack)
+    info_conflicts = [
+        c for c in report.conflicts if c.severity == ConflictSeverity.INFO and not c.is_intra_stack
+    ]
     if info_conflicts:
         lines.append("<details>")
         lines.append(

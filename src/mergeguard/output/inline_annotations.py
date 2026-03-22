@@ -81,7 +81,11 @@ def _format_annotation_body(conflict: Conflict, repo: str, platform: str) -> str
     emoji = SEVERITY_EMOJI[conflict.severity]
     type_label = TYPE_LABELS[conflict.conflict_type]
 
-    lines = [f"{emoji} **{type_label}** \u2014 conflicts with PR #{conflict.target_pr}"]
+    prefix = ""
+    if conflict.is_intra_stack:
+        prefix = "\U0001f4e6 **Intra-stack** (expected) \u2014 "
+
+    lines = [f"{prefix}{emoji} **{type_label}** \u2014 conflicts with PR #{conflict.target_pr}"]
 
     if conflict.symbol_name:
         lines.append(f"**Symbol:** `{conflict.symbol_name}`")

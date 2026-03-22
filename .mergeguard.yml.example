@@ -72,6 +72,13 @@ ignored_paths:
 #   analysis_timeout: 300
 #   queue_backend: "asyncio"   # "asyncio" or "redis"
 
+# Stacked PR detection
+# stacked_prs:
+#   enabled: true
+#   detection: ["branch_chain", "labels"]
+#   demote_severity: true
+#   label_pattern: "stack:"
+
 # Guardrail rules
 # rules:
 #   - name: "no-cross-module-imports"

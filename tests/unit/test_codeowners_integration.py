@@ -4,20 +4,17 @@ from __future__ import annotations
 
 from datetime import datetime
 
-import pytest
-
 from mergeguard.analysis.codeowners import CodeOwners
 from mergeguard.models import (
+    CodeownersConfig,
     Conflict,
     ConflictReport,
     ConflictSeverity,
     ConflictType,
-    CodeownersConfig,
     MergeGuardConfig,
     PRInfo,
 )
 from mergeguard.output.github_comment import _format_conflict, _format_conflict_compact
-
 
 # ──────────────────────────────────────────────
 # Helpers
@@ -173,7 +170,7 @@ class TestSlackNotificationOwners:
 
     def test_owners_in_conflict_line(self):
         """notify_slack includes owner info in conflict lines."""
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
 
         from mergeguard.output.notifications import notify_slack
 
@@ -190,15 +187,16 @@ class TestSlackNotificationOwners:
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
 
-        with patch("mergeguard.output.notifications.httpx.post", return_value=mock_resp) as mock_post:
+        with patch(
+            "mergeguard.output.notifications.httpx.post",
+            return_value=mock_resp,
+        ) as mock_post:
             result = notify_slack("https://hooks.slack.com/test", report, "owner/repo")
 
         assert result is True
         # Check the payload includes owner info
         payload = mock_post.call_args[1]["json"]
-        all_text = " ".join(
-            b["text"]["text"] for b in payload["blocks"] if b["type"] == "section"
-        )
+        all_text = " ".join(b["text"]["text"] for b in payload["blocks"] if b["type"] == "section")
         assert "@backend-team" in all_text
 
 
@@ -211,7 +209,7 @@ class TestPerTeamRouting:
     """Test notify_slack_per_team with team_channels config."""
 
     def test_routes_to_team_channels(self):
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
 
         from mergeguard.output.notifications import notify_slack_per_team
 
@@ -243,7 +241,10 @@ class TestPerTeamRouting:
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
 
-        with patch("mergeguard.output.notifications.httpx.post", return_value=mock_resp) as mock_post:
+        with patch(
+            "mergeguard.output.notifications.httpx.post",
+            return_value=mock_resp,
+        ) as mock_post:
             results = notify_slack_per_team(report, team_channels)
 
         assert results["@backend-team"] is True
@@ -251,7 +252,7 @@ class TestPerTeamRouting:
         assert mock_post.call_count == 2
 
     def test_fallback_webhook(self):
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
 
         from mergeguard.output.notifications import notify_slack_per_team
 
@@ -268,7 +269,10 @@ class TestPerTeamRouting:
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
 
-        with patch("mergeguard.output.notifications.httpx.post", return_value=mock_resp) as mock_post:
+        with patch(
+            "mergeguard.output.notifications.httpx.post",
+            return_value=mock_resp,
+        ) as mock_post:
             results = notify_slack_per_team(
                 report,
                 team_channels={},

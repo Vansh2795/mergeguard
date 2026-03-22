@@ -28,6 +28,7 @@ MergeGuard fills this gap by:
 - **Posting inline annotations** — conflict warnings appear directly on the conflicting lines in PR diffs
 - **Real-time webhook server** — instant conflict detection on PR open/update via GitHub, GitLab, and Bitbucket webhooks
 - **CODEOWNERS-aware routing** — conflict notifications routed to the specific code owners, with per-team Slack channels
+- **Stacked PR support** — detects PR stacks (branch chains, labels, Graphite), demotes expected intra-stack conflicts, and enforces stack-aware merge ordering
 - **Merge queue integration** — commit status checks that block conflicting PRs from merging, with priority override via labels and GitHub merge group support
 - **Computing risk scores** — composite scoring with configurable weights based on conflict severity, blast radius, code churn, and AI attribution
 

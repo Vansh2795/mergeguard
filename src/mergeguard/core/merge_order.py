@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass, field
 
-from mergeguard.models import ConflictReport, ConflictSeverity
+from mergeguard.models import ConflictReport, ConflictSeverity, StackGroup
 
 # Severity weights used when scoring edges in the conflict graph.
 SEVERITY_WEIGHT: dict[ConflictSeverity, int] = {
@@ -23,12 +23,15 @@ SEVERITY_WEIGHT: dict[ConflictSeverity, int] = {
 
 def _build_conflict_graph(
     reports: list[ConflictReport],
+    stack_groups: list[StackGroup] | None = None,
 ) -> tuple[set[int], dict[int, dict[int, int]]]:
     """Build an adjacency map of PR -> {neighbor_pr: total_weight}.
 
     Returns the set of all PR numbers and the weighted adjacency dict.
     Edges are bidirectional: if PR A conflicts with PR B, both
     A->B and B->A get the weight added.
+
+    Intra-stack conflicts are zeroed out (they shouldn't penalize ordering).
     """
     prs: set[int] = {r.pr.number for r in reports}
     graph: dict[int, dict[int, int]] = defaultdict(lambda: defaultdict(int))
@@ -36,6 +39,8 @@ def _build_conflict_graph(
     for report in reports:
         src = report.pr.number
         for conflict in report.conflicts:
+            if conflict.is_intra_stack:
+                continue
             tgt = conflict.target_pr
             weight = SEVERITY_WEIGHT.get(conflict.severity, 1)
             graph[src][tgt] += weight
@@ -76,8 +81,23 @@ def _build_reason(
     return f"Conflict weight {total} across {len(neighbors)} PR(s): {summary}"
 
 
+def _build_stack_predecessors(
+    stack_groups: list[StackGroup] | None,
+) -> dict[int, list[int]]:
+    """Build a map of PR → list of PRs that must merge before it (within its stack)."""
+    if not stack_groups:
+        return {}
+    predecessors: dict[int, list[int]] = {}
+    for group in stack_groups:
+        for i, pr_num in enumerate(group.pr_numbers):
+            if i > 0:
+                predecessors[pr_num] = list(group.pr_numbers[:i])
+    return predecessors
+
+
 def suggest_merge_order(
     reports: list[ConflictReport],
+    stack_groups: list[StackGroup] | None = None,
 ) -> list[tuple[int, str]]:
     """Suggest optimal merge order based on conflict graph.
 
@@ -85,23 +105,41 @@ def suggest_merge_order(
     weight against *remaining* PRs is lowest. Ties are broken by PR number
     (lower first) so the output is deterministic.
 
+    When stack_groups are provided, stack predecessor constraints are enforced:
+    a PR at position N in a stack can only be selected after positions 1..N-1.
+
     Returns list of (pr_number, reason) tuples in suggested merge order.
     """
     if not reports:
         return []
 
-    prs, graph = _build_conflict_graph(reports)
+    prs, graph = _build_conflict_graph(reports, stack_groups)
     remaining = set(prs)
+    selected: set[int] = set()
     order: list[tuple[int, str]] = []
+    predecessors = _build_stack_predecessors(stack_groups)
 
     while remaining:
-        # Pick the PR with the lowest total outgoing weight among remaining.
-        # Break ties with the lowest PR number for determinism.
-        best = min(remaining, key=lambda p: (_total_weight(p, graph), p))
+        # Only consider candidates whose stack predecessors are already selected
+        candidates = [
+            p for p in remaining if all(pred in selected for pred in predecessors.get(p, []))
+        ]
+        if not candidates:
+            # Fallback: shouldn't happen, but pick from remaining to avoid infinite loop
+            candidates = list(remaining)
+
+        # Pick the PR with the lowest total outgoing weight among candidates.
+        best = min(candidates, key=lambda p: (_total_weight(p, graph), p))
 
         reason = _build_reason(best, graph, len(remaining))
-        order.append((best, reason))
+        # Add stack context to reason if applicable
+        if best in predecessors:
+            preds = predecessors[best]
+            stack_note = f" (stack: after #{', #'.join(str(p) for p in preds)})"
+            reason += stack_note
 
+        order.append((best, reason))
+        selected.add(best)
         remaining.discard(best)
         _remove_pr(best, graph)
 
@@ -167,12 +205,12 @@ def compute_merge_readiness(
             status_description="No conflict data — OK to merge",
         )
 
-    # Filter conflicts at or above block_severity
+    # Filter conflicts at or above block_severity (excluding intra-stack)
     block_rank = _SEVERITY_RANK.get(block_severity, 2)
     blocking_conflicts = [
         c
         for c in target_report.conflicts
-        if _SEVERITY_RANK.get(c.severity.value, 0) >= block_rank
+        if _SEVERITY_RANK.get(c.severity.value, 0) >= block_rank and not c.is_intra_stack
     ]
 
     # Determine blocking PRs

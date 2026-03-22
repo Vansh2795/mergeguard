@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-import pytest
-
-from mergeguard.analysis.codeowners import CodeOwnerRule, CodeOwners, _pattern_matches, load_codeowners
-
+from mergeguard.analysis.codeowners import (
+    CodeOwnerRule,
+    CodeOwners,
+    _pattern_matches,
+    load_codeowners,
+)
 
 # ──────────────────────────────────────────────
 # Pattern matching
