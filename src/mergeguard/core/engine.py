@@ -24,6 +24,7 @@ import httpx
 
 from mergeguard.analysis.ast_parser import map_diff_to_symbols  # used in fork fallback
 from mergeguard.analysis.attribution import detect_attribution
+from mergeguard.analysis.codeowners import CodeOwners, load_codeowners
 from mergeguard.analysis.dependency import DependencyGraph, build_dependency_graph
 from mergeguard.analysis.diff_parser import FileDiff, parse_unified_diff
 from mergeguard.analysis.similarity import symbol_name_similarity
@@ -167,6 +168,7 @@ class MergeGuardEngine:
         self._ignore_res = [
             _re.compile(fnmatch.translate(pat)) for pat in self._config.ignored_paths
         ]
+        self._codeowners: CodeOwners | None = None  # Lazy-loaded per repo
 
     def _get_file_content_cached(self, path: str, ref: str) -> str | None:
         """Fetch file content with caching to avoid duplicate API calls."""
@@ -227,6 +229,42 @@ class MergeGuardEngine:
             if patch:
                 cf.patch = patch
                 logger.debug("Backfilled patch for %s in PR #%d", cf.path, pr.number)
+
+    def _resolve_conflict_owners(
+        self,
+        conflicts: list[Conflict],
+        report: ConflictReport,
+    ) -> None:
+        """Resolve CODEOWNERS for each conflict and aggregate affected teams.
+
+        Loads and caches the parsed CodeOwners object per repo.
+        Sets ``conflict.owners`` and ``report.affected_teams``.
+        """
+        if not self._config.codeowners.enabled:
+            return
+
+        # Lazy-load and cache CODEOWNERS
+        if self._codeowners is None:
+            try:
+                self._codeowners = load_codeowners(
+                    self._client,
+                    self._repo_full_name,
+                    ref=report.pr.head_sha if report.pr.head_sha else "HEAD",
+                )
+            except Exception:
+                logger.debug("Failed to load CODEOWNERS", exc_info=True)
+                return
+
+        if self._codeowners is None:
+            return
+
+        all_teams: set[str] = set()
+        for conflict in conflicts:
+            owners = self._codeowners.resolve_owners(conflict.file_path)
+            conflict.owners = owners
+            all_teams.update(owners)
+
+        report.affected_teams = sorted(all_teams)
 
     def analyze_pr(self, pr_number: int) -> ConflictReport:
         """Analyze a single PR for cross-PR conflicts.
@@ -339,6 +377,9 @@ class MergeGuardEngine:
             analysis_duration_ms=elapsed_ms,
         )
 
+        # Resolve CODEOWNERS for conflict routing
+        self._resolve_conflict_owners(all_conflicts, report)
+
         # Cache the result for future runs
         if cache is not None:
             try:
@@ -401,7 +442,7 @@ class MergeGuardEngine:
         )
 
         elapsed_ms = int((time.monotonic() - start_time) * 1000)
-        return ConflictReport(
+        report = ConflictReport(
             pr=target_pr,
             conflicts=all_conflicts,
             risk_score=risk_score,
@@ -409,6 +450,11 @@ class MergeGuardEngine:
             no_conflict_prs=no_conflict_prs,
             analysis_duration_ms=elapsed_ms,
         )
+
+        # Resolve CODEOWNERS for conflict routing
+        self._resolve_conflict_owners(all_conflicts, report)
+
+        return report
 
     def analyze_all_open_prs(self) -> list[ConflictReport]:
         """Batch: fetch and enrich all PRs once, then run pairwise conflict detection."""
@@ -459,16 +505,19 @@ class MergeGuardEngine:
                 config=self._config,
             )
 
-            reports.append(
-                ConflictReport(
-                    pr=target_pr,
-                    conflicts=all_conflicts,
-                    risk_score=risk_score,
-                    risk_factors=risk_factors,
-                    no_conflict_prs=no_conflict_prs,
-                    analysis_duration_ms=int((time.monotonic() - start) * 1000),
-                )
+            report = ConflictReport(
+                pr=target_pr,
+                conflicts=all_conflicts,
+                risk_score=risk_score,
+                risk_factors=risk_factors,
+                no_conflict_prs=no_conflict_prs,
+                analysis_duration_ms=int((time.monotonic() - start) * 1000),
             )
+
+            # Resolve CODEOWNERS for conflict routing
+            self._resolve_conflict_owners(all_conflicts, report)
+
+            reports.append(report)
 
         if decisions_log is not None:
             decisions_log.close()

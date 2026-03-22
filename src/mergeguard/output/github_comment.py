@@ -185,6 +185,9 @@ def _format_conflict(conflict: Conflict, repo_full_name: str, platform: str = "g
     if conflict.symbol_name:
         lines.append(f"**Symbol:** `{conflict.symbol_name}`")
 
+    if conflict.owners:
+        lines.append(f"**Owners:** {' '.join(conflict.owners)}")
+
     lines.append(f"\n{conflict.description}")
     lines.append(f"\n\U0001f4a1 **Recommendation:** {conflict.recommendation}")
 
@@ -205,6 +208,9 @@ def _format_conflict_compact(conflict: Conflict, repo_full_name: str) -> str:
 
     if conflict.symbol_name:
         lines.append(f"**Symbol:** `{conflict.symbol_name}`")
+
+    if conflict.owners:
+        lines.append(f"**Owners:** {' '.join(conflict.owners)}")
 
     lines.append(f"{conflict.description}")
     lines.append(f"\U0001f4a1 {conflict.recommendation}")
