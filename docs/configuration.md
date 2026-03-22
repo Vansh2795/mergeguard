@@ -177,6 +177,25 @@ When enabled, MergeGuard will:
 - Tag owners in PR comments and include owner info in Slack/Teams notifications
 - Route per-team Slack notifications to dedicated channels via `team_channels`
 
+### `stacked_prs` (stacked PR detection)
+
+Configuration for detecting and handling stacked PRs (PRs that build on each other).
+
+```yaml
+stacked_prs:
+  enabled: true                    # Enable stacked PR detection (default: true)
+  detection: ["branch_chain", "labels"]  # Detection strategies to use
+  demote_severity: true            # Demote intra-stack conflicts to INFO (default: true)
+  label_pattern: "stack:"         # Label prefix for label-based detection
+```
+
+Detection strategies:
+- **`branch_chain`** — Follows `head_branch` → `base_branch` links between PRs. If PR B's base branch is PR A's head branch, they're in the same stack.
+- **`labels`** — Groups PRs by labels matching the `label_pattern` prefix (e.g., `stack:auth` groups all PRs labeled with it). Ordered by creation date.
+- **`graphite`** — Parses `Graphite-base:` trailers in PR descriptions to reconstruct dependency chains.
+
+When `demote_severity` is enabled, conflicts between PRs in the same stack are automatically demoted to INFO severity (the original severity is preserved for reference). This reduces noise since intra-stack conflicts are expected — the PRs intentionally share code.
+
 ### `merge_queue` (merge queue integration)
 
 Configuration for merge queue integration with commit status checks.

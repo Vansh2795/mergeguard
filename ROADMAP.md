@@ -45,7 +45,7 @@ Focus: real-time workflows, inline developer experience, and deployment infrastr
 - :white_check_mark: **Webhook-driven real-time analysis** — Instant conflict detection on PR open/update/close via webhook server
 - :white_check_mark: **CODEOWNERS-aware routing** — Route conflict notifications to file owners
 - :white_check_mark: **Merge queue integration** — Conflict-aware merge ordering with commit status checks and priority overrides
-- :calendar: **Stacked PR support** — Detect conflicts within PR stacks
+- :white_check_mark: **Stacked PR support** — Detect stacked PR groups, demote intra-stack conflicts, stack-aware merge ordering
 - :calendar: **Blast radius visualization** — Interactive dependency graph showing conflict impact
 - :calendar: **Policy engine** — Customizable merge policies based on conflict analysis
 - :calendar: **DORA metrics** — Track conflict resolution time and merge frequency

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — v0.5: Stacked PR Support
+- Stacked PR detection with three strategies: branch chain, label-based, and Graphite metadata
+- `StackGroup` and `StackedPRConfig` models for stack configuration
+- Automatic demotion of intra-stack conflicts from CRITICAL/WARNING to INFO severity
+- Stack context in GitHub PR comments (stack banner with position indicator)
+- Stack-aware merge ordering — enforces stack predecessor constraints
+- Intra-stack conflicts excluded from merge queue blocking logic
+- Collapsed intra-stack section in GitHub comments showing original severity
+- Dimmed intra-stack display in terminal output
+- Intra-stack prefix on inline review annotations
+- `stacked_prs` configuration section in `.mergeguard.yml`
+
 ### Added — v0.5: Inline PR Annotations
 - Inline PR annotations — conflict warnings posted as line-level review comments on the exact conflicting lines
 - `post_pr_review()` method on SCMClient protocol (GitHub, GitLab, Bitbucket)

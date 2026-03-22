@@ -28,6 +28,7 @@ from mergeguard.analysis.codeowners import CodeOwners, load_codeowners
 from mergeguard.analysis.dependency import DependencyGraph, build_dependency_graph
 from mergeguard.analysis.diff_parser import FileDiff, parse_unified_diff
 from mergeguard.analysis.similarity import symbol_name_similarity
+from mergeguard.analysis.stacked_prs import build_stack_lookup, detect_stacks
 from mergeguard.analysis.symbol_index import SymbolIndex
 from mergeguard.core.conflict import classify_conflicts, compute_file_overlaps
 from mergeguard.core.guardrails import enforce_guardrails
@@ -45,6 +46,7 @@ from mergeguard.models import (
     FileChangeStatus,
     MergeGuardConfig,
     PRInfo,
+    StackGroup,
     Symbol,
 )
 from mergeguard.storage.cache import AnalysisCache
@@ -56,6 +58,28 @@ logger = logging.getLogger(__name__)
 CHURN_MAX_LINES = 500
 MAX_FILE_SIZE = 500_000
 MAX_CACHE_ENTRIES = 500
+
+
+def _demote_intra_stack_conflicts(
+    conflicts: list[Conflict],
+    stack_lookup: dict[int, StackGroup],
+) -> None:
+    """Demote conflicts between PRs in the same stack to INFO severity.
+
+    Modifies conflicts in-place: sets is_intra_stack, preserves original_severity,
+    and downgrades severity to INFO.
+    """
+    for conflict in conflicts:
+        src_group = stack_lookup.get(conflict.source_pr)
+        tgt_group = stack_lookup.get(conflict.target_pr)
+        if (
+            src_group is not None
+            and tgt_group is not None
+            and src_group.group_id == tgt_group.group_id
+        ):
+            conflict.is_intra_stack = True
+            conflict.original_severity = conflict.severity
+            conflict.severity = ConflictSeverity.INFO
 
 
 def _extract_symbol_diff(file_diff: FileDiff, symbol: Symbol) -> str | None:
@@ -303,6 +327,15 @@ class MergeGuardEngine:
         )
         logger.info("Comparing against %d open PRs", len(other_prs))
 
+        # Detect stacked PR groups
+        stack_groups: list[StackGroup] = []
+        stack_lookup: dict[int, StackGroup] = {}
+        if self._config.stacked_prs.enabled:
+            stack_groups = detect_stacks(
+                [target_pr] + other_prs, self._config.stacked_prs
+            )
+            stack_lookup = build_stack_lookup(stack_groups)
+
         # Step 2: Enrich with diff data and symbols
         if hasattr(self._client, "rate_limit_remaining"):
             remaining = self._client.rate_limit_remaining
@@ -346,6 +379,10 @@ class MergeGuardEngine:
             except Exception:
                 logger.warning("Fix suggestion generation failed", exc_info=True)
 
+        # Step 4f: Demote intra-stack conflicts
+        if self._config.stacked_prs.enabled and self._config.stacked_prs.demote_severity:
+            _demote_intra_stack_conflicts(all_conflicts, stack_lookup)
+
         # Step 5: Compute risk factors
         dependency_depth = self._compute_dependency_depth(target_pr)
         churn_score = self._compute_churn_score(target_pr)
@@ -368,6 +405,7 @@ class MergeGuardEngine:
             elapsed_ms,
         )
 
+        target_stack = stack_lookup.get(pr_number)
         report = ConflictReport(
             pr=target_pr,
             conflicts=all_conflicts,
@@ -375,6 +413,13 @@ class MergeGuardEngine:
             risk_factors=risk_factors,
             no_conflict_prs=no_conflict_prs,
             analysis_duration_ms=elapsed_ms,
+            stack_group=target_stack.group_id if target_stack else None,
+            stack_position=(
+                target_stack.pr_numbers.index(pr_number) + 1
+                if target_stack
+                else None
+            ),
+            stack_pr_numbers=target_stack.pr_numbers if target_stack else [],
         )
 
         # Resolve CODEOWNERS for conflict routing
@@ -424,9 +469,22 @@ class MergeGuardEngine:
                 for future in as_completed(futures, timeout=300):
                     future.result()
 
+        # Detect stacked PR groups
+        stack_groups: list[StackGroup] = []
+        stack_lookup: dict[int, StackGroup] = {}
+        if self._config.stacked_prs.enabled:
+            stack_groups = detect_stacks(
+                [target_pr] + existing_prs, self._config.stacked_prs
+            )
+            stack_lookup = build_stack_lookup(stack_groups)
+
         prs_excluding_target = [p for p in existing_prs if p.number != pr_number]
         all_conflicts, no_conflict_prs = self._detect_all_conflicts(target_pr, prs_excluding_target)
         self._apply_template_suggestions(all_conflicts)
+
+        # Demote intra-stack conflicts
+        if self._config.stacked_prs.enabled and self._config.stacked_prs.demote_severity:
+            _demote_intra_stack_conflicts(all_conflicts, stack_lookup)
 
         dependency_depth = self._compute_dependency_depth(target_pr)
         churn_score = self._compute_churn_score(target_pr)
@@ -442,6 +500,7 @@ class MergeGuardEngine:
         )
 
         elapsed_ms = int((time.monotonic() - start_time) * 1000)
+        target_stack = stack_lookup.get(pr_number)
         report = ConflictReport(
             pr=target_pr,
             conflicts=all_conflicts,
@@ -449,6 +508,13 @@ class MergeGuardEngine:
             risk_factors=risk_factors,
             no_conflict_prs=no_conflict_prs,
             analysis_duration_ms=elapsed_ms,
+            stack_group=target_stack.group_id if target_stack else None,
+            stack_position=(
+                target_stack.pr_numbers.index(pr_number) + 1
+                if target_stack
+                else None
+            ),
+            stack_pr_numbers=target_stack.pr_numbers if target_stack else [],
         )
 
         # Resolve CODEOWNERS for conflict routing
@@ -473,6 +539,13 @@ class MergeGuardEngine:
         for pr in all_prs:
             pr.ai_attribution = detect_attribution(pr)
 
+        # Detect stacked PR groups once for all PRs
+        stack_groups: list[StackGroup] = []
+        stack_lookup: dict[int, StackGroup] = {}
+        if self._config.stacked_prs.enabled:
+            stack_groups = detect_stacks(all_prs, self._config.stacked_prs)
+            stack_lookup = build_stack_lookup(stack_groups)
+
         # Set up regression detection once for all PRs
         decisions_log = None
         if self._config.check_regressions:
@@ -493,6 +566,10 @@ class MergeGuardEngine:
                 decisions_log=decisions_log,
             )
 
+            # Demote intra-stack conflicts
+            if self._config.stacked_prs.enabled and self._config.stacked_prs.demote_severity:
+                _demote_intra_stack_conflicts(all_conflicts, stack_lookup)
+
             dep_depth = self._compute_dependency_depth(target_pr)
             churn = self._compute_churn_score(target_pr)
             deviation = self._compute_pattern_deviation(target_pr)
@@ -505,6 +582,7 @@ class MergeGuardEngine:
                 config=self._config,
             )
 
+            target_stack = stack_lookup.get(target_pr.number)
             report = ConflictReport(
                 pr=target_pr,
                 conflicts=all_conflicts,
@@ -512,6 +590,13 @@ class MergeGuardEngine:
                 risk_factors=risk_factors,
                 no_conflict_prs=no_conflict_prs,
                 analysis_duration_ms=int((time.monotonic() - start) * 1000),
+                stack_group=target_stack.group_id if target_stack else None,
+                stack_position=(
+                    target_stack.pr_numbers.index(target_pr.number) + 1
+                    if target_stack
+                    else None
+                ),
+                stack_pr_numbers=target_stack.pr_numbers if target_stack else [],
             )
 
             # Resolve CODEOWNERS for conflict routing

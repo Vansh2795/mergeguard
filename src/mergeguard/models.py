@@ -131,6 +131,16 @@ class PRInfo(BaseModel):
         return {s.symbol.name for s in self.changed_symbols}
 
 
+class StackGroup(BaseModel):
+    """A group of stacked PRs in dependency order (base-first)."""
+
+    group_id: str  # e.g., "chain-feature/auth" or "label-auth-refactor"
+    pr_numbers: list[int]  # Ordered: root → tip
+    base_branch: str  # Ultimate target (e.g., "main")
+    detection_method: str  # "branch_chain" | "labels" | "graphite"
+    is_complete: bool = True  # False if middle PRs are missing
+
+
 # ──────────────────────────────────────────────
 # Conflict Models
 # ──────────────────────────────────────────────
@@ -154,6 +164,8 @@ class Conflict(BaseModel):
     source_diff_preview: str | None = None  # Code preview from source PR
     target_diff_preview: str | None = None  # Code preview from target PR
     owners: list[str] = Field(default_factory=list)  # Code owners for conflicting files
+    is_intra_stack: bool = False  # True if both PRs are in the same stack
+    original_severity: ConflictSeverity | None = None  # Preserved when demoted
 
 
 class ConflictReport(BaseModel):
@@ -167,6 +179,9 @@ class ConflictReport(BaseModel):
     affected_teams: list[str] = Field(default_factory=list)  # All teams with conflicts
     analysis_duration_ms: int = 0
     analyzed_at: datetime = Field(default_factory=lambda: datetime.now(tz=None))
+    stack_group: str | None = None  # StackGroup.group_id if PR is in a stack
+    stack_position: int | None = None  # 1-indexed position within the stack
+    stack_pr_numbers: list[int] = Field(default_factory=list)  # Full stack in order
 
     @property
     def has_critical(self) -> bool:
@@ -269,6 +284,15 @@ class MergeQueueConfig(BaseModel):
     auto_recheck_on_close: bool = True
 
 
+class StackedPRConfig(BaseModel):
+    """Configuration for stacked PR detection."""
+
+    enabled: bool = True
+    detection: list[str] = Field(default_factory=lambda: ["branch_chain", "labels"])
+    demote_severity: bool = True
+    label_pattern: str = "stack:"
+
+
 class MergeGuardConfig(BaseModel):
     """Configuration loaded from .mergeguard.yml."""
 
@@ -306,3 +330,4 @@ class MergeGuardConfig(BaseModel):
     server: ServerConfig = Field(default_factory=ServerConfig)
     codeowners: CodeownersConfig = Field(default_factory=CodeownersConfig)
     merge_queue: MergeQueueConfig = Field(default_factory=MergeQueueConfig)
+    stacked_prs: StackedPRConfig = Field(default_factory=StackedPRConfig)
