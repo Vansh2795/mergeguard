@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-import pytest
-
 from mergeguard.analysis.stacked_prs import (
     build_stack_lookup,
     detect_stacks,
@@ -22,7 +20,6 @@ from mergeguard.models import (
     StackedPRConfig,
     StackGroup,
 )
-
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -301,19 +298,9 @@ class TestGraphiteDetection:
 
         groups = detect_stacks([pr_a, pr_b, pr_c], config)
 
-        # pr_b's graphite base is "main" → pr_b is a root
-        # pr_c's graphite base is "auth-base" → pr_c follows pr_a? No, follows whoever has head "auth-base"
-        # Actually graphite detection builds chains from the trailer, not branch links
-        # pr_b has Graphite-base: main → root
-        # pr_c has Graphite-base: auth-base → child of pr_a (whose head is auth-base)
-        # But pr_a has no Graphite-base metadata, so it's not in the graphite chain
-        # Only pr_b (base=main) and pr_c (base=auth-base, which is pr_a.head but pr_c's parent is pr_a)
-        # The graphite algo: pr_b is parented on main → root. Then check who is parented on pr_b's head (auth-v2)
-        # No one's graphite-base is auth-v2, so pr_b is alone → too small
-        # pr_c is parented on auth-base (pr_a.head), but pr_a has no graphite metadata
-        # So effectively we'd get nothing useful. Let me fix test to be more realistic.
-        # This test might produce 0 groups because chains don't connect.
-        # Let's just verify it doesn't crash.
+        # pr_b (Graphite-base: main) is a root, pr_c (Graphite-base:
+        # auth-base) chains off pr_a's head. But pr_a has no Graphite
+        # metadata, so the chain may not fully connect. Verify no crash.
         assert isinstance(groups, list)
 
     def test_graphite_chain(self):
