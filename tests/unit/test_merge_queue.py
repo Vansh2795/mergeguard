@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-import pytest
-
 from mergeguard.core.merge_order import MergeReadiness, compute_merge_readiness
 from mergeguard.models import (
     Conflict,
@@ -16,7 +14,6 @@ from mergeguard.models import (
     MergeQueueConfig,
     PRInfo,
 )
-
 
 # ── Helpers ──────────────────────────────────────────────────────────
 

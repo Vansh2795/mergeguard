@@ -14,8 +14,8 @@ httpx = pytest.importorskip("httpx", reason="httpx not installed")
 
 class TestGitHubCommitStatus:
     def test_posts_with_correct_context(self):
-        with patch("mergeguard.integrations.github_client.Github") as MockGithub:
-            mock_gh = MockGithub.return_value
+        with patch("mergeguard.integrations.github_client.Github") as mock_github:
+            mock_gh = mock_github.return_value
             mock_repo = MagicMock()
             mock_gh.get_repo.return_value = mock_repo
             mock_commit = MagicMock()
@@ -42,8 +42,8 @@ class TestGitHubCommitStatus:
             )
 
     def test_description_truncated_to_140(self):
-        with patch("mergeguard.integrations.github_client.Github") as MockGithub:
-            mock_gh = MockGithub.return_value
+        with patch("mergeguard.integrations.github_client.Github") as mock_github:
+            mock_gh = mock_github.return_value
             mock_repo = MagicMock()
             mock_gh.get_repo.return_value = mock_repo
             mock_commit = MagicMock()
