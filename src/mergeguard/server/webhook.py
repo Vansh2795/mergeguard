@@ -248,12 +248,37 @@ async def _handle_analysis(event: WebhookEvent | MergeGroupEvent) -> None:
             if evaluation.actions:
                 execute_policy_actions(report, evaluation, client, event.repo_full_name, platform)
 
+        # Record metrics snapshot for DORA tracking
+        if cfg.metrics.enabled and report.conflicts:
+            from mergeguard.core.metrics import record_analysis
+
+            try:
+                record_analysis(report, event.repo_full_name)
+            except Exception:
+                logger.warning("Failed to record metrics snapshot", exc_info=True)
+
     elif event.action == EventAction.CLOSED:
         logger.info(
             "PR %s #%d closed — conflict graph will update on next analysis",
             event.repo_full_name,
             event.pr_number,
         )
+        if cfg.metrics.enabled:
+            from datetime import UTC
+            from datetime import datetime as _dt
+
+            from mergeguard.core.metrics import record_resolution
+
+            try:
+                resolution_type = "merged" if event.merged else "closed"
+                record_resolution(
+                    event.pr_number,
+                    event.repo_full_name,
+                    _dt.now(UTC),
+                    resolution_type,
+                )
+            except Exception:
+                logger.warning("Failed to record resolution", exc_info=True)
 
 
 def _get_token_for_platform(platform: str) -> str | None:
@@ -432,3 +457,21 @@ async def bitbucket_webhook(
     assert _queue is not None
     await _queue.enqueue(event)
     return {"status": "queued", "pr": event.pr_number}
+
+
+@app.get("/api/metrics/dora/{owner}/{repo}")
+async def dora_metrics(owner: str, repo: str, windows: str = "7,30,90") -> dict[str, Any]:
+    """DORA metrics endpoint for a repository."""
+    from mergeguard.core.metrics import compute_dora_metrics
+
+    repo_full = f"{owner}/{repo}"
+    try:
+        time_windows = [int(w.strip()) for w in windows.split(",") if w.strip()]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid windows parameter") from None
+
+    if not time_windows:
+        time_windows = [7, 30, 90]
+
+    report = compute_dora_metrics(repo_full, time_windows)
+    return report.model_dump(mode="json")

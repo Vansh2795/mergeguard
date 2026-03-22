@@ -38,9 +38,14 @@ def _no_filesystem_side_effects():
     mock_log = MagicMock()
     mock_log.find_regressions.return_value = []
 
+    mock_metrics_store = MagicMock()
+    mock_metrics_store.record_snapshot.return_value = None
+    mock_metrics_store.resolve_pr.return_value = 0
+
     with (
         patch("mergeguard.core.engine.AnalysisCache", return_value=mock_cache),
         patch("mergeguard.core.engine.DecisionsLog", return_value=mock_log),
+        patch("mergeguard.core.metrics.MetricsStore", return_value=mock_metrics_store),
     ):
         yield
 

@@ -20,6 +20,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `scan-secrets` standalone CLI command with `--format terminal|json|sarif` output
 - `SECRET` type label added to GitHub comment, inline annotation, and SARIF output formatters
 
+### Added — v0.5: DORA Metrics
+- DORA-style metrics tracking for conflict resolution: merge frequency, conflict rate, resolution times, and MTTRC
+- `PRState` enum and `state`/`merged_at`/`closed_at` fields on `PRInfo` — populated by all three SCM clients (GitHub, GitLab, Bitbucket)
+- `MetricsConfig` model with `enabled`, `retention_days`, and `time_windows` settings
+- `MetricsSnapshot`, `DORAMetrics`, `DORAReport` models for metrics data
+- `MetricsStore` — SQLite-backed storage for conflict snapshots with upsert, resolve, query, and pruning
+- `record_analysis()` and `record_resolution()` functions in metrics engine
+- `compute_dora_metrics()` — computes merge count, merges/day, conflict rate, mean/median/p90 resolution time, MTTRC, and unresolved count per time window
+- `merged` field on `WebhookEvent` — populated from GitHub (`pr.merged`), GitLab (`action == "merge"`), Bitbucket (`event_key == "pullrequest:fulfilled"`)
+- Webhook integration: snapshots recorded after analysis, resolutions recorded on CLOSED events
+- Engine integration: snapshots recorded after `analyze_pr()` in both CLI and webhook flows
+- `mergeguard metrics` CLI command with `--window`, `--format terminal|json|html` options
+- REST endpoint `GET /api/metrics/dora/{owner}/{repo}` with configurable time windows
+- Self-contained HTML report with Chart.js visualizations: summary cards, merge frequency chart, resolution time distribution, full metrics table
+
 ### Added — v0.5: Policy Engine
 - Declarative policy engine with conditions-and-actions system for automated merge workflow decisions
 - `PolicyConditionOp` enum: `gte`, `lte`, `eq`, `gt`, `lt`, `contains` (set membership), `matches` (glob patterns)

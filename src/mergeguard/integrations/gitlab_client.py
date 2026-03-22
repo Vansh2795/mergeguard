@@ -333,6 +333,23 @@ class GitLabClient:
 
         labels = mr.get("labels", [])
 
+        from mergeguard.models import PRState
+
+        mr_state_str = mr.get("state", "opened")
+        if mr_state_str == "merged":
+            state = PRState.MERGED
+        elif mr_state_str == "closed":
+            state = PRState.CLOSED
+        else:
+            state = PRState.OPEN
+
+        merged_at = None
+        if mr.get("merged_at"):
+            merged_at = datetime.fromisoformat(mr["merged_at"].replace("Z", "+00:00"))
+        closed_at = None
+        if mr.get("closed_at"):
+            closed_at = datetime.fromisoformat(mr["closed_at"].replace("Z", "+00:00"))
+
         return PRInfo(
             number=mr["iid"],
             title=mr["title"],
@@ -343,6 +360,9 @@ class GitLabClient:
             is_fork=is_fork,
             created_at=created_at,
             updated_at=updated_at,
+            state=state,
+            merged_at=merged_at,
+            closed_at=closed_at,
             labels=labels,
             description=mr.get("description") or "",
         )

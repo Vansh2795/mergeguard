@@ -1027,6 +1027,110 @@ def scan_secrets_cmd(
 
 
 @main.command()
+@click.option("--repo", "-r", callback=_validate_repo, help="Repo (owner/repo).")
+@click.option("--token", "-t", envvar=["GITHUB_TOKEN", "GITLAB_TOKEN"])
+@click.option("--config", "-c", default=".mergeguard.yml", help="Config file path.")
+@click.option(
+    "--window",
+    "-w",
+    "windows",
+    multiple=True,
+    type=int,
+    help="Time window in days (can specify multiple). Defaults to 7, 30, 90.",
+)
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["terminal", "json", "html"]),
+    default="terminal",
+)
+@click.pass_context
+def metrics(
+    ctx: click.Context,
+    repo: str | None,
+    token: str | None,
+    config: str,
+    windows: tuple[int, ...],
+    output_format: str,
+) -> None:
+    """Show DORA metrics for conflict resolution tracking."""
+    repo = _auto_detect_repo(repo)
+
+    from mergeguard.config import load_config
+    from mergeguard.core.metrics import compute_dora_metrics
+
+    cfg = load_config(config)
+    if not cfg.metrics.enabled:
+        console.print("[yellow]Metrics tracking is not enabled in config.[/yellow]")
+        console.print("[dim]Add 'metrics.enabled: true' to .mergeguard.yml[/dim]")
+        return
+
+    time_windows = list(windows) if windows else cfg.metrics.time_windows
+
+    with console.status("[bold blue]Computing DORA metrics...", spinner="dots"):
+        report = compute_dora_metrics(repo, time_windows)
+
+    if output_format == "json":
+        click.echo(report.model_dump_json(indent=2))
+        return
+
+    if output_format == "html":
+        from mergeguard.output.metrics_html import format_metrics_html
+
+        click.echo(format_metrics_html(report))
+        return
+
+    # Terminal output
+    for window in report.windows:
+        table = Table(title=f"DORA Metrics — {repo} ({window.window_days}d window)")
+        table.add_column("Metric", style="bold")
+        table.add_column("Value", justify="right")
+
+        # Merge frequency
+        table.add_row("Merge Count", str(window.merge_count))
+        table.add_row("Merges/Day", f"{window.merges_per_day:.2f}")
+
+        # Conflict rate
+        rate_pct = window.conflict_rate * 100
+        rate_color = "green" if rate_pct < 20 else "yellow" if rate_pct < 50 else "red"
+        table.add_row(
+            "Conflict Rate",
+            f"[{rate_color}]{rate_pct:.1f}%[/{rate_color}]",
+        )
+        table.add_row("PRs Analyzed", str(window.total_prs_analyzed))
+        table.add_row("PRs w/ Conflicts", str(window.prs_with_conflicts))
+
+        # Resolution times
+        mean_h = window.mean_resolution_time_hours
+        mean_color = "green" if mean_h < 24 else "yellow" if mean_h < 72 else "red"
+        table.add_row(
+            "Mean Resolution",
+            f"[{mean_color}]{mean_h:.1f}h[/{mean_color}]",
+        )
+        table.add_row("Median Resolution", f"{window.median_resolution_time_hours:.1f}h")
+        table.add_row("P90 Resolution", f"{window.p90_resolution_time_hours:.1f}h")
+
+        # MTTRC
+        mttrc_h = window.mttrc_hours
+        mttrc_color = "green" if mttrc_h < 24 else "yellow" if mttrc_h < 72 else "red"
+        table.add_row(
+            "MTTRC",
+            f"[{mttrc_color}]{mttrc_h:.1f}h[/{mttrc_color}]",
+        )
+
+        # Unresolved
+        uc = window.unresolved_count
+        unresolved_color = "green" if uc == 0 else "yellow" if uc < 5 else "red"
+        table.add_row(
+            "Unresolved",
+            f"[{unresolved_color}]{window.unresolved_count}[/{unresolved_color}]",
+        )
+
+        console.print(table)
+        console.print()
+
+
+@main.command()
 @click.pass_context
 def init(ctx: click.Context) -> None:
     """Interactive setup wizard — generates a .mergeguard.yml config."""
