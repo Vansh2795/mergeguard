@@ -230,6 +230,11 @@ def main(
 @click.option("--secrets/--no-secrets", default=None, help="Enable/disable secret scanning.")
 @click.option("--max-prs", type=int, default=None, help="Max open PRs to scan (overrides config).")
 @click.option("--max-pr-age", type=int, default=None, help="Max PR age in days (overrides config).")
+@click.option(
+    "--exit-code/--no-exit-code",
+    default=False,
+    help="Exit non-zero on conflicts (1=any, 2=critical).",
+)
 @click.pass_context
 def analyze(
     ctx: click.Context,
@@ -246,6 +251,7 @@ def analyze(
     secrets: bool | None,
     max_prs: int | None,
     max_pr_age: int | None,
+    exit_code: bool,
 ) -> None:
     """Analyze a PR for cross-PR conflicts."""
     platform = ctx.obj.get("platform", "auto")
@@ -337,6 +343,9 @@ def analyze(
                 console.print(
                     "[yellow]\u26a0 Inline annotations failed (missing permissions?)[/yellow]"
                 )
+
+    if exit_code and report.conflicts:
+        raise SystemExit(2 if report.has_critical else 1)
 
 
 @main.command()

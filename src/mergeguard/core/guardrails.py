@@ -195,7 +195,8 @@ def _check_max_function_lines(
     violations: list[Conflict] = []
     matching_set = set(matching_files)
     max_lines = rule.max_function_lines
-    assert max_lines is not None
+    if max_lines is None:
+        raise ValueError("max_function_lines required")
 
     for cs in pr.changed_symbols:
         if cs.symbol.file_path not in matching_set:
@@ -232,7 +233,8 @@ def _check_max_cyclomatic_complexity(
     violations: list[Conflict] = []
     matching_set = set(matching_files)
     max_complexity = rule.max_cyclomatic_complexity
-    assert max_complexity is not None
+    if max_complexity is None:
+        raise ValueError("max_cyclomatic_complexity required")
 
     for cs in pr.changed_symbols:
         if cs.symbol.file_path not in matching_set:

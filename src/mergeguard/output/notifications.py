@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import ipaddress
 import logging
+import socket
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -11,6 +14,46 @@ if TYPE_CHECKING:
     from mergeguard.models import Conflict, ConflictReport
 
 logger = logging.getLogger(__name__)
+
+_ALLOWED_SCHEMES = {"https"}
+_BLOCKED_NETWORKS = [
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),
+    ipaddress.ip_network("fe80::/10"),
+]
+
+
+def _validate_webhook_url(url: str) -> None:
+    """Raise ValueError if URL targets internal/private networks."""
+    parsed = urlparse(url)
+    if parsed.scheme not in _ALLOWED_SCHEMES:
+        raise ValueError(f"Webhook URL must use HTTPS (got {parsed.scheme!r})")
+    hostname = parsed.hostname or ""
+    try:
+        addr = ipaddress.ip_address(hostname)
+        for net in _BLOCKED_NETWORKS:
+            if addr in net:
+                raise ValueError(f"Webhook URL targets private network: {hostname}")
+    except ValueError as e:
+        if "private network" in str(e) or "HTTPS" in str(e):
+            raise
+        # hostname is a DNS name, not a raw IP — resolve and check
+        try:
+            for _, _, _, _, sockaddr in socket.getaddrinfo(hostname, None):
+                addr = ipaddress.ip_address(sockaddr[0])
+                for net in _BLOCKED_NETWORKS:
+                    if addr in net:
+                        raise ValueError(
+                            f"Webhook URL {hostname} resolves to private address {sockaddr[0]}"
+                        )
+        except socket.gaierror:
+            pass  # DNS resolution failure — let httpx handle it
+
 
 _SEVERITY_EMOJI = {
     "critical": ":red_circle:",
@@ -121,6 +164,7 @@ def notify_slack(
     payload = {"blocks": blocks}
 
     try:
+        _validate_webhook_url(webhook_url)
         resp = httpx.post(webhook_url, json=payload, timeout=10.0)
         resp.raise_for_status()
         return True
@@ -217,6 +261,7 @@ def notify_teams(
     }
 
     try:
+        _validate_webhook_url(webhook_url)
         resp = httpx.post(webhook_url, json=card, timeout=10.0)
         resp.raise_for_status()
         return True
@@ -318,6 +363,7 @@ def notify_slack_per_team(
             )
 
         try:
+            _validate_webhook_url(webhook)
             resp = httpx.post(webhook, json={"blocks": blocks}, timeout=10.0)
             resp.raise_for_status()
             results[team] = True

@@ -6,11 +6,14 @@ MergeGuardConfig defaults when no config file is present.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import yaml
 
 from mergeguard.models import MergeGuardConfig
+
+logger = logging.getLogger(__name__)
 
 
 def load_config(config_path: str = ".mergeguard.yml") -> MergeGuardConfig:
@@ -33,5 +36,9 @@ def load_config(config_path: str = ".mergeguard.yml") -> MergeGuardConfig:
 
     if not raw or not isinstance(raw, dict):
         return MergeGuardConfig()
+
+    if "github_url" in raw:
+        logger.warning("github_url in config file is ignored (use MERGEGUARD_GITHUB_URL env var)")
+        raw.pop("github_url")
 
     return MergeGuardConfig(**raw)

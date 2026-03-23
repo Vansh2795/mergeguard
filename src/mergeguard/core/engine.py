@@ -182,7 +182,8 @@ class MergeGuardEngine:
         if client is not None:
             self._client = client
         else:
-            assert token is not None, "token is required when no client is provided"
+            if token is None:
+                raise ValueError("token is required when no client is provided")
             self._client = GitHubClient(token, repo_full_name)
         self._config = config if config is not None else MergeGuardConfig()
         self._repo_full_name = repo_full_name

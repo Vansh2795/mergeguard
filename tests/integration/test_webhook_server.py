@@ -14,17 +14,33 @@ from httpx import ASGITransport, AsyncClient  # noqa: E402
 
 from mergeguard.server.webhook import app, lifespan  # noqa: E402
 
+# ── Test secrets & signing helpers ──────────────────────────────────
+
+_GH_SECRET = "test-gh-secret"
+_GL_SECRET = "test-gl-secret"
+_BB_SECRET = "test-bb-secret"
+
+
+def _sign_github(payload: bytes, secret: str) -> str:
+    """Compute GitHub HMAC-SHA256 signature."""
+    return "sha256=" + hmac.new(secret.encode(), payload, hashlib.sha256).hexdigest()
+
+
+def _sign_bitbucket(payload: bytes, secret: str) -> str:
+    """Compute Bitbucket HMAC-SHA256 signature."""
+    return "sha256=" + hmac.new(secret.encode(), payload, hashlib.sha256).hexdigest()
+
 
 @pytest.fixture
-def _no_webhook_secrets(monkeypatch):
-    """Clear webhook secrets so signature checks are skipped."""
-    monkeypatch.delenv("MERGEGUARD_WEBHOOK_SECRET_GITHUB", raising=False)
-    monkeypatch.delenv("MERGEGUARD_WEBHOOK_SECRET_GITLAB", raising=False)
-    monkeypatch.delenv("MERGEGUARD_WEBHOOK_SECRET_BITBUCKET", raising=False)
+def _webhook_secrets(monkeypatch):
+    """Set webhook secrets for all platforms."""
+    monkeypatch.setenv("MERGEGUARD_WEBHOOK_SECRET_GITHUB", _GH_SECRET)
+    monkeypatch.setenv("MERGEGUARD_WEBHOOK_SECRET_GITLAB", _GL_SECRET)
+    monkeypatch.setenv("MERGEGUARD_WEBHOOK_SECRET_BITBUCKET", _BB_SECRET)
 
 
 @pytest.fixture
-async def client(_no_webhook_secrets):
+async def client(_webhook_secrets):
     """Async httpx client with lifespan initialized."""
     async with lifespan(app):
         transport = ASGITransport(app=app)
@@ -67,10 +83,16 @@ class TestGitHubWebhook:
 
     @pytest.mark.asyncio
     async def test_pr_opened_queues_analysis(self, client):
+        payload = json.dumps(self._github_payload("opened")).encode()
+        sig = _sign_github(payload, _GH_SECRET)
         resp = await client.post(
             "/webhooks/github",
-            json=self._github_payload("opened"),
-            headers={"x-github-event": "pull_request"},
+            content=payload,
+            headers={
+                "x-github-event": "pull_request",
+                "x-hub-signature-256": sig,
+                "content-type": "application/json",
+            },
         )
         assert resp.status_code == 200
         assert resp.json()["status"] == "queued"
@@ -78,20 +100,26 @@ class TestGitHubWebhook:
 
     @pytest.mark.asyncio
     async def test_push_event_ignored(self, client):
+        payload = json.dumps({"ref": "refs/heads/main"}).encode()
+        sig = _sign_github(payload, _GH_SECRET)
         resp = await client.post(
             "/webhooks/github",
-            json={"ref": "refs/heads/main"},
-            headers={"x-github-event": "push"},
+            content=payload,
+            headers={
+                "x-github-event": "push",
+                "x-hub-signature-256": sig,
+                "content-type": "application/json",
+            },
         )
         assert resp.status_code == 200
         assert resp.json()["status"] == "ignored"
 
     @pytest.mark.asyncio
-    async def test_invalid_signature_rejected(self, client, monkeypatch):
-        monkeypatch.setenv("MERGEGUARD_WEBHOOK_SECRET_GITHUB", "real-secret")
+    async def test_invalid_signature_rejected(self, client):
+        payload = json.dumps(self._github_payload()).encode()
         resp = await client.post(
             "/webhooks/github",
-            content=json.dumps(self._github_payload()).encode(),
+            content=payload,
             headers={
                 "x-github-event": "pull_request",
                 "x-hub-signature-256": "sha256=invalid",
@@ -101,11 +129,9 @@ class TestGitHubWebhook:
         assert resp.status_code == 401
 
     @pytest.mark.asyncio
-    async def test_valid_signature_accepted(self, client, monkeypatch):
-        secret = "test-secret"
-        monkeypatch.setenv("MERGEGUARD_WEBHOOK_SECRET_GITHUB", secret)
+    async def test_valid_signature_accepted(self, client):
         payload = json.dumps(self._github_payload()).encode()
-        sig = "sha256=" + hmac.new(secret.encode(), payload, hashlib.sha256).hexdigest()
+        sig = _sign_github(payload, _GH_SECRET)
         resp = await client.post(
             "/webhooks/github",
             content=payload,
@@ -136,10 +162,16 @@ class TestGitHubMergeGroupWebhook:
 
     @pytest.mark.asyncio
     async def test_merge_group_queued(self, client):
+        payload = json.dumps(self._merge_group_payload()).encode()
+        sig = _sign_github(payload, _GH_SECRET)
         resp = await client.post(
             "/webhooks/github",
-            json=self._merge_group_payload(),
-            headers={"x-github-event": "merge_group"},
+            content=payload,
+            headers={
+                "x-github-event": "merge_group",
+                "x-hub-signature-256": sig,
+                "content-type": "application/json",
+            },
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -166,14 +198,16 @@ class TestGitLabWebhook:
         resp = await client.post(
             "/webhooks/gitlab",
             json=self._gitlab_payload(),
-            headers={"x-gitlab-event": "Merge Request Hook"},
+            headers={
+                "x-gitlab-event": "Merge Request Hook",
+                "x-gitlab-token": _GL_SECRET,
+            },
         )
         assert resp.status_code == 200
         assert resp.json()["status"] == "queued"
 
     @pytest.mark.asyncio
-    async def test_invalid_token_rejected(self, client, monkeypatch):
-        monkeypatch.setenv("MERGEGUARD_WEBHOOK_SECRET_GITLAB", "real-token")
+    async def test_invalid_token_rejected(self, client):
         resp = await client.post(
             "/webhooks/gitlab",
             json=self._gitlab_payload(),
@@ -199,20 +233,87 @@ class TestBitbucketWebhook:
 
     @pytest.mark.asyncio
     async def test_pr_created_queues_analysis(self, client):
+        payload = json.dumps(self._bb_payload()).encode()
+        sig = _sign_bitbucket(payload, _BB_SECRET)
         resp = await client.post(
             "/webhooks/bitbucket",
-            json=self._bb_payload(),
-            headers={"x-event-key": "pullrequest:created"},
+            content=payload,
+            headers={
+                "x-event-key": "pullrequest:created",
+                "x-hub-signature": sig,
+                "content-type": "application/json",
+            },
         )
         assert resp.status_code == 200
         assert resp.json()["status"] == "queued"
 
     @pytest.mark.asyncio
     async def test_push_event_ignored(self, client):
+        payload = json.dumps({"push": {}}).encode()
+        sig = _sign_bitbucket(payload, _BB_SECRET)
         resp = await client.post(
             "/webhooks/bitbucket",
-            json={"push": {}},
-            headers={"x-event-key": "repo:push"},
+            content=payload,
+            headers={
+                "x-event-key": "repo:push",
+                "x-hub-signature": sig,
+                "content-type": "application/json",
+            },
         )
         assert resp.status_code == 200
         assert resp.json()["status"] == "ignored"
+
+
+class TestMissingSecretReturns403:
+    """Endpoints must reject with 403 when webhook secret is not configured."""
+
+    @pytest.mark.asyncio
+    async def test_github_no_secret_returns_403(self, monkeypatch):
+        monkeypatch.delenv("MERGEGUARD_WEBHOOK_SECRET_GITHUB", raising=False)
+        monkeypatch.setenv("MERGEGUARD_WEBHOOK_SECRET_GITLAB", _GL_SECRET)
+        monkeypatch.setenv("MERGEGUARD_WEBHOOK_SECRET_BITBUCKET", _BB_SECRET)
+        async with lifespan(app):
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as c:
+                resp = await c.post(
+                    "/webhooks/github",
+                    content=b'{"action":"opened"}',
+                    headers={
+                        "x-github-event": "pull_request",
+                        "content-type": "application/json",
+                    },
+                )
+                assert resp.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_gitlab_no_secret_returns_403(self, monkeypatch):
+        monkeypatch.setenv("MERGEGUARD_WEBHOOK_SECRET_GITHUB", _GH_SECRET)
+        monkeypatch.delenv("MERGEGUARD_WEBHOOK_SECRET_GITLAB", raising=False)
+        monkeypatch.setenv("MERGEGUARD_WEBHOOK_SECRET_BITBUCKET", _BB_SECRET)
+        async with lifespan(app):
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as c:
+                resp = await c.post(
+                    "/webhooks/gitlab",
+                    json={"object_attributes": {"action": "open"}},
+                    headers={"x-gitlab-event": "Merge Request Hook"},
+                )
+                assert resp.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_bitbucket_no_secret_returns_403(self, monkeypatch):
+        monkeypatch.setenv("MERGEGUARD_WEBHOOK_SECRET_GITHUB", _GH_SECRET)
+        monkeypatch.setenv("MERGEGUARD_WEBHOOK_SECRET_GITLAB", _GL_SECRET)
+        monkeypatch.delenv("MERGEGUARD_WEBHOOK_SECRET_BITBUCKET", raising=False)
+        async with lifespan(app):
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as c:
+                resp = await c.post(
+                    "/webhooks/bitbucket",
+                    content=b'{"pullrequest":{}}',
+                    headers={
+                        "x-event-key": "pullrequest:created",
+                        "content-type": "application/json",
+                    },
+                )
+                assert resp.status_code == 403

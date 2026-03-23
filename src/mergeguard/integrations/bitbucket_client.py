@@ -47,10 +47,21 @@ class BitbucketClient:
             f"https://api.bitbucket.org/2.0/repositories/{self._workspace}/{self._repo_slug}"
         )
         self._http = httpx.Client(
+            transport=httpx.HTTPTransport(retries=3),
             auth=(username, app_password),
             headers={"Accept": "application/json"},
             timeout=30.0,
         )
+
+    def close(self) -> None:
+        """Close the underlying HTTP client."""
+        self._http.close()
+
+    def __enter__(self) -> BitbucketClient:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
 
     # ── Public API (SCMClient protocol) ──
 
@@ -320,7 +331,7 @@ class BitbucketClient:
                         remaining,
                         wait,
                     )
-                    time.sleep(min(wait, 300))
+                    time.sleep(min(wait, 30))
 
     def _pr_to_info(self, pr: dict[str, Any]) -> PRInfo:
         """Convert a Bitbucket PR JSON dict to PRInfo."""

@@ -9,7 +9,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 # ──────────────────────────────────────────────
 # Enums
@@ -386,6 +386,15 @@ class PolicyAction(BaseModel):
     message: str = ""
     status_state: str = "failure"
     status_context: str = "mergeguard/policy"
+
+    @field_validator("webhook_url")
+    @classmethod
+    def _check_webhook_url(cls, v: str) -> str:
+        if v:
+            from mergeguard.output.notifications import _validate_webhook_url
+
+            _validate_webhook_url(v)
+        return v
 
 
 class PolicyRule(BaseModel):

@@ -54,9 +54,24 @@ class GitHubClient:
         self._repo = self._gh.get_repo(repo_full_name)
         self._api_base = f"{base_url.rstrip('/')}/api/v3" if base_url else "https://api.github.com"
         self._http = httpx.Client(
-            headers={"Accept": "application/vnd.github.v3+json"},
+            transport=httpx.HTTPTransport(retries=3),
+            headers={
+                "Accept": "application/vnd.github.v3+json",
+                "Authorization": f"token {token}",
+            },
             timeout=float(timeout),
         )
+
+    def close(self) -> None:
+        """Close the underlying HTTP clients."""
+        self._http.close()
+        self._gh.close()
+
+    def __enter__(self) -> GitHubClient:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
 
     def get_open_prs(self, max_count: int = 200, max_age_days: int | None = None) -> list[PRInfo]:
         """Fetch open PRs with metadata, filtered by age and capped by count.
@@ -122,10 +137,7 @@ class GitHubClient:
         url = f"{self._api_base}/repos/{self._repo.full_name}/pulls/{pr_number}"
         resp = self._http.get(
             url,
-            headers={
-                "Accept": "application/vnd.github.v3.diff",
-                "Authorization": f"token {self._token}",
-            },
+            headers={"Accept": "application/vnd.github.v3.diff"},
         )
         resp.raise_for_status()
         self._check_httpx_rate_limit(resp)
@@ -253,7 +265,7 @@ class GitHubClient:
                 wait = max(0, int(reset_ts) - int(time.time()) + 1)
                 if wait > 0:
                     logger.warning("Rate limit low (%s remaining), sleeping %ds", remaining, wait)
-                    time.sleep(min(wait, 300))
+                    time.sleep(min(wait, 30))
 
     def _pr_to_info(self, pr: GHPullRequest) -> PRInfo:
         is_fork = False

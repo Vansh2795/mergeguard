@@ -12,7 +12,7 @@ REPO_FULL_NAME=$(jq -r '.repository.full_name' "$GITHUB_EVENT_PATH")
 # Global options (before subcommand)
 GLOBAL_OPTS="--platform github"
 if [ -n "${MERGEGUARD_GITHUB_URL:-}" ]; then
-  GLOBAL_OPTS="$GLOBAL_OPTS --github-url $MERGEGUARD_GITHUB_URL"
+  GLOBAL_OPTS="$GLOBAL_OPTS --github-url ${MERGEGUARD_GITHUB_URL}"
 fi
 
 # ── Merge group event handling ──────────────────────────────────────
@@ -33,11 +33,13 @@ if [ "${GITHUB_EVENT_NAME:-}" = "merge_group" ]; then
 
   post_status() {
     local sha="$1" state="$2" description="$3"
+    payload=$(jq -n --arg s "$state" --arg d "${description:0:140}" --arg c "$STATUS_CONTEXT" \
+      '{state:$s, description:$d, context:$c}')
     curl -s -X POST \
       -H "Authorization: token $GITHUB_TOKEN" \
       -H "Accept: application/vnd.github.v3+json" \
       "$API_URL/repos/$REPO_FULL_NAME/statuses/$sha" \
-      -d "{\"state\":\"$state\",\"description\":\"${description:0:140}\",\"context\":\"$STATUS_CONTEXT\"}" \
+      -d "$payload" \
       >/dev/null
   }
 
@@ -52,7 +54,7 @@ if [ "${GITHUB_EVENT_NAME:-}" = "merge_group" ]; then
   for PR_NUM in $PR_NUMBERS; do
     ANALYZE_OPTS="--repo $REPO_FULL_NAME --pr $PR_NUM --format json"
     if [ -n "${MERGEGUARD_CONFIG_PATH:-}" ]; then
-      ANALYZE_OPTS="$ANALYZE_OPTS --config $MERGEGUARD_CONFIG_PATH"
+      ANALYZE_OPTS="$ANALYZE_OPTS --config ${MERGEGUARD_CONFIG_PATH}"
     fi
     REPORT=$(mergeguard $GLOBAL_OPTS analyze $ANALYZE_OPTS 2>/dev/null || echo '{"conflicts":[]}')
     CONFLICT_COUNT=$(echo "$REPORT" | jq -r '.conflicts | length')
@@ -76,7 +78,7 @@ PR_NUMBER=$(jq -r '.pull_request.number' "$GITHUB_EVENT_PATH")
 # Subcommand options
 ANALYZE_OPTS="--repo $REPO_FULL_NAME --pr $PR_NUMBER --format json"
 if [ -n "${MERGEGUARD_CONFIG_PATH:-}" ]; then
-  ANALYZE_OPTS="$ANALYZE_OPTS --config $MERGEGUARD_CONFIG_PATH"
+  ANALYZE_OPTS="$ANALYZE_OPTS --config ${MERGEGUARD_CONFIG_PATH}"
 fi
 
 # Run MergeGuard and capture JSON output
@@ -125,11 +127,13 @@ if [ "${MERGEGUARD_MERGE_QUEUE:-false}" = "true" ]; then
     STATUS_DESC="No cross-PR conflicts detected"
   fi
 
+  payload=$(jq -n --arg s "$STATUS_STATE" --arg d "${STATUS_DESC:0:140}" --arg c "$STATUS_CONTEXT" \
+    '{state:$s, description:$d, context:$c}')
   curl -s -X POST \
     -H "Authorization: token $GITHUB_TOKEN" \
     -H "Accept: application/vnd.github.v3+json" \
     "$API_URL/repos/$REPO_FULL_NAME/statuses/$HEAD_SHA" \
-    -d "{\"state\":\"$STATUS_STATE\",\"description\":\"${STATUS_DESC:0:140}\",\"context\":\"$STATUS_CONTEXT\"}" \
+    -d "$payload" \
     >/dev/null
 fi
 

@@ -54,6 +54,10 @@ class AnalysisQueue:
         self._pending: dict[str, AnalysisTask] = {}  # repo:pr -> latest task
         self._worker_task: asyncio.Task | None = None  # type: ignore[type-arg]
         self._shutting_down = False
+        self._failure_counts: dict[str, int] = defaultdict(int)
+        self._circuit_open_until: dict[str, float] = {}
+        self._CIRCUIT_THRESHOLD = 5
+        self._CIRCUIT_COOLDOWN = 300.0  # 5 minutes
 
     async def start(self) -> None:
         """Start the background worker."""
@@ -111,6 +115,17 @@ class AnalysisQueue:
             if elapsed < self._cooldown:
                 await asyncio.sleep(self._cooldown - elapsed)
 
+            # Circuit breaker: skip if repo is in cooldown
+            if repo in self._circuit_open_until:
+                if time.monotonic() < self._circuit_open_until[repo]:
+                    logger.warning("Circuit open for %s — skipping", repo)
+                    self._queue.task_done()
+                    continue
+                else:
+                    del self._circuit_open_until[repo]
+                    self._failure_counts[repo] = 0
+                    logger.info("Circuit closed for %s — resuming", repo)
+
             self._last_run[repo] = time.monotonic()
             del self._pending[key]
 
@@ -121,6 +136,7 @@ class AnalysisQueue:
                 duration = time.monotonic() - start
                 metrics.analysis_duration.observe(duration)
                 metrics.analyses_completed.inc()
+                self._failure_counts[repo] = 0
                 event_label = (
                     f"merge_group:{event.head_sha[:8]}"
                     if isinstance(event, MergeGroupEvent)
@@ -134,6 +150,14 @@ class AnalysisQueue:
                 )
             except Exception:
                 metrics.analyses_failed.inc()
+                self._failure_counts[repo] += 1
+                if self._failure_counts[repo] >= self._CIRCUIT_THRESHOLD:
+                    self._circuit_open_until[repo] = time.monotonic() + self._CIRCUIT_COOLDOWN
+                    logger.error(
+                        "Circuit opened for %s after %d consecutive failures",
+                        repo,
+                        self._failure_counts[repo],
+                    )
                 event_label = (
                     f"merge_group:{event.head_sha[:8]}"
                     if isinstance(event, MergeGroupEvent)

@@ -45,12 +45,23 @@ class GitLabClient:
         self._encoded_project = urllib.parse.quote(project_path, safe="")
         self._base_url = f"{self._gitlab_url}/api/v4/projects/{self._encoded_project}"
         self._http = httpx.Client(
+            transport=httpx.HTTPTransport(retries=3),
             headers={
                 "PRIVATE-TOKEN": token,
                 "Accept": "application/json",
             },
             timeout=30.0,
         )
+
+    def close(self) -> None:
+        """Close the underlying HTTP client."""
+        self._http.close()
+
+    def __enter__(self) -> GitLabClient:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
 
     # ── Public API (SCMClient protocol) ──
 
@@ -305,7 +316,7 @@ class GitLabClient:
                         remaining,
                         wait,
                     )
-                    time.sleep(min(wait, 300))
+                    time.sleep(min(wait, 30))
 
     def _get_all_diffs(self, mr_iid: int) -> list[dict[str, Any]]:
         """Fetch all diff entries for an MR, handling pagination."""

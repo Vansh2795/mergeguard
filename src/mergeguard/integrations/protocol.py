@@ -31,6 +31,8 @@ class ReviewComment:
 class SCMClient(Protocol):
     """Protocol for source-code management platform clients."""
 
+    def close(self) -> None: ...
+
     def get_open_prs(
         self, max_count: int = 200, max_age_days: int | None = None
     ) -> list[PRInfo]: ...
