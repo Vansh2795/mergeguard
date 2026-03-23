@@ -266,6 +266,14 @@ class GitHubClient:
         now = datetime.now(UTC)
         created = pr.created_at if pr.created_at is not None else now
         updated = pr.updated_at if pr.updated_at is not None else now
+        from mergeguard.models import PRState
+
+        state = PRState.OPEN
+        if pr.merged:
+            state = PRState.MERGED
+        elif pr.state == "closed":
+            state = PRState.CLOSED
+
         return PRInfo(
             number=pr.number,
             title=pr.title,
@@ -276,6 +284,9 @@ class GitHubClient:
             is_fork=is_fork,
             created_at=created,
             updated_at=updated,
+            state=state,
+            merged_at=pr.merged_at,
+            closed_at=pr.closed_at,
             labels=[label.name for label in pr.labels],
             description=pr.body or "",
         )

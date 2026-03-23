@@ -53,6 +53,12 @@ class FileChangeStatus(StrEnum):
     RENAMED = "renamed"
 
 
+class PRState(StrEnum):
+    OPEN = "open"
+    MERGED = "merged"
+    CLOSED = "closed"
+
+
 class AIAttribution(StrEnum):
     HUMAN = "human"
     AI_CONFIRMED = "ai_confirmed"  # Agent Trace or commit metadata
@@ -135,6 +141,9 @@ class PRInfo(BaseModel):
     is_fork: bool = False
     created_at: datetime
     updated_at: datetime
+    state: PRState = PRState.OPEN
+    merged_at: datetime | None = None
+    closed_at: datetime | None = None
     labels: list[str] = Field(default_factory=list)
     description: str = ""
 
@@ -438,6 +447,54 @@ class SecretsConfig(BaseModel):
     allowlist: list[str] = Field(default_factory=list)
 
 
+class MetricsConfig(BaseModel):
+    """Configuration for DORA metrics tracking."""
+
+    enabled: bool = False
+    retention_days: int = 90
+    time_windows: list[int] = Field(default_factory=lambda: [7, 30, 90])
+
+
+class MetricsSnapshot(BaseModel):
+    """A single snapshot of a PR's conflict state at analysis time."""
+
+    pr_number: int
+    repo: str
+    analyzed_at: datetime
+    risk_score: float
+    conflict_count: int
+    severity_max: str  # "critical" | "warning" | "info" | "none"
+    resolved_at: datetime | None = None
+    resolution_type: str | None = None  # "merged" | "closed"
+
+
+class DORAMetrics(BaseModel):
+    """DORA-style metrics for a single time window."""
+
+    window_days: int
+    period_start: datetime
+    period_end: datetime
+    merge_count: int = 0
+    merges_per_day: float = 0.0
+    total_prs_analyzed: int = 0
+    prs_with_conflicts: int = 0
+    conflict_rate: float = 0.0
+    resolution_times_hours: list[float] = Field(default_factory=list)
+    mean_resolution_time_hours: float = 0.0
+    median_resolution_time_hours: float = 0.0
+    p90_resolution_time_hours: float = 0.0
+    mttrc_hours: float = 0.0
+    unresolved_count: int = 0
+
+
+class DORAReport(BaseModel):
+    """Aggregate DORA metrics report across multiple time windows."""
+
+    repo: str
+    generated_at: datetime
+    windows: list[DORAMetrics] = Field(default_factory=list)
+
+
 class MergeGuardConfig(BaseModel):
     """Configuration loaded from .mergeguard.yml."""
 
@@ -478,3 +535,4 @@ class MergeGuardConfig(BaseModel):
     stacked_prs: StackedPRConfig = Field(default_factory=StackedPRConfig)
     policy: PolicyConfig = Field(default_factory=PolicyConfig)
     secrets: SecretsConfig = Field(default_factory=SecretsConfig)
+    metrics: MetricsConfig = Field(default_factory=MetricsConfig)

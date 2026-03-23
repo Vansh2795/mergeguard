@@ -340,6 +340,22 @@ class BitbucketClient:
             "display_name", ""
         )
 
+        from mergeguard.models import PRState
+
+        bb_state = pr.get("state", "OPEN").upper()
+        if bb_state == "MERGED":
+            state = PRState.MERGED
+            merged_at = updated_at  # Bitbucket uses updated_on as merge timestamp
+            closed_at = updated_at
+        elif bb_state == "DECLINED":
+            state = PRState.CLOSED
+            merged_at = None
+            closed_at = updated_at
+        else:
+            state = PRState.OPEN
+            merged_at = None
+            closed_at = None
+
         return PRInfo(
             number=pr["id"],
             title=pr["title"],
@@ -350,6 +366,9 @@ class BitbucketClient:
             is_fork=is_fork,
             created_at=created_at,
             updated_at=updated_at,
+            state=state,
+            merged_at=merged_at,
+            closed_at=closed_at,
             labels=[],  # Bitbucket Cloud PRs don't have labels
             description=pr.get("description") or "",
         )

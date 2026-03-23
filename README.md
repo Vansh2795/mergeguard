@@ -102,6 +102,11 @@ mergeguard policy-check --repo owner/repo --pr 42 --token $GITHUB_TOKEN --execut
 mergeguard scan-secrets --repo owner/repo --pr 42 --token $GITHUB_TOKEN
 mergeguard scan-secrets --repo owner/repo --pr 42 --token $GITHUB_TOKEN --format sarif
 
+# DORA metrics (conflict resolution tracking)
+mergeguard metrics --repo owner/repo
+mergeguard metrics --repo owner/repo --format json
+mergeguard metrics --repo owner/repo --format html -w 7 -w 30
+
 # Start webhook server for real-time analysis
 mergeguard serve --port 8000
 ```

@@ -100,6 +100,20 @@ class TestGitHubEventParsing:
         assert event is not None
         assert event.action == EventAction.CLOSED
 
+    def test_closed_merged_true(self):
+        payload = self._make_payload("closed")
+        payload["pull_request"]["merged"] = True
+        event = parse_github_event({"x-github-event": "pull_request"}, payload)
+        assert event is not None
+        assert event.merged is True
+
+    def test_closed_merged_false(self):
+        payload = self._make_payload("closed")
+        payload["pull_request"]["merged"] = False
+        event = parse_github_event({"x-github-event": "pull_request"}, payload)
+        assert event is not None
+        assert event.merged is False
+
     def test_ignored_event_type(self):
         event = parse_github_event({"x-github-event": "push"}, {"action": "opened"})
         assert event is None
@@ -195,6 +209,20 @@ class TestGitLabEventParsing:
         assert event is not None
         assert event.action == EventAction.UPDATED
 
+    def test_merge_sets_merged_true(self):
+        event = parse_gitlab_event(
+            {"x-gitlab-event": "Merge Request Hook"}, self._make_payload("merge")
+        )
+        assert event is not None
+        assert event.merged is True
+
+    def test_close_sets_merged_false(self):
+        event = parse_gitlab_event(
+            {"x-gitlab-event": "Merge Request Hook"}, self._make_payload("close")
+        )
+        assert event is not None
+        assert event.merged is False
+
     def test_ignored_event(self):
         event = parse_gitlab_event({"x-gitlab-event": "Push Hook"}, self._make_payload())
         assert event is None
@@ -230,6 +258,18 @@ class TestBitbucketEventParsing:
         )
         assert event is not None
         assert event.action == EventAction.CLOSED
+
+    def test_fulfilled_sets_merged_true(self):
+        event = parse_bitbucket_event(
+            {"x-event-key": "pullrequest:fulfilled"}, self._make_payload()
+        )
+        assert event is not None
+        assert event.merged is True
+
+    def test_rejected_sets_merged_false(self):
+        event = parse_bitbucket_event({"x-event-key": "pullrequest:rejected"}, self._make_payload())
+        assert event is not None
+        assert event.merged is False
 
     def test_ignored_event(self):
         event = parse_bitbucket_event({"x-event-key": "repo:push"}, self._make_payload())

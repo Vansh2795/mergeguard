@@ -426,6 +426,15 @@ class MergeGuardEngine:
             except (OSError, TypeError):
                 logger.debug("Failed to cache analysis result", exc_info=True)
 
+        # Record metrics snapshot for DORA tracking
+        if self._config.metrics.enabled and report.conflicts:
+            try:
+                from mergeguard.core.metrics import record_analysis
+
+                record_analysis(report, self._repo_full_name)
+            except Exception:
+                logger.debug("Failed to record metrics snapshot", exc_info=True)
+
         return report
 
     def analyze_pr_targeted(

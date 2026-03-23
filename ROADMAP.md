@@ -48,7 +48,7 @@ Focus: real-time workflows, inline developer experience, and deployment infrastr
 - :white_check_mark: **Stacked PR support** — Detect stacked PR groups, demote intra-stack conflicts, stack-aware merge ordering
 - :white_check_mark: **Blast radius visualization** — Interactive D3.js force-directed graph showing PR conflict topology with transitive blast radius and file-level dependency drill-down
 - :white_check_mark: **Policy engine** — Declarative conditions-and-actions system for automated merge policies based on conflict analysis
-- :calendar: **DORA metrics** — Track conflict resolution time and merge frequency
+- :white_check_mark: **DORA metrics** — Track conflict resolution time, merge frequency, conflict rate, and MTTRC across configurable time windows
 - :white_check_mark: **Secret scanning** — Detect accidentally committed secrets in PR diffs
 - :calendar: **Self-hosted runner** — On-prem deployment option
 - :calendar: **AI conflict resolution** — LLM-powered merge conflict resolution suggestions

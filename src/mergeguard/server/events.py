@@ -31,6 +31,7 @@ class WebhookEvent(BaseModel):
     head_sha: str
     base_branch: str
     sender: str  # username that triggered the event
+    merged: bool = False  # True if closed via merge
 
 
 class MergeGroupEvent(BaseModel):
@@ -115,6 +116,7 @@ def parse_github_event(
         head_sha=pr.get("head", {}).get("sha", ""),
         base_branch=pr.get("base", {}).get("ref", ""),
         sender=payload.get("sender", {}).get("login", ""),
+        merged=pr.get("merged", False),
     )
 
 
@@ -145,6 +147,7 @@ def parse_gitlab_event(headers: dict[str, str], payload: dict[str, Any]) -> Webh
         head_sha=attrs.get("last_commit", {}).get("id", ""),
         base_branch=attrs.get("target_branch", ""),
         sender=payload.get("user", {}).get("username", ""),
+        merged=attrs.get("action") == "merge",
     )
 
 
@@ -171,4 +174,5 @@ def parse_bitbucket_event(headers: dict[str, str], payload: dict[str, Any]) -> W
         head_sha=pr.get("source", {}).get("commit", {}).get("hash", ""),
         base_branch=pr.get("destination", {}).get("branch", {}).get("name", ""),
         sender=payload.get("actor", {}).get("username", ""),
+        merged=event_key == "pullrequest:fulfilled",
     )
