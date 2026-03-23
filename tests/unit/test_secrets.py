@@ -44,7 +44,7 @@ def _make_config(**kwargs) -> MergeGuardConfig:
 
 class TestSecretDetection:
     def test_detects_aws_access_key(self):
-        pr = _make_pr("@@ -1,2 +1,3 @@\n context\n+AWS_KEY = 'AKIAIOSFODNN7EXAMPLE'\n context")
+        pr = _make_pr("@@ -1,2 +1,3 @@\n context\n+AWS_KEY = 'AKIAI44QH8DHBR9MPVQZ'\n context")
         conflicts = scan_secrets(pr, _make_config())
         assert len(conflicts) >= 1
         aws = [c for c in conflicts if c.symbol_name == "AWS Access Key"]
@@ -126,18 +126,18 @@ class TestSecretDetection:
         assert len(aws) == 0
 
     def test_redacts_secret_in_description(self):
-        pr = _make_pr("@@ -1,2 +1,3 @@\n context\n+AWS_KEY = 'AKIAIOSFODNN7EXAMPLE'\n context")
+        pr = _make_pr("@@ -1,2 +1,3 @@\n context\n+AWS_KEY = 'AKIAI44QH8DHBR9MPVQZ'\n context")
         conflicts = scan_secrets(pr, _make_config())
         aws = [c for c in conflicts if c.symbol_name == "AWS Access Key"]
         assert len(aws) == 1
         # Full secret should not appear in description
-        assert "AKIAIOSFODNN7EXAMPLE" not in aws[0].description
+        assert "AKIAI44QH8DHBR9MPVQZ" not in aws[0].description
         # Redacted form should appear
         assert "AKIA" in aws[0].description
         assert "..." in aws[0].description
 
     def test_source_lines_populated(self):
-        pr = _make_pr("@@ -1,2 +1,3 @@\n context\n+AWS_KEY = 'AKIAIOSFODNN7EXAMPLE'\n context")
+        pr = _make_pr("@@ -1,2 +1,3 @@\n context\n+AWS_KEY = 'AKIAI44QH8DHBR9MPVQZ'\n context")
         conflicts = scan_secrets(pr, _make_config())
         aws = [c for c in conflicts if c.symbol_name == "AWS Access Key"]
         assert len(aws) == 1
@@ -163,8 +163,32 @@ class TestSecretDetection:
     def test_deduplicates_per_line(self):
         # Same pattern could match twice on one line, but we deduplicate by (file, line, pattern)
         pr = _make_pr(
-            "@@ -1,2 +1,3 @@\n context\n+AKIAIOSFODNN7EXAMPLE AKIAIOSFODNN7FOOBAR\n context"
+            "@@ -1,2 +1,3 @@\n context\n+AKIAI44QH8DHBR9MPVQZ AKIAJ5WLQMVTZ3RNHK7A\n context"
         )
         conflicts = scan_secrets(pr, _make_config())
         aws = [c for c in conflicts if c.symbol_name == "AWS Access Key"]
         assert len(aws) == 1  # Deduplicated: one finding per (file, line, pattern)
+
+    def test_ignored_paths_skips_test_files(self):
+        pr = _make_pr(
+            "@@ -1,2 +1,3 @@\n context\n+AWS_KEY = 'AKIAI44QH8DHBR9MPVQZ'\n context",
+            path="tests/unit/test_secrets.py",
+        )
+        conflicts = scan_secrets(pr, _make_config())
+        assert len(conflicts) == 0
+
+    def test_generic_secret_no_match_on_labels(self):
+        # Enum values like `SECRET: "Secret Detected"` should not trigger
+        pr = _make_pr(
+            '@@ -1,2 +1,3 @@\n context\n+ConflictType.SECRET: "Secret Detected"\n context'
+        )
+        conflicts = scan_secrets(pr, _make_config())
+        generic = [c for c in conflicts if c.symbol_name == "Generic Secret"]
+        assert len(generic) == 0
+
+    def test_builtin_allowlist_suppresses_example_keys(self):
+        # AWS's documented example key (AKIAIOSFODNN7EXAMPLE) should be allowlisted
+        pr = _make_pr("@@ -1,2 +1,3 @@\n context\n+AWS_KEY = 'AKIAIOSFODNN7EXAMPLE'\n context")
+        conflicts = scan_secrets(pr, _make_config())
+        aws = [c for c in conflicts if c.symbol_name == "AWS Access Key"]
+        assert len(aws) == 0
