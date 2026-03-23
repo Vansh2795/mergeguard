@@ -445,6 +445,17 @@ class SecretsConfig(BaseModel):
     use_builtin_patterns: bool = True
     patterns: list[SecretPattern] = Field(default_factory=list)
     allowlist: list[str] = Field(default_factory=list)
+    ignored_paths: list[str] = Field(
+        default_factory=lambda: [
+            "tests/**",
+            "**/test_*",
+            "**/tests/**",
+            "**/*_test.*",
+            "**/*.test.*",
+            "**/fixtures/**",
+            "**/testdata/**",
+        ]
+    )
 
 
 class MetricsConfig(BaseModel):

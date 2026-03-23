@@ -6,6 +6,7 @@ in added lines of PR diffs using regex pattern matching.
 
 from __future__ import annotations
 
+import fnmatch
 import logging
 import re
 
@@ -19,6 +20,14 @@ from mergeguard.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+BUILTIN_ALLOWLIST: list[str] = [
+    r"EXAMPLE",  # AWS's documented example key suffix
+    r"(?i)placeholder",
+    r"(?i)your[_\-]?(api[_\-]?key|secret|token|password)",
+    r"(?i)(fake|dummy|test|mock)[_\-]?(key|secret|token|password)",
+    r"<[A-Z_]+>",  # Template placeholders like <API_KEY>
+]
 
 
 def _redact(value: str) -> str:
@@ -60,19 +69,25 @@ def scan_secrets(pr: PRInfo, config: MergeGuardConfig) -> list[Conflict]:
         except re.error:
             logger.warning("Invalid secret pattern regex for '%s': %s", p.name, p.pattern)
 
-    # Pre-compile allowlist patterns
+    # Pre-compile allowlist patterns (builtin + user-defined)
     compiled_allowlist: list[re.Pattern[str]] = []
-    for al in config.secrets.allowlist:
+    for al in BUILTIN_ALLOWLIST + config.secrets.allowlist:
         try:
             compiled_allowlist.append(re.compile(al))
         except re.error:
             logger.warning("Invalid allowlist regex: %s", al)
+
+    # Path patterns to skip (test files, fixtures, etc.)
+    ignored = config.secrets.ignored_paths
 
     conflicts: list[Conflict] = []
     seen: set[tuple[str, int, str]] = set()  # (file, line, pattern_name)
 
     for cf in pr.changed_files:
         if not cf.patch:
+            continue
+
+        if any(fnmatch.fnmatch(cf.path, pat) for pat in ignored):
             continue
 
         # Construct full diff text for the parser

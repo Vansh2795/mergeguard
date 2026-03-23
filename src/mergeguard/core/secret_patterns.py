@@ -43,7 +43,7 @@ BUILTIN_PATTERNS: list[SecretPattern] = [
     ),
     SecretPattern(
         name="Generic Secret",
-        pattern=r"(?i)(secret|password|passwd|pwd|token)\s*[:=]\s*['\"][^'\"]{8,}['\"]",
+        pattern=r"(?i)(?<![A-Za-z._])(secret|password|passwd|pwd|token)\s*[:=]\s*['\"][^\s'\"]{8,}['\"]",
     ),
     SecretPattern(
         name="Private Key",
