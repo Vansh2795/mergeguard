@@ -1102,6 +1102,12 @@ class MergeGuardEngine:
         if cfg and cfg.rules:
             all_conflicts.extend(enforce_guardrails(target_pr, cfg))
 
+        # Secret scanning
+        if cfg and cfg.secrets.enabled:
+            from mergeguard.core.secrets import scan_secrets
+
+            all_conflicts.extend(scan_secrets(target_pr, cfg))
+
         # Regression detection
         own_log = False
         if decisions_log is None and cfg and cfg.check_regressions:

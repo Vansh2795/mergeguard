@@ -32,6 +32,7 @@ MergeGuard fills this gap by:
 - **Merge queue integration** — commit status checks that block conflicting PRs from merging, with priority override via labels and GitHub merge group support
 - **Blast radius visualization** — interactive D3.js force-directed graph showing PR conflict topology with transitive blast radius computation (`mergeguard blast-radius`)
 - **Policy engine** — declarative conditions-and-actions system: block merges when AI-authored PRs have critical conflicts, auto-label high-risk PRs, require additional reviewers for infrastructure changes, notify Slack channels based on affected teams
+- **Secret scanning** — detect accidentally committed API keys, tokens, and private keys in PR diffs with 15 builtin regex patterns and custom pattern support (`mergeguard scan-secrets`)
 - **Computing risk scores** — composite scoring with configurable weights based on conflict severity, blast radius, code churn, and AI attribution
 
 ## Quick Start
@@ -95,6 +96,11 @@ mergeguard init
 # Evaluate policy rules against a PR (dry-run by default)
 mergeguard policy-check --repo owner/repo --pr 42 --token $GITHUB_TOKEN
 mergeguard policy-check --repo owner/repo --pr 42 --token $GITHUB_TOKEN --execute
+
+
+# Scan a PR for accidentally committed secrets
+mergeguard scan-secrets --repo owner/repo --pr 42 --token $GITHUB_TOKEN
+mergeguard scan-secrets --repo owner/repo --pr 42 --token $GITHUB_TOKEN --format sarif
 
 # Start webhook server for real-time analysis
 mergeguard serve --port 8000

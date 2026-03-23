@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — v0.5: Secret Scanning
+- Regex-based secret scanning for PR diffs — detects accidentally committed API keys, tokens, and private keys in added lines
+- `ConflictType.SECRET` enum value for secret findings, surfaced as `CRITICAL` conflicts with inline annotations
+- `SecretPattern` and `SecretsConfig` models with `enabled`, `use_builtin_patterns`, custom `patterns`, and `allowlist`
+- 15 builtin patterns: AWS keys, GitHub PATs, GitLab PATs, Slack tokens/webhooks, Stripe/Twilio/SendGrid keys, private key headers, generic API keys/secrets, Heroku keys
+- `scan_secrets()` function using `parse_unified_diff()` for accurate line numbers on added lines only
+- Automatic redaction of secret values in descriptions (first 4 + last 3 chars)
+- Deduplication per `(file, line, pattern_name)` to avoid duplicate findings
+- Integrated into `_detect_all_conflicts()` — runs after guardrails, enabled by default
+- `--secrets/--no-secrets` flag on `analyze` command to override config
+- `scan-secrets` standalone CLI command with `--format terminal|json|sarif` output
+- `SECRET` type label added to GitHub comment, inline annotation, and SARIF output formatters
+
 ### Added — v0.5: Policy Engine
 - Declarative policy engine with conditions-and-actions system for automated merge workflow decisions
 - `PolicyConditionOp` enum: `gte`, `lte`, `eq`, `gt`, `lt`, `contains` (set membership), `matches` (glob patterns)

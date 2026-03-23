@@ -227,6 +227,7 @@ def main(
     default=None,
     help="Post inline annotations on PR diff.",
 )
+@click.option("--secrets/--no-secrets", default=None, help="Enable/disable secret scanning.")
 @click.option("--max-prs", type=int, default=None, help="Max open PRs to scan (overrides config).")
 @click.option("--max-pr-age", type=int, default=None, help="Max PR age in days (overrides config).")
 @click.pass_context
@@ -242,6 +243,7 @@ def analyze(
     llm_provider: str,
     post_comment: bool,
     inline: bool | None,
+    secrets: bool | None,
     max_prs: int | None,
     max_pr_age: int | None,
 ) -> None:
@@ -273,6 +275,8 @@ def analyze(
         cfg.max_pr_age_days = max_pr_age
     if github_url:
         cfg.github_url = github_url
+    if secrets is not None:
+        cfg.secrets.enabled = secrets
 
     client = _create_client(platform, token, repo, gitlab_url, github_url)
     with console.status("[bold blue]Analyzing cross-PR conflicts...", spinner="dots"):
@@ -931,6 +935,95 @@ def history(
         )
 
     console.print(table)
+
+
+@main.command(name="scan-secrets")
+@click.option(
+    "--repo",
+    "-r",
+    callback=_validate_repo,
+    help="Repo (owner/repo). Auto-detected from git remote.",
+)
+@click.option(
+    "--pr",
+    "-p",
+    type=click.IntRange(min=1),
+    help="PR/MR number to scan. Defaults to current branch.",
+)
+@click.option("--token", "-t", envvar=["GITHUB_TOKEN", "GITLAB_TOKEN"], help="GitHub/GitLab token.")
+@click.option("--config", "-c", default=".mergeguard.yml", help="Config file path.")
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["terminal", "json", "sarif"]),
+    default="terminal",
+)
+@click.pass_context
+def scan_secrets_cmd(
+    ctx: click.Context,
+    repo: str | None,
+    pr: int | None,
+    token: str | None,
+    config: str,
+    output_format: str,
+) -> None:
+    """Scan a PR for accidentally committed secrets."""
+    platform = ctx.obj.get("platform", "auto")
+    gitlab_url = ctx.obj.get("gitlab_url", "https://gitlab.com")
+    github_url = ctx.obj.get("github_url")
+    resolved_platform = platform if platform != "auto" else _detect_platform_from_remote()
+    repo, pr = _auto_detect_repo_and_pr(repo, pr, token, platform=resolved_platform)
+
+    from mergeguard.config import load_config
+    from mergeguard.core.engine import MergeGuardEngine
+    from mergeguard.models import ConflictType
+
+    cfg = load_config(config)
+    cfg.secrets.enabled = True
+    if github_url:
+        cfg.github_url = github_url
+
+    client = _create_client(platform, token, repo, gitlab_url, github_url)
+    with console.status("[bold blue]Scanning for secrets...", spinner="dots"):
+        engine = MergeGuardEngine(config=cfg, client=client)
+        report = engine.analyze_pr(pr)
+
+    # Filter to only secret findings
+    report.conflicts = [c for c in report.conflicts if c.conflict_type == ConflictType.SECRET]
+
+    if output_format == "json":
+        click.echo(report.model_dump_json(indent=2))
+    elif output_format == "sarif":
+        from mergeguard.output.sarif import format_sarif
+
+        click.echo(format_sarif(report))
+    else:
+        # Terminal output
+        if not report.conflicts:
+            console.print("[green]No secrets detected.[/green]")
+            return
+
+        table = Table(title=f"Secrets Found in PR #{pr}")
+        table.add_column("File", style="bold")
+        table.add_column("Line", justify="right")
+        table.add_column("Pattern")
+        table.add_column("Severity")
+
+        for conflict in report.conflicts:
+            line_str = str(conflict.source_lines[0]) if conflict.source_lines else "-"
+            sev_style = "red" if conflict.severity.value == "critical" else "yellow"
+            table.add_row(
+                conflict.file_path,
+                line_str,
+                conflict.symbol_name or "-",
+                f"[{sev_style}]{conflict.severity.value.upper()}[/{sev_style}]",
+            )
+
+        console.print(table)
+        console.print(
+            f"\n[bold red]{len(report.conflicts)} secret(s) found.[/bold red] "
+            f"Remove them and rotate immediately."
+        )
 
 
 @main.command()

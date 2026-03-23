@@ -24,6 +24,7 @@ TYPE_LABELS = {
     ConflictType.TRANSITIVE: "Transitive Conflict",
     ConflictType.REGRESSION: "Regression Detected",
     ConflictType.GUARDRAIL: "Guardrail Violation",
+    ConflictType.SECRET: "Secret Detected",
 }
 
 

@@ -30,6 +30,7 @@ class ConflictType(StrEnum):
     TRANSITIVE = "transitive"  # Conflict through dependency chain
     REGRESSION = "regression"  # Reverts a recent deliberate change
     GUARDRAIL = "guardrail"  # Rule violation from .mergeguard.yml
+    SECRET = "secret"  # Accidentally committed secret/credential
 
 
 class SymbolType(StrEnum):
@@ -420,6 +421,23 @@ class PolicyConfig(BaseModel):
     policies: list[PolicyRule] = Field(default_factory=list)
 
 
+class SecretPattern(BaseModel):
+    """A single secret detection pattern."""
+
+    name: str  # e.g. "AWS Access Key"
+    pattern: str  # Regex pattern, e.g. r"AKIA[0-9A-Z]{16}"
+    severity: ConflictSeverity = ConflictSeverity.CRITICAL
+
+
+class SecretsConfig(BaseModel):
+    """Configuration for secret scanning in PR diffs."""
+
+    enabled: bool = True
+    use_builtin_patterns: bool = True
+    patterns: list[SecretPattern] = Field(default_factory=list)
+    allowlist: list[str] = Field(default_factory=list)
+
+
 class MergeGuardConfig(BaseModel):
     """Configuration loaded from .mergeguard.yml."""
 
@@ -459,3 +477,4 @@ class MergeGuardConfig(BaseModel):
     merge_queue: MergeQueueConfig = Field(default_factory=MergeQueueConfig)
     stacked_prs: StackedPRConfig = Field(default_factory=StackedPRConfig)
     policy: PolicyConfig = Field(default_factory=PolicyConfig)
+    secrets: SecretsConfig = Field(default_factory=SecretsConfig)
