@@ -20,6 +20,7 @@ RULE_IDS: dict[ConflictType, str] = {
     ConflictType.TRANSITIVE: "mergeguard/transitive-conflict",
     ConflictType.REGRESSION: "mergeguard/regression",
     ConflictType.GUARDRAIL: "mergeguard/guardrail-violation",
+    ConflictType.SECRET: "mergeguard/secret-detected",
 }
 
 _SEVERITY_MAP: dict[ConflictSeverity, str] = {
