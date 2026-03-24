@@ -5,9 +5,20 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any, cast
 
-from tree_sitter_language_pack import get_parser
+from tree_sitter_language_pack import get_parser as _get_parser_uncached
 
 from mergeguard.models import Symbol, SymbolType
+
+# Cache parser instances per language to avoid re-creation per file
+_PARSER_CACHE: dict[str, object] = {}
+
+
+def _get_cached_parser(language: str) -> object:
+    """Get or create a cached tree-sitter parser for the given language."""
+    if language not in _PARSER_CACHE:
+        _PARSER_CACHE[language] = _get_parser_uncached(cast("Any", language))
+    return _PARSER_CACHE[language]
+
 
 if TYPE_CHECKING:
     from tree_sitter import Node
@@ -113,7 +124,7 @@ def extract_symbols(source_code: str, file_path: str) -> list[Symbol]:
         return []
 
     try:
-        parser = get_parser(cast("Any", language_name))
+        parser = _get_cached_parser(language_name)
     except Exception:
         return _fallback_extract(source_code, file_path)
 
@@ -280,7 +291,7 @@ def extract_call_graph(source_code: str, file_path: str) -> dict[str, set[str]]:
         return {}
 
     try:
-        parser = get_parser(cast("Any", language_name))
+        parser = _get_cached_parser(language_name)
     except Exception:
         return {}
 
@@ -321,7 +332,7 @@ def extract_symbols_and_call_graph(
         return [], {}
 
     try:
-        parser = get_parser(cast("Any", language_name))
+        parser = _get_cached_parser(language_name)
     except Exception:
         return _fallback_extract(source_code, file_path), {}
 
@@ -602,7 +613,7 @@ def compute_cyclomatic_complexity(source_code: str, file_path: str) -> int:
         return 1
 
     try:
-        parser = get_parser(cast("Any", language_name))
+        parser = _get_cached_parser(language_name)
     except Exception:
         return 1
 
@@ -651,18 +662,19 @@ def _extract_signature(node: Node) -> str | None:
     return first_line[:200] if len(first_line) > 200 else first_line
 
 
+_FALLBACK_FUNC_RE = re.compile(
+    r"^\s*(?:def|func|function|fn|pub\s+fn|async\s+def|async\s+function)\s+(\w+)"
+)
+_FALLBACK_CLASS_RE = re.compile(r"^\s*(?:class|struct|interface|enum|trait)\s+(\w+)")
+
+
 def _fallback_extract(source_code: str, file_path: str) -> list[Symbol]:
     """Basic regex-based symbol extraction for unsupported languages."""
     symbols: list[Symbol] = []
     lines = source_code.split("\n")
 
-    func_pattern = re.compile(
-        r"^\s*(?:def|func|function|fn|pub\s+fn|async\s+def|async\s+function)\s+(\w+)"
-    )
-    class_pattern = re.compile(r"^\s*(?:class|struct|interface|enum|trait)\s+(\w+)")
-
     for i, line in enumerate(lines):
-        func_match = func_pattern.match(line)
+        func_match = _FALLBACK_FUNC_RE.match(line)
         if func_match:
             symbols.append(
                 Symbol(
@@ -675,7 +687,7 @@ def _fallback_extract(source_code: str, file_path: str) -> list[Symbol]:
                 )
             )
 
-        class_match = class_pattern.match(line)
+        class_match = _FALLBACK_CLASS_RE.match(line)
         if class_match:
             symbols.append(
                 Symbol(

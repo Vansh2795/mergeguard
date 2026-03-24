@@ -41,4 +41,19 @@ def load_config(config_path: str = ".mergeguard.yml") -> MergeGuardConfig:
         logger.warning("github_url in config file is ignored (use MERGEGUARD_GITHUB_URL env var)")
         raw.pop("github_url")
 
-    return MergeGuardConfig(**raw)
+    from pydantic import ValidationError
+
+    try:
+        return MergeGuardConfig(**raw)
+    except ValidationError as exc:
+        # Extract unknown field names and retry without them
+        unknown_keys = []
+        for error in exc.errors():
+            if error["type"] == "extra_forbidden" and error.get("loc"):
+                unknown_keys.append(str(error["loc"][0]))
+        if unknown_keys:
+            logger.warning("Unknown config keys (ignored): %s", ", ".join(unknown_keys))
+            for key in unknown_keys:
+                raw.pop(key, None)
+            return MergeGuardConfig(**raw)
+        raise

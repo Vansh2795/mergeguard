@@ -20,6 +20,7 @@ class DecisionsLog:
         self._db_path = Path(db_path)
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(self._db_path))
+        self._conn.execute("PRAGMA journal_mode=WAL")
         self._create_tables()
 
     def _create_tables(self) -> None:
@@ -113,6 +114,12 @@ class DecisionsLog:
                 regressions.append(decision)
 
         return regressions
+
+    def __enter__(self) -> DecisionsLog:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
 
     def close(self) -> None:
         """Close the database connection."""

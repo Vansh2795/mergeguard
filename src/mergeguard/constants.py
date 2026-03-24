@@ -45,6 +45,9 @@ SUPPORTED_EXTENSIONS = {
     ".kt",
 }
 
+# Default/protected branch names (used by CLI and stacked PR detection)
+DEFAULT_BRANCHES = {"main", "master", "develop", "HEAD"}
+
 # File patterns to always ignore
 DEFAULT_IGNORED_PATTERNS = [
     "*.lock",

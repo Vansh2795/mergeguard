@@ -461,8 +461,12 @@ def _check_interface_conflicts(
 ) -> None:
     """Check for interface conflicts: signature changes affecting callers."""
     # Find signature changes in target PR
+    # Pre-build set of dependency names for O(1) lookup
+    other_deps = {dep for ocs in other_pr.changed_symbols for dep in ocs.symbol.dependencies}
     for cs in target_pr.changed_symbols:
         if cs.change_type == "modified_signature":
+            if cs.symbol.name not in other_deps:
+                continue
             # Check if any of the other PR's changes reference this symbol
             for other_cs in other_pr.changed_symbols:
                 if cs.symbol.name in other_cs.symbol.dependencies:

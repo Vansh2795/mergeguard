@@ -9,7 +9,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # ──────────────────────────────────────────────
 # Enums
@@ -517,6 +517,8 @@ class DORAReport(BaseModel):
 
 class MergeGuardConfig(BaseModel):
     """Configuration loaded from .mergeguard.yml."""
+
+    model_config = ConfigDict(extra="forbid")
 
     inline_annotations: bool = True  # Post line-level review comments alongside summary
     risk_threshold: int = 50  # Only comment if risk > threshold

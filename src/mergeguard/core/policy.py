@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import fnmatch
 import logging
+from collections.abc import Callable
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
@@ -29,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 # ── Field extractors ────────────────────────────────────────────────
 
-FieldExtractor = Any  # Callable[[ConflictReport], Any]
+FieldExtractor = Callable[["ConflictReport"], Any]
 
 
 def _extract_risk_score(report: ConflictReport) -> float:

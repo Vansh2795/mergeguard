@@ -79,6 +79,8 @@ def detect_attribution(pr: PRInfo) -> AIAttribution:
         if ".agent-trace/" in changed_file.path:
             return AIAttribution.AI_CONFIRMED
 
+    confidence = min(confidence, 1.0)
+
     # Classify
     if confidence >= 0.6:
         return AIAttribution.AI_CONFIRMED

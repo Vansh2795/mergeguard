@@ -64,12 +64,16 @@ class AnalysisQueue:
         self._worker_task = asyncio.create_task(self._worker())
         logger.info("Analysis queue worker started")
 
-    async def stop(self) -> None:
+    async def stop(self, drain_timeout: float = 30.0) -> None:
         """Signal shutdown and wait for in-flight work to finish."""
         self._shutting_down = True
         await self._queue.put(None)  # Sentinel to wake the worker
         if self._worker_task is not None:
-            await self._worker_task
+            try:
+                await asyncio.wait_for(self._worker_task, timeout=drain_timeout)
+            except TimeoutError:
+                logger.warning("Drain timeout reached, cancelling worker")
+                self._worker_task.cancel()
         logger.info("Analysis queue worker stopped")
 
     async def enqueue(self, event: WebhookEvent | MergeGroupEvent) -> None:
@@ -143,10 +147,11 @@ class AnalysisQueue:
                     else f"#{event.pr_number}"
                 )
                 logger.info(
-                    "Analysis completed for %s %s in %.1fs",
+                    "Analysis completed for %s %s in %.1fs [%s]",
                     event.repo_full_name,
                     event_label,
                     duration,
+                    event.correlation_id,
                 )
             except Exception:
                 metrics.analyses_failed.inc()
@@ -164,11 +169,13 @@ class AnalysisQueue:
                     else f"#{event.pr_number}"
                 )
                 logger.exception(
-                    "Analysis failed for %s %s",
+                    "Analysis failed for %s %s [%s]",
                     event.repo_full_name,
                     event_label,
+                    event.correlation_id,
                 )
             finally:
+                metrics.queue_depth.dec()
                 self._queue.task_done()
 
     @property

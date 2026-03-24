@@ -289,7 +289,7 @@ class LLMAnalyzer:
         try:
             raw = self._llm_call(prompt, max_tokens=800)
             result = json.loads(raw)
-        except (json.JSONDecodeError, Exception):
+        except (json.JSONDecodeError, ValueError, KeyError, OSError):
             logger.debug("Holistic analysis failed", exc_info=True)
             return conflicts
 
@@ -384,7 +384,7 @@ class LLMAnalyzer:
         try:
             raw = self._llm_call(prompt, max_tokens=max_tokens)
             results = json.loads(raw)
-        except (json.JSONDecodeError, Exception):
+        except (json.JSONDecodeError, ValueError, KeyError, OSError):
             logger.debug("Batch fix suggestion generation failed", exc_info=True)
             return [None] * len(conflicts)
 

@@ -16,11 +16,15 @@ import hmac
 import logging
 import os
 import time
+from collections import defaultdict
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
+
+    from mergeguard.integrations.protocol import SCMClient
+    from mergeguard.models import ConflictReport, MergeGuardConfig
 
 from fastapi import (
     FastAPI,
@@ -29,6 +33,7 @@ from fastapi import (
     Request,
     Response,
 )
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from mergeguard import __version__
 from mergeguard.server.events import (
@@ -48,8 +53,43 @@ _queue: AnalysisQueue | None = None
 _start_time: float = 0.0
 
 
+# ── In-memory rate limiter ──────────────────────────────────────────
+
+
+class _RateLimiter:
+    def __init__(self, max_requests: int = 60, window: float = 60.0) -> None:
+        self._requests: dict[str, list[float]] = defaultdict(list)
+        self._max = max_requests
+        self._window = window
+
+    def is_allowed(self, key: str) -> bool:
+        now = time.monotonic()
+        reqs = self._requests[key]
+        self._requests[key] = [t for t in reqs if now - t < self._window]
+        if len(self._requests[key]) >= self._max:
+            return False
+        self._requests[key].append(now)
+        return True
+
+
+_rate_limiter = _RateLimiter()
+
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):  # type: ignore[override]
+        if request.url.path.startswith("/webhooks/"):
+            client_ip = request.client.host if request.client else "unknown"
+            if not _rate_limiter.is_allowed(client_ip):
+                return Response(
+                    content='{"detail":"Rate limit exceeded"}',
+                    status_code=429,
+                    media_type="application/json",
+                )
+        return await call_next(request)
+
+
 def _post_status_safe(
-    client: Any,
+    client: SCMClient,
     sha: str,
     state: str,
     description: str,
@@ -75,9 +115,9 @@ def _post_status_safe(
 
 
 def _post_merge_status(
-    client: Any,
-    report: Any,
-    cfg: Any,
+    client: SCMClient,
+    report: ConflictReport,
+    cfg: MergeGuardConfig,
 ) -> None:
     """Post merge readiness status for a single PR report."""
     from mergeguard.core.merge_order import compute_merge_readiness
@@ -99,8 +139,8 @@ def _post_merge_status(
 
 def _handle_merge_group(
     event: MergeGroupEvent,
-    cfg: Any,
-    client: Any,
+    cfg: MergeGuardConfig,
+    client: SCMClient,
     engine: Any,
 ) -> None:
     """Handle a merge_group webhook event (sync — no real awaits)."""
@@ -126,17 +166,25 @@ def _handle_merge_group(
         context=cfg.merge_queue.status_context,
     )
 
-    # Analyze each PR in the merge group
+    # Analyze each PR in the merge group (parallel)
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     from mergeguard.core.merge_order import compute_merge_readiness
 
     any_blocked = False
     all_reports = []
-    for pr_num in event.pr_numbers:
-        try:
-            report = engine.analyze_pr(pr_num)
-            all_reports.append(report)
-        except Exception:
-            logger.warning("Failed to analyze PR #%d in merge group", pr_num, exc_info=True)
+
+    def _analyze_pr(pr_num: int) -> Any:
+        return engine.analyze_pr(pr_num)
+
+    with ThreadPoolExecutor(max_workers=min(5, len(event.pr_numbers) or 1)) as pool:
+        futures = {pool.submit(_analyze_pr, n): n for n in event.pr_numbers}
+        for future in as_completed(futures):
+            pr_num = futures[future]
+            try:
+                all_reports.append(future.result())
+            except Exception:
+                logger.warning("Failed to analyze PR #%d in merge group", pr_num, exc_info=True)
 
     # Check if any PR has blocking conflicts
     block_severity = cfg.merge_queue.block_severity
@@ -169,12 +217,30 @@ def _handle_merge_group(
         )
 
 
+_cached_config: MergeGuardConfig | None = None
+_cached_mtime: float = 0.0
+
+
+def _get_config() -> MergeGuardConfig:
+    """Load config with mtime-based caching to avoid re-reading on every webhook."""
+    global _cached_config, _cached_mtime
+    from pathlib import Path
+
+    from mergeguard.config import load_config
+
+    path = Path(".mergeguard.yml")
+    mtime = path.stat().st_mtime if path.exists() else 0.0
+    if _cached_config is None or mtime != _cached_mtime:
+        _cached_config = load_config()
+        _cached_mtime = mtime
+    return _cached_config
+
+
 def _run_analysis_sync(event: WebhookEvent | MergeGroupEvent) -> None:
     """Run MergeGuard analysis synchronously (called via asyncio.to_thread)."""
-    from mergeguard.config import load_config
     from mergeguard.core.engine import MergeGuardEngine
 
-    cfg = load_config()
+    cfg = _get_config()
     platform = event.platform
     token = _get_token_for_platform(platform)
     if not token:
@@ -304,7 +370,7 @@ def _get_token_for_platform(platform: str) -> str | None:
     return os.environ.get(env_map.get(platform, ""))
 
 
-def _create_client_for_event(platform: str, token: str, repo: str) -> Any:
+def _create_client_for_event(platform: str, token: str, repo: str) -> SCMClient:
     """Create an SCM client for the given platform."""
     if platform == "gitlab":
         from mergeguard.integrations.gitlab_client import GitLabClient
@@ -400,6 +466,7 @@ app = FastAPI(
     version=__version__,
     lifespan=lifespan,
 )
+app.add_middleware(RateLimitMiddleware)
 
 
 @app.get("/health")

@@ -7,6 +7,7 @@ unified WebhookEvent that the analysis pipeline can consume.
 from __future__ import annotations
 
 import re
+import uuid
 from enum import StrEnum
 from typing import Any
 
@@ -21,6 +22,10 @@ class EventAction(StrEnum):
     MERGE_GROUP_CHECKS_REQUESTED = "merge_group_checks_requested"
 
 
+def _new_correlation_id() -> str:
+    return uuid.uuid4().hex[:12]
+
+
 class WebhookEvent(BaseModel):
     """Platform-agnostic PR webhook event."""
 
@@ -32,6 +37,7 @@ class WebhookEvent(BaseModel):
     base_branch: str
     sender: str  # username that triggered the event
     merged: bool = False  # True if closed via merge
+    correlation_id: str = Field(default_factory=_new_correlation_id)
 
 
 class MergeGroupEvent(BaseModel):
@@ -44,6 +50,7 @@ class MergeGroupEvent(BaseModel):
     base_branch: str
     sender: str
     pr_numbers: list[int] = Field(default_factory=list)
+    correlation_id: str = Field(default_factory=_new_correlation_id)
 
 
 def _extract_pr_numbers_from_merge_group(payload: dict[str, Any]) -> list[int]:

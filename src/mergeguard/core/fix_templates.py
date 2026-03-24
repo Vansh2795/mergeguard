@@ -88,6 +88,14 @@ def _regression_suggestion(conflict: Conflict) -> str:
     )
 
 
+def _secret_suggestion(conflict: Conflict) -> str:
+    return (
+        f"Rotate the exposed credential detected in `{conflict.file_path}` immediately. "
+        f"Move the value to environment variables or a secrets manager, "
+        f"then update references."
+    )
+
+
 def _guardrail_suggestion(conflict: Conflict) -> str:
     return (
         f"This PR violates a repository guardrail rule in "
@@ -102,6 +110,7 @@ _GENERATORS = {
     ConflictType.DUPLICATION: _duplication_suggestion,
     ConflictType.TRANSITIVE: _transitive_suggestion,
     ConflictType.REGRESSION: _regression_suggestion,
+    ConflictType.SECRET: _secret_suggestion,
     ConflictType.GUARDRAIL: _guardrail_suggestion,
 }
 

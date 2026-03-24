@@ -6,10 +6,13 @@ implement similar functionality independently.
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from mergeguard.models import Symbol
+
+_TOKEN_RE = re.compile(r"\w+")
 
 
 def jaccard_similarity(set_a: set[str], set_b: set[str]) -> float:
@@ -60,14 +63,17 @@ def detect_potential_duplications(
     Returns a list of (new_symbol, other_symbol, similarity_score) tuples
     where the similarity exceeds the thresholds.
     """
+    from collections import defaultdict
+
+    # Group other_symbols by type for O(N+M) instead of O(N*M)
+    other_by_type: dict[str, list[Symbol]] = defaultdict(list)
+    for sym in other_symbols:
+        other_by_type[sym.symbol_type].append(sym)
+
     duplications: list[tuple[Symbol, Symbol, float]] = []
 
     for new_sym in new_symbols:
-        for other_sym in other_symbols:
-            # Skip if different symbol types
-            if new_sym.symbol_type != other_sym.symbol_type:
-                continue
-
+        for other_sym in other_by_type.get(new_sym.symbol_type, []):
             # Check name similarity
             name_sim = _name_distance(new_sym.name, other_sym.name)
             if name_sim < name_threshold:
@@ -86,10 +92,7 @@ def detect_potential_duplications(
 
 def _tokenize_signature(signature: str) -> set[str]:
     """Split a signature into tokens for comparison."""
-    import re
-
-    tokens = re.findall(r"\w+", signature)
-    return set(tokens)
+    return set(_TOKEN_RE.findall(signature))
 
 
 def _name_distance(name_a: str, name_b: str) -> float:
