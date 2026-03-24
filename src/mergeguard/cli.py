@@ -15,10 +15,10 @@ if TYPE_CHECKING:
     from mergeguard.integrations.protocol import SCMClient
     from mergeguard.models import ConflictReport, PRInfo
 
+from mergeguard.constants import DEFAULT_BRANCHES
+
 logger = logging.getLogger(__name__)
 console = Console(stderr=True)
-
-_DEFAULT_BRANCHES = {"main", "master", "develop", "HEAD"}
 
 
 def _detect_platform_from_remote() -> str:
@@ -89,7 +89,7 @@ def _auto_detect_repo_and_pr(
 
     if pr is None:
         branch = git_local.get_current_branch()
-        if branch in _DEFAULT_BRANCHES:
+        if branch in DEFAULT_BRANCHES:
             raise click.UsageError(
                 f"Current branch is '{branch}'. Switch to a feature branch "
                 f"or provide --pr explicitly."
@@ -230,6 +230,11 @@ def main(
 @click.option("--secrets/--no-secrets", default=None, help="Enable/disable secret scanning.")
 @click.option("--max-prs", type=int, default=None, help="Max open PRs to scan (overrides config).")
 @click.option("--max-pr-age", type=int, default=None, help="Max PR age in days (overrides config).")
+@click.option(
+    "--exit-code/--no-exit-code",
+    default=False,
+    help="Exit non-zero on conflicts (1=any, 2=critical).",
+)
 @click.pass_context
 def analyze(
     ctx: click.Context,
@@ -246,6 +251,7 @@ def analyze(
     secrets: bool | None,
     max_prs: int | None,
     max_pr_age: int | None,
+    exit_code: bool,
 ) -> None:
     """Analyze a PR for cross-PR conflicts."""
     platform = ctx.obj.get("platform", "auto")
@@ -337,6 +343,9 @@ def analyze(
                 console.print(
                     "[yellow]\u26a0 Inline annotations failed (missing permissions?)[/yellow]"
                 )
+
+    if exit_code and report.conflicts:
+        raise SystemExit(2 if report.has_critical else 1)
 
 
 @main.command()
@@ -976,7 +985,6 @@ def scan_secrets_cmd(
 
     from mergeguard.config import load_config
     from mergeguard.core.engine import MergeGuardEngine
-    from mergeguard.models import ConflictType
 
     cfg = load_config(config)
     cfg.secrets.enabled = True
@@ -986,10 +994,7 @@ def scan_secrets_cmd(
     client = _create_client(platform, token, repo, gitlab_url, github_url)
     with console.status("[bold blue]Scanning for secrets...", spinner="dots"):
         engine = MergeGuardEngine(config=cfg, client=client)
-        report = engine.analyze_pr(pr)
-
-    # Filter to only secret findings
-    report.conflicts = [c for c in report.conflicts if c.conflict_type == ConflictType.SECRET]
+        report = engine.scan_secrets_only(pr)
 
     if output_format == "json":
         click.echo(report.model_dump_json(indent=2))

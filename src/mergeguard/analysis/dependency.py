@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections import deque
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
@@ -74,10 +75,10 @@ class DependencyGraph:
         Uses BFS to find all reverse-transitive dependencies up to max_depth.
         """
         visited: set[str] = set()
-        queue: list[tuple[str, int]] = [(file_path, 0)]
+        queue: deque[tuple[str, int]] = deque([(file_path, 0)])
 
         while queue:
-            current, depth = queue.pop(0)
+            current, depth = queue.popleft()
             if current in visited or depth > max_depth:
                 continue
             visited.add(current)
@@ -90,10 +91,10 @@ class DependencyGraph:
     def get_dependencies(self, file_path: str, max_depth: int = 5) -> set[str]:
         """Find all files that the given file transitively depends on."""
         visited: set[str] = set()
-        queue: list[tuple[str, int]] = [(file_path, 0)]
+        queue: deque[tuple[str, int]] = deque([(file_path, 0)])
 
         while queue:
-            current, depth = queue.pop(0)
+            current, depth = queue.popleft()
             if current in visited or depth > max_depth:
                 continue
             visited.add(current)
@@ -118,9 +119,9 @@ class DependencyGraph:
         """
         max_depth = 0
         visited: set[str] = set()
-        queue: list[tuple[str, int]] = [(file_path, 0)]
+        queue: deque[tuple[str, int]] = deque([(file_path, 0)])
         while queue:
-            current, depth = queue.pop(0)
+            current, depth = queue.popleft()
             if current in visited:
                 continue
             visited.add(current)

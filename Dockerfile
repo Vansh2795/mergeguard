@@ -17,6 +17,9 @@ COPY src/ src/
 # Install the package itself
 RUN uv pip install --system --no-cache --no-deps .
 
+RUN useradd --create-home --no-log-init mergeguard
+USER mergeguard
+
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

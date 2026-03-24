@@ -21,6 +21,16 @@ from mergeguard.models import (
 
 logger = logging.getLogger(__name__)
 
+_MAX_LINE_LENGTH = 10_000
+
+
+def _safe_search(pattern: re.Pattern[str], text: str) -> re.Match[str] | None:
+    """Search with line-length cap to mitigate ReDoS on user-supplied patterns."""
+    if len(text) > _MAX_LINE_LENGTH:
+        text = text[:_MAX_LINE_LENGTH]
+    return pattern.search(text)
+
+
 BUILTIN_ALLOWLIST: list[str] = [
     r"EXAMPLE",  # AWS's documented example key suffix
     r"(?i)placeholder",
@@ -102,11 +112,11 @@ def scan_secrets(pr: PRInfo, config: MergeGuardConfig) -> list[Conflict]:
             for hunk in fd.hunks:
                 for line_num, content in hunk.added_lines:
                     # Check allowlist first
-                    if any(al.search(content) for al in compiled_allowlist):
+                    if any(_safe_search(al, content) for al in compiled_allowlist):
                         continue
 
                     for pattern, regex in compiled:
-                        match = regex.search(content)
+                        match = _safe_search(regex, content)
                         if not match:
                             continue
 

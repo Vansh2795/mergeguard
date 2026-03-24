@@ -10,16 +10,21 @@ Routes:
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import logging
 import os
 import time
+from collections import defaultdict
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
+
+    from mergeguard.integrations.protocol import SCMClient
+    from mergeguard.models import ConflictReport, MergeGuardConfig
 
 from fastapi import (
     FastAPI,
@@ -28,7 +33,9 @@ from fastapi import (
     Request,
     Response,
 )
+from starlette.middleware.base import BaseHTTPMiddleware
 
+from mergeguard import __version__
 from mergeguard.server.events import (
     EventAction,
     MergeGroupEvent,
@@ -46,8 +53,43 @@ _queue: AnalysisQueue | None = None
 _start_time: float = 0.0
 
 
+# ── In-memory rate limiter ──────────────────────────────────────────
+
+
+class _RateLimiter:
+    def __init__(self, max_requests: int = 60, window: float = 60.0) -> None:
+        self._requests: dict[str, list[float]] = defaultdict(list)
+        self._max = max_requests
+        self._window = window
+
+    def is_allowed(self, key: str) -> bool:
+        now = time.monotonic()
+        reqs = self._requests[key]
+        self._requests[key] = [t for t in reqs if now - t < self._window]
+        if len(self._requests[key]) >= self._max:
+            return False
+        self._requests[key].append(now)
+        return True
+
+
+_rate_limiter = _RateLimiter()
+
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):  # type: ignore[override]
+        if request.url.path.startswith("/webhooks/"):
+            client_ip = request.client.host if request.client else "unknown"
+            if not _rate_limiter.is_allowed(client_ip):
+                return Response(
+                    content='{"detail":"Rate limit exceeded"}',
+                    status_code=429,
+                    media_type="application/json",
+                )
+        return await call_next(request)
+
+
 def _post_status_safe(
-    client: Any,
+    client: SCMClient,
     sha: str,
     state: str,
     description: str,
@@ -73,9 +115,9 @@ def _post_status_safe(
 
 
 def _post_merge_status(
-    client: Any,
-    report: Any,
-    cfg: Any,
+    client: SCMClient,
+    report: ConflictReport,
+    cfg: MergeGuardConfig,
 ) -> None:
     """Post merge readiness status for a single PR report."""
     from mergeguard.core.merge_order import compute_merge_readiness
@@ -95,13 +137,13 @@ def _post_merge_status(
     )
 
 
-async def _handle_merge_group(
+def _handle_merge_group(
     event: MergeGroupEvent,
-    cfg: Any,
-    client: Any,
+    cfg: MergeGuardConfig,
+    client: SCMClient,
     engine: Any,
 ) -> None:
-    """Handle a merge_group webhook event."""
+    """Handle a merge_group webhook event (sync — no real awaits)."""
     metrics.merge_groups_analyzed.inc()
 
     if not cfg.merge_queue.enabled:
@@ -124,17 +166,25 @@ async def _handle_merge_group(
         context=cfg.merge_queue.status_context,
     )
 
-    # Analyze each PR in the merge group
+    # Analyze each PR in the merge group (parallel)
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     from mergeguard.core.merge_order import compute_merge_readiness
 
     any_blocked = False
     all_reports = []
-    for pr_num in event.pr_numbers:
-        try:
-            report = engine.analyze_pr(pr_num)
-            all_reports.append(report)
-        except Exception:
-            logger.warning("Failed to analyze PR #%d in merge group", pr_num, exc_info=True)
+
+    def _analyze_pr(pr_num: int) -> Any:
+        return engine.analyze_pr(pr_num)
+
+    with ThreadPoolExecutor(max_workers=min(5, len(event.pr_numbers) or 1)) as pool:
+        futures = {pool.submit(_analyze_pr, n): n for n in event.pr_numbers}
+        for future in as_completed(futures):
+            pr_num = futures[future]
+            try:
+                all_reports.append(future.result())
+            except Exception:
+                logger.warning("Failed to analyze PR #%d in merge group", pr_num, exc_info=True)
 
     # Check if any PR has blocking conflicts
     block_severity = cfg.merge_queue.block_severity
@@ -167,15 +217,30 @@ async def _handle_merge_group(
         )
 
 
-async def _handle_analysis(event: WebhookEvent | MergeGroupEvent) -> None:
-    """Run MergeGuard analysis for a webhook event.
+_cached_config: MergeGuardConfig | None = None
+_cached_mtime: float = 0.0
 
-    Called by the queue worker in the background.
-    """
+
+def _get_config() -> MergeGuardConfig:
+    """Load config with mtime-based caching to avoid re-reading on every webhook."""
+    global _cached_config, _cached_mtime
+    from pathlib import Path
+
     from mergeguard.config import load_config
+
+    path = Path(".mergeguard.yml")
+    mtime = path.stat().st_mtime if path.exists() else 0.0
+    if _cached_config is None or mtime != _cached_mtime:
+        _cached_config = load_config()
+        _cached_mtime = mtime
+    return _cached_config
+
+
+def _run_analysis_sync(event: WebhookEvent | MergeGroupEvent) -> None:
+    """Run MergeGuard analysis synchronously (called via asyncio.to_thread)."""
     from mergeguard.core.engine import MergeGuardEngine
 
-    cfg = load_config()
+    cfg = _get_config()
     platform = event.platform
     token = _get_token_for_platform(platform)
     if not token:
@@ -183,102 +248,116 @@ async def _handle_analysis(event: WebhookEvent | MergeGroupEvent) -> None:
         return
 
     client = _create_client_for_event(platform, token, event.repo_full_name)
-    engine = MergeGuardEngine(config=cfg, client=client)
+    try:
+        engine = MergeGuardEngine(config=cfg, client=client)
 
-    # Route merge group events to dedicated handler
-    if isinstance(event, MergeGroupEvent):
-        await _handle_merge_group(event, cfg, client, engine)
-        return
+        # Route merge group events to dedicated handler
+        if isinstance(event, MergeGroupEvent):
+            _handle_merge_group(event, cfg, client, engine)
+            return
 
-    if event.action in (EventAction.OPENED, EventAction.UPDATED, EventAction.REOPENED):
-        # Post pending status if merge queue is enabled
-        if cfg.merge_queue.enabled:
-            _post_status_safe(
-                client,
-                sha=event.head_sha,
-                state="pending",
-                description="Analyzing cross-PR conflicts...",
-                context=cfg.merge_queue.status_context,
-            )
-
-        report = engine.analyze_pr(event.pr_number)
-
-        if report.conflicts:
-            from mergeguard.output.github_comment import format_report
-            from mergeguard.output.inline_annotations import (
-                format_review_comments,
-                format_review_summary,
-            )
-
-            review_comments = []
-            if cfg.inline_annotations:
-                review_comments = format_review_comments(
-                    report, event.repo_full_name, platform=platform
+        if event.action in (EventAction.OPENED, EventAction.UPDATED, EventAction.REOPENED):
+            # Post pending status if merge queue is enabled
+            if cfg.merge_queue.enabled:
+                _post_status_safe(
+                    client,
+                    sha=event.head_sha,
+                    state="pending",
+                    description="Analyzing cross-PR conflicts...",
+                    context=cfg.merge_queue.status_context,
                 )
 
-            markdown = format_report(
-                report,
-                event.repo_full_name,
-                platform=platform,
-                inline_count=len(review_comments),
-            )
-            client.post_pr_comment(event.pr_number, markdown)
+            report = engine.analyze_pr(event.pr_number)
 
-            if review_comments:
-                review_body = format_review_summary(report, len(review_comments))
-                try:
-                    client.post_pr_review(event.pr_number, review_body, review_comments)
-                except Exception:
-                    logger.warning(
-                        "Failed to post inline annotations for %s #%d",
-                        event.repo_full_name,
-                        event.pr_number,
-                        exc_info=True,
+            if report.conflicts:
+                from mergeguard.output.github_comment import format_report
+                from mergeguard.output.inline_annotations import (
+                    format_review_comments,
+                    format_review_summary,
+                )
+
+                review_comments = []
+                if cfg.inline_annotations:
+                    review_comments = format_review_comments(
+                        report, event.repo_full_name, platform=platform
                     )
 
-        # Post merge readiness status after analysis
-        if cfg.merge_queue.enabled:
-            _post_merge_status(client, report, cfg)
-
-        # Evaluate and execute policy engine actions
-        if cfg.policy.enabled:
-            from mergeguard.core.policy import evaluate_policies, execute_policy_actions
-
-            evaluation = evaluate_policies(report, cfg.policy)
-            if evaluation.actions:
-                execute_policy_actions(report, evaluation, client, event.repo_full_name, platform)
-
-        # Record metrics snapshot for DORA tracking
-        if cfg.metrics.enabled and report.conflicts:
-            from mergeguard.core.metrics import record_analysis
-
-            try:
-                record_analysis(report, event.repo_full_name)
-            except Exception:
-                logger.warning("Failed to record metrics snapshot", exc_info=True)
-
-    elif event.action == EventAction.CLOSED:
-        logger.info(
-            "PR %s #%d closed — conflict graph will update on next analysis",
-            event.repo_full_name,
-            event.pr_number,
-        )
-        if cfg.metrics.enabled:
-            from datetime import UTC
-            from datetime import datetime as _dt
-
-            from mergeguard.core.metrics import record_resolution
-
-            try:
-                resolution_type = "merged" if event.merged else "closed"
-                record_resolution(
-                    event.pr_number,
+                markdown = format_report(
+                    report,
                     event.repo_full_name,
-                    _dt.now(UTC),
-                    resolution_type,
+                    platform=platform,
+                    inline_count=len(review_comments),
                 )
-            except Exception:
-                logger.warning("Failed to record resolution", exc_info=True)
+                client.post_pr_comment(event.pr_number, markdown)
+
+                if review_comments:
+                    review_body = format_review_summary(report, len(review_comments))
+                    try:
+                        client.post_pr_review(event.pr_number, review_body, review_comments)
+                    except Exception:
+                        logger.warning(
+                            "Failed to post inline annotations for %s #%d",
+                            event.repo_full_name,
+                            event.pr_number,
+                            exc_info=True,
+                        )
+
+            # Post merge readiness status after analysis
+            if cfg.merge_queue.enabled:
+                _post_merge_status(client, report, cfg)
+
+            # Evaluate and execute policy engine actions
+            if cfg.policy.enabled:
+                from mergeguard.core.policy import evaluate_policies, execute_policy_actions
+
+                evaluation = evaluate_policies(report, cfg.policy)
+                if evaluation.actions:
+                    execute_policy_actions(
+                        report, evaluation, client, event.repo_full_name, platform
+                    )
+
+            # Record metrics snapshot for DORA tracking
+            if cfg.metrics.enabled and report.conflicts:
+                from mergeguard.core.metrics import record_analysis
+
+                try:
+                    record_analysis(report, event.repo_full_name)
+                except Exception:
+                    logger.warning("Failed to record metrics snapshot", exc_info=True)
+
+        elif event.action == EventAction.CLOSED:
+            logger.info(
+                "PR %s #%d closed — conflict graph will update on next analysis",
+                event.repo_full_name,
+                event.pr_number,
+            )
+            if cfg.metrics.enabled:
+                from datetime import UTC
+                from datetime import datetime as _dt
+
+                from mergeguard.core.metrics import record_resolution
+
+                try:
+                    resolution_type = "merged" if event.merged else "closed"
+                    record_resolution(
+                        event.pr_number,
+                        event.repo_full_name,
+                        _dt.now(UTC),
+                        resolution_type,
+                    )
+                except Exception:
+                    logger.warning("Failed to record resolution", exc_info=True)
+    finally:
+        client.close()
+
+
+async def _handle_analysis(event: WebhookEvent | MergeGroupEvent) -> None:
+    """Run MergeGuard analysis for a webhook event.
+
+    Called by the queue worker in the background. Delegates to a sync
+    function via asyncio.to_thread to avoid blocking the event loop.
+    """
+    await asyncio.to_thread(_run_analysis_sync, event)
 
 
 def _get_token_for_platform(platform: str) -> str | None:
@@ -291,7 +370,7 @@ def _get_token_for_platform(platform: str) -> str | None:
     return os.environ.get(env_map.get(platform, ""))
 
 
-def _create_client_for_event(platform: str, token: str, repo: str) -> Any:
+def _create_client_for_event(platform: str, token: str, repo: str) -> SCMClient:
     """Create an SCM client for the given platform."""
     if platform == "gitlab":
         from mergeguard.integrations.gitlab_client import GitLabClient
@@ -307,6 +386,27 @@ def _create_client_for_event(platform: str, token: str, repo: str) -> Any:
 
         github_url = os.environ.get("MERGEGUARD_GITHUB_URL")
         return GitHubClient(token, repo, base_url=github_url)
+
+
+# ── Webhook secret management ───────────────────────────────────────
+
+_WEBHOOK_SECRET_VARS = {
+    "github": "MERGEGUARD_WEBHOOK_SECRET_GITHUB",
+    "gitlab": "MERGEGUARD_WEBHOOK_SECRET_GITLAB",
+    "bitbucket": "MERGEGUARD_WEBHOOK_SECRET_BITBUCKET",
+}
+
+
+def _get_webhook_secret(platform: str) -> str:
+    """Get webhook secret for a platform. Raises HTTPException if not configured."""
+    env_var = _WEBHOOK_SECRET_VARS[platform]
+    secret = os.environ.get(env_var, "")
+    if not secret:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Webhook secret not configured (set {env_var})",
+        )
+    return secret
 
 
 # ── Signature verification ──────────────────────────────────────────
@@ -343,6 +443,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Start/stop the analysis queue with the server lifecycle."""
     global _queue, _start_time
     _start_time = time.monotonic()
+
+    # Warn about missing webhook secrets
+    for platform, env_var in _WEBHOOK_SECRET_VARS.items():
+        if not os.environ.get(env_var):
+            logger.warning(
+                "No webhook secret configured for %s (set %s) — %s webhooks will be REJECTED",
+                platform,
+                env_var,
+                platform,
+            )
+
     _queue = AnalysisQueue(handler=_handle_analysis)
     await _queue.start()
     yield
@@ -352,9 +463,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(
     title="MergeGuard Webhook Server",
     description="Real-time cross-PR conflict detection via webhooks",
-    version="0.5.0",
+    version=__version__,
     lifespan=lifespan,
 )
+app.add_middleware(RateLimitMiddleware)
 
 
 @app.get("/health")
@@ -386,8 +498,8 @@ async def github_webhook(
     body = await request.body()
     metrics.webhooks_received.inc()
 
-    secret = os.environ.get("MERGEGUARD_WEBHOOK_SECRET_GITHUB", "")
-    if secret and not verify_github_signature(body, x_hub_signature_256, secret):
+    secret = _get_webhook_secret("github")
+    if not verify_github_signature(body, x_hub_signature_256, secret):
         metrics.webhooks_invalid.inc()
         raise HTTPException(status_code=401, detail="Invalid signature")
 
@@ -398,7 +510,8 @@ async def github_webhook(
     if event is None:
         return {"status": "ignored"}
 
-    assert _queue is not None
+    if _queue is None:
+        raise RuntimeError("Analysis queue not initialized")
     await _queue.enqueue(event)
 
     if isinstance(event, MergeGroupEvent):
@@ -415,8 +528,8 @@ async def gitlab_webhook(
     """Receive GitLab webhook events."""
     metrics.webhooks_received.inc()
 
-    secret = os.environ.get("MERGEGUARD_WEBHOOK_SECRET_GITLAB", "")
-    if secret and not verify_gitlab_token(x_gitlab_token, secret):
+    secret = _get_webhook_secret("gitlab")
+    if not verify_gitlab_token(x_gitlab_token, secret):
         metrics.webhooks_invalid.inc()
         raise HTTPException(status_code=401, detail="Invalid token")
 
@@ -427,7 +540,8 @@ async def gitlab_webhook(
     if event is None:
         return {"status": "ignored"}
 
-    assert _queue is not None
+    if _queue is None:
+        raise RuntimeError("Analysis queue not initialized")
     await _queue.enqueue(event)
     return {"status": "queued", "pr": event.pr_number}
 
@@ -442,8 +556,8 @@ async def bitbucket_webhook(
     body = await request.body()
     metrics.webhooks_received.inc()
 
-    secret = os.environ.get("MERGEGUARD_WEBHOOK_SECRET_BITBUCKET", "")
-    if secret and not verify_bitbucket_signature(body, x_hub_signature, secret):
+    secret = _get_webhook_secret("bitbucket")
+    if not verify_bitbucket_signature(body, x_hub_signature, secret):
         metrics.webhooks_invalid.inc()
         raise HTTPException(status_code=401, detail="Invalid signature")
 
@@ -454,7 +568,8 @@ async def bitbucket_webhook(
     if event is None:
         return {"status": "ignored"}
 
-    assert _queue is not None
+    if _queue is None:
+        raise RuntimeError("Analysis queue not initialized")
     await _queue.enqueue(event)
     return {"status": "queued", "pr": event.pr_number}
 

@@ -49,7 +49,8 @@ def format_review_comments(
     annotatable.sort(key=lambda c: (c.severity != ConflictSeverity.CRITICAL, c.file_path))
 
     for conflict in annotatable[:max_comments]:
-        assert conflict.source_lines is not None  # guaranteed by filter above
+        if conflict.source_lines is None:
+            continue
         body = _format_annotation_body(conflict, repo, platform)
         comments.append(
             ReviewComment(

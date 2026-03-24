@@ -1,828 +1,851 @@
-# MergeGuard Code Audit: Security, Performance & Quality
+# MergeGuard Code Audit: v0.5 Comprehensive Review
 
-> **Date:** 2026-03-03
-> **Scope:** Full codebase audit — all source files in `src/mergeguard/` and `tests/`
-> **Goal:** Identify issues blocking production readiness, prioritize fixes
-
----
-
-## Resolved (2026-03-03)
-
-38 fixes implemented across 14 files (Phases 1-5 from the fix plan):
-
-### Phases 1-3 (Steps 1-15)
-
-| Step | Issues Fixed | Files Changed |
-|------|-------------|---------------|
-| 1 | R-1, R-2, R-4 | `engine.py` — file size limit, binary detection, deleted file skip |
-| 2 | S-1, S-5, S-6 | `cache.py` — symlink check, type validation, atomic writes |
-| 3 | S-2 | `json_report.py` — GITHUB_OUTPUT support, restrictive /tmp permissions |
-| 4 | B-1 | `models.py`, `guardrails.py` — new GUARDRAIL ConflictType |
-| 5 | B-3 | `ast_parser.py` — `_safe_decode()` for all tree-sitter node text |
-| 6 | B-2 | `cli.py` — removed unused `import sys` |
-| 7 | B-6 | `llm_analyzer.py` — dict type check on LLM response |
-| 8 | S-3, B-8 | `engine.py` — specific exception types, logging level fixes |
-| 9 | P-3 | `engine.py` — reduced lock contention (single-lock pattern) |
-| 10 | P-6 | `engine.py` — pre-compiled fnmatch patterns |
-| 11 | P-2 | `cli.py` — O(N) collision map via file→PR index |
-| 12 | P-4 | `conflict.py` — O(1) symbol lookup dicts |
-| 13 | P-9 | `engine.py` — 300s timeout on ThreadPoolExecutor |
-| 14 | B-5 | `engine.py` — `list[Conflict]` type annotations |
-| 15 | S-4 | `github_client.py` — token removed from default headers |
-
-### Phases 4-5 (Steps 16-33)
-
-| Step | Issues Fixed | Files Changed |
-|------|-------------|---------------|
-| 16 | Q-1 | `engine.py` — split `_enrich_pr` into `_parse_file_diff`, `_fetch_and_validate_content`, `_build_changed_symbols` |
-| 17 | Q-2 | `engine.py` — extracted `_detect_all_conflicts` shared method |
-| 18 | Q-3, Q-5 | `guardrails.py` — fixed `_get_matching_files` to check matching files, not all files |
-| 19 | B-7 | `risk_scorer.py`, `engine.py` — extracted 11 magic numbers to named constants |
-| 20 | R-3 | `diff_parser.py` — added `max_lines` parameter (default 50,000) to `parse_unified_diff` |
-| 21 | R-5 | `dependency.py` — added logging for circular dependency detection |
-| 22 | S-10, S-11 | `cli.py` — `--pr` uses `IntRange(min=1)`, `--repo` validates `owner/repo` format |
-| 23 | B-4 | `engine.py` — replaced `/` split with `PurePosixPath` for module resolution |
-| 24 | P-5 | `engine.py` — bounded `_content_cache` to 500 entries with LRU eviction |
-| 25 | P-7 | `conflict.py` — Jaccard pre-filter before SequenceMatcher in PR duplication check |
-| 26 | S-8 | `config.py` — YAML fallback parser validates keys against `MergeGuardConfig.model_fields` |
-| 27 | Q-4 | `engine.py` — moved `logger` after all imports per PEP 8 |
-| 28 | P-1 | `ast_parser.py`, `symbol_index.py`, `engine.py` — combined `extract_symbols_and_call_graph` eliminates double tree-sitter parse |
-| 29 | T-1 | `tests/unit/test_edge_cases.py` — 5 edge case tests (empty PR, deleted-only, binary-only, all-ignored, empty content) |
-| 30 | T-3 | `tests/unit/test_error_recovery.py` — 4 error recovery tests (corrupt cache, non-dict JSON, API timeout, disk full) |
-| 31 | T-2 | `tests/unit/test_concurrency.py` — 3 concurrency tests (thread-safe SymbolIndex, thread-safe content cache, parallel enrichment) |
-
-### Intentionally Deferred (Step 18)
-
-| Issue | Reason |
-|-------|--------|
-| S-7 | Standard CLI behavior, no real attack vector |
-| S-9 | Cache is local, no security benefit from randomizing |
-| P-8 | Skipping Pydantic validation on untrusted cache data would be a security regression |
-| P-10 | Already has the `_extract_file_patches` single-split pattern; low gain vs refactor risk |
-| Q-6 | Cosmetic, can be added incrementally |
-| Q-7 | Cosmetic, not a code quality issue |
-
-All 256 tests pass (63 new tests added across phases 1-5 and subsequent fixes).
+> **Date:** 2026-03-23
+> **Scope:** Full codebase — `src/mergeguard/`, `tests/`, `action/`, `Dockerfile`
+> **Prior audit:** 2026-03-03 (44 findings, 38 resolved, 6 deferred)
+> **This audit:** 80 new findings across 7 categories
 
 ---
 
-## Table of Contents
+## Previous Audit Status
 
-1. [Executive Summary](#1-executive-summary)
-2. [Security Issues](#2-security-issues)
-3. [Performance Issues](#3-performance-issues)
-4. [Bugs & Logic Errors](#4-bugs--logic-errors)
-5. [Code Quality Issues](#5-code-quality-issues)
-6. [Test Coverage Gaps](#6-test-coverage-gaps)
-7. [Robustness Gaps](#7-robustness-gaps)
-8. [Fix Plan](#8-fix-plan)
+The March 3 audit found 44 issues and resolved 38 across phases 1-5. 6 were intentionally deferred (S-7, S-9, P-8, P-10, Q-6, Q-7). This audit builds on that work and covers new code added since (secrets scanning, DORA metrics, policy engine, MCP server, webhook server, blast radius, stacked PRs, notifications).
 
 ---
 
-## 1. Executive Summary
+## Summary
 
-| Category | Critical | High | Medium | Low | Total | Resolved | Deferred |
-|----------|----------|------|--------|-----|-------|----------|----------|
-| Security | 0 | 2 | 5 | 4 | **11** | **9** | 2 |
-| Performance | 0 | 4 | 4 | 2 | **10** | **8** | 2 |
-| Bugs & Logic | 0 | 2 | 3 | 3 | **8** | **8** | 0 |
-| Code Quality | 0 | 1 | 2 | 4 | **7** | **5** | 2 |
-| Test Gaps | 0 | 0 | 3 | 0 | **3** | **3** | 0 |
-| Robustness | 0 | 1 | 3 | 1 | **5** | **5** | 0 |
-| **Total** | **0** | **10** | **20** | **14** | **44** | **38** | **6** |
+| Category | P0 | P1 | P2 | P3 | Total |
+|----------|----|----|----|----|-------|
+| [Security](#1-security) | 1 | 5 | 4 | 3 | **13** |
+| [Reliability](#2-reliability) | 1 | 4 | 2 | 1 | **8** |
+| [Performance](#3-performance) | 0 | 3 | 10 | 5 | **18** |
+| [Quality](#4-quality) | 0 | 2 | 8 | 3 | **13** |
+| [Improvement](#5-improvement) | 0 | 2 | 6 | 3 | **11** |
+| [Testing](#6-testing) | 0 | 0 | 1 | 0 | **1** |
+| [Cleanup](#7-cleanup) | 0 | 0 | 2 | 7 | **9** |
+| **Total** | **2** | **16** | **33** | **22** | **73** |
 
-No critical issues. All high and medium issues resolved. 6 low-impact issues intentionally deferred.
+Legend: **P0** = fix before any deployment, **P1** = fix before production, **P2** = fix soon after launch, **P3** = nice-to-have / tech debt
 
 ---
 
-## 2. Security Issues
+## 1. Security
 
-### S-1: Symlink Attack on Cache Directory (HIGH) — FIXED (Step 2)
+### SEC-01: Webhook authentication bypass when secret is not configured (P0)
 
-**File:** `src/mergeguard/storage/cache.py:21-23`
+**Files:** `src/mergeguard/server/webhook.py:389-392, 418-421, 445-448`
 
-The cache directory is created with `Path.mkdir(parents=True, exist_ok=True)` without checking if the path is a symlink. An attacker with local filesystem access could create a symlink at `.mergeguard-cache/` pointing to a sensitive location, causing MergeGuard to overwrite arbitrary files.
+All three webhook endpoints skip signature verification when the corresponding env var is empty:
 
 ```python
-# Current
-def __init__(self, cache_dir: str | Path = ".mergeguard-cache"):
-    self._cache_dir = Path(cache_dir)
-    self._cache_dir.mkdir(parents=True, exist_ok=True)
-```
-
-**Fix:** Resolve the path and reject symlinks:
-```python
-def __init__(self, cache_dir: str | Path = ".mergeguard-cache"):
-    self._cache_dir = Path(cache_dir).resolve()
-    if self._cache_dir.is_symlink():
-        raise ValueError(f"Cache directory is a symlink: {self._cache_dir}")
-    self._cache_dir.mkdir(parents=True, exist_ok=True)
-```
-
----
-
-### S-2: Hardcoded /tmp Paths Without Permissions (HIGH) — FIXED (Step 3)
-
-**File:** `src/mergeguard/output/json_report.py:49-50`
-
-GitHub Actions output files are written to hardcoded `/tmp` paths with default permissions (world-readable). On shared CI runners, other processes could read or tamper with these files.
-
-```python
-Path("/tmp/mergeguard-score.txt").write_text(f"{report.risk_score:.0f}")
-Path("/tmp/mergeguard-conflicts.txt").write_text(str(len(report.conflicts)))
-```
-
-**Fix:** Use `GITHUB_OUTPUT` env var (the standard Actions mechanism) or `tempfile` with restrictive permissions:
-```python
-import os, tempfile
-
-def write_github_action_outputs(report: ConflictReport) -> None:
-    output_file = os.environ.get("GITHUB_OUTPUT")
-    if output_file:
-        with open(output_file, "a") as f:
-            f.write(f"risk_score={report.risk_score:.0f}\n")
-            f.write(f"conflict_count={len(report.conflicts)}\n")
-    else:
-        # Fallback with restrictive permissions
-        for name, value in [("score", f"{report.risk_score:.0f}"),
-                            ("conflicts", str(len(report.conflicts)))]:
-            fd = os.open(f"/tmp/mergeguard-{name}.txt",
-                         os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-            with os.fdopen(fd, "w") as f:
-                f.write(value)
-```
-
----
-
-### S-3: Broad `except Exception` Swallows Security Errors (MEDIUM) — FIXED (Step 8)
-
-**File:** `src/mergeguard/core/engine.py` — lines 144, 188, 250, 292, 316, 347, 464, 489, 531
-
-Nine locations catch bare `Exception`, which hides authentication failures, network errors, and resource exhaustion. Several of these are logged at `debug` level, making them invisible in default operation.
-
-**Locations:**
-| Line | Context | Risk |
-|------|---------|------|
-| 144 | Diff backfill | Hides network errors |
-| 188 | Cache init | Hides permission errors |
-| 250 | Regression detection | Hides DB corruption |
-| 292 | Cache write | Hides disk full |
-| 316 | DecisionsLog init (batch) | Hides DB corruption |
-| 347 | Regression (batch) | Hides DB corruption |
-| 464 | PR enrichment | Hides auth failures |
-| 489 | LLM init | Hides config errors |
-| 531 | LLM analysis | Hides API errors |
-
-**Fix:** Replace with specific exception types and escalate auth/permission errors:
-```python
-# Example for line 464
-except (httpx.HTTPError, GithubException) as e:
-    logger.warning("Failed to enrich PR #%d: %s", pr.number, e)
-```
-
----
-
-### S-4: Token Potentially Exposed in Tracebacks (MEDIUM) — FIXED (Step 15)
-
-**File:** `src/mergeguard/integrations/github_client.py:31-37`
-
-The GitHub token is stored in the `httpx.Client` headers dict. If an exception occurs during an HTTP request, the traceback may include the full headers dict, exposing the token in logs.
-
-**Fix:** Use httpx's `auth` parameter instead:
-```python
-self._http = httpx.Client(
-    headers={"Accept": "application/vnd.github.v3+json"},
-    auth=httpx.BasicAuth("token", token),
-    timeout=30.0,
-)
-```
-
----
-
-### S-5: Cache JSON Deserialization Without Type Validation (MEDIUM) — FIXED (Step 2)
-
-**File:** `src/mergeguard/storage/cache.py:34-37`
-
-`json.load()` returns arbitrary Python objects. A poisoned cache file could contain unexpected types. While `ConflictReport.model_validate()` in the engine provides some protection, the cache `get()` method itself returns unvalidated data.
-
-**Fix:** Add type check in `get()`:
-```python
-def get(self, key: str) -> dict | None:
-    path = self._key_to_path(key)
-    if not path.exists():
-        return None
-    try:
-        with open(path) as f:
-            data = json.load(f)
-        if not isinstance(data, dict):
-            return None
-        return data
-    except (json.JSONDecodeError, OSError):
-        return None
-```
-
----
-
-### S-6: File-Based Cache Not Thread-Safe (MEDIUM) — FIXED (Step 2)
-
-**File:** `src/mergeguard/storage/cache.py:39-43`
-
-The `set()` method writes JSON without file locking. In parallel CI environments, two processes could write to the same cache file simultaneously, corrupting it.
-
-**Fix:** Use atomic writes:
-```python
-import tempfile
-def set(self, key: str, value: dict) -> None:
-    path = self._key_to_path(key)
-    fd, tmp_path = tempfile.mkstemp(dir=self._cache_dir, suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w") as f:
-            json.dump(value, f)
-        os.replace(tmp_path, path)  # Atomic on POSIX
-    except Exception:
-        os.unlink(tmp_path)
-        raise
-```
-
----
-
-### S-7: Config File Path Not Validated (MEDIUM)
-
-**File:** `src/mergeguard/cli.py:37`
-
-The `--config` option accepts any file path. While this is standard CLI behavior, there's no check preventing accidental reads of files outside the repo.
-
-**Fix:** Validate the path is under the current directory:
-```python
-config_path = Path(config).resolve()
-if not str(config_path).startswith(str(Path.cwd())):
-    raise click.BadParameter("Config path must be within the current directory")
-```
-
----
-
-### S-8: YAML Fallback Parser Lacks Validation (LOW) — FIXED (Step 26)
-
-**File:** `src/mergeguard/config.py:44-67`
-
-When PyYAML is not installed, a basic string parser is used. It doesn't validate keys against `MergeGuardConfig` fields before passing them through. Pydantic catches unknown fields, but the parser also doesn't handle list/nested values.
-
-**Fix:** Added key validation against `MergeGuardConfig.model_fields.keys()`. Unknown keys are silently skipped.
-
----
-
-### S-9: Predictable Cache File Names (LOW)
-
-**File:** `src/mergeguard/storage/cache.py:55-61`
-
-Cache keys use truncated SHA-256 (16 chars). While this is sufficient to avoid accidental collisions, the key components (`repo`, `pr_number`, `head_sha`) are all public information, making cache files predictable.
-
-**Fix:** Add a random salt or use the full SHA-256 hash.
-
----
-
-### S-10: PR Number Not Range-Validated (LOW) — FIXED (Step 22)
-
-**File:** `src/mergeguard/cli.py:35`
-
-`--pr` accepts any integer including negatives. The GitHub API rejects invalid numbers, but failing earlier with a clear message is better.
-
-**Fix:** `type=click.IntRange(min=1)`
-
----
-
-### S-11: Repo Name Not Format-Validated (LOW) — FIXED (Step 22)
-
-**File:** `src/mergeguard/cli.py:34`
-
-`--repo` accepts any string. A malformed value produces an opaque PyGithub error.
-
-**Fix:** Added `_validate_repo` callback to all three commands' `--repo` options.
-
----
-
-## 3. Performance Issues
-
-### P-1: Double Tree-Sitter Parsing Per File (HIGH) — FIXED (Step 28)
-
-**File:** `src/mergeguard/core/engine.py:585-603`
-
-Each file is parsed by tree-sitter twice: once in `get_symbols()` (via `SymbolIndex`) and again in `extract_call_graph()`. Tree-sitter parsing costs 50-200ms per file.
-
-**Fix:** Created `extract_symbols_and_call_graph()` in `ast_parser.py`, `get_symbols_and_call_graph()` in `SymbolIndex`, and replaced `extract_call_graph` call in `engine.py`.
-
----
-
-### P-2: O(N^2) Collision Map Computation (HIGH) — FIXED (Step 11)
-
-**File:** `src/mergeguard/cli.py:114-126`
-
-The `map` command calls `compute_file_overlaps(pr_a, [pr_b])` inside a nested loop, making it O(N^2) where N = open PRs. Each call redundantly reconstructs file sets.
-
-```python
-for i, pr_a in enumerate(prs):
-    for j, pr_b in enumerate(prs):
-        overlaps = compute_file_overlaps(pr_a, [pr_b])  # Called N^2 times
-```
-
-**Impact:** For 30 PRs: 900 overlap computations instead of 1 batch computation.
-
-**Fix:** Compute all overlaps once using a reverse file index:
-```python
-# Build file → PR index
-file_to_prs = defaultdict(set)
-for pr in prs:
-    for cf in pr.changed_files:
-        file_to_prs[cf.path].add(pr.number)
-
-# Build overlap matrix from index
-overlap_matrix = defaultdict(lambda: defaultdict(int))
-for path, pr_numbers in file_to_prs.items():
-    for a in pr_numbers:
-        for b in pr_numbers:
-            if a != b:
-                overlap_matrix[a][b] += 1
-```
-
----
-
-### P-3: Lock Contention on Content Cache (HIGH) — FIXED (Step 9)
-
-**File:** `src/mergeguard/core/engine.py:112-122`
-
-Every file content fetch acquires `_cache_lock` twice (once to check, once to set). With 8 parallel workers, this serializes cache access and becomes a bottleneck.
-
-```python
-def _get_file_content_cached(self, path: str, ref: str) -> str | None:
-    key = (path, ref)
-    with self._cache_lock:           # Lock 1: check
-        if key in self._content_cache:
-            return self._content_cache[key]
-    content = self._client.get_file_content(path, ref)
-    with self._cache_lock:           # Lock 2: set
-        if key not in self._content_cache:
-            self._content_cache[key] = content
-        return self._content_cache[key]
-```
-
-**Impact:** With 8 threads and 100 files: ~1600 lock acquisitions.
-
-**Fix:** Use a lock-per-key pattern or single-check:
-```python
-def _get_file_content_cached(self, path: str, ref: str) -> str | None:
-    key = (path, ref)
-    # Fast path: no lock needed for reads (dict reads are thread-safe in CPython)
-    if key in self._content_cache:
-        return self._content_cache[key]
-    content = self._client.get_file_content(path, ref)
-    with self._cache_lock:
-        self._content_cache.setdefault(key, content)
-    return self._content_cache[key]
-```
-
----
-
-### P-4: Linear Symbol Lookup in Conflict Detection (HIGH) — FIXED (Step 12)
-
-**File:** `src/mergeguard/core/conflict.py` — `_find_changed_symbol()` and `_find_symbol()`
-
-These functions do O(N) linear scans through `changed_symbols` for each shared symbol. Called multiple times per PR pair.
-
-**Impact:** For 200 changed symbols per PR and 20 shared symbols: 4,000 linear scans.
-
-**Fix:** Build lookup dicts at the start of `classify_conflicts()`:
-```python
-def classify_conflicts(target_pr, other_pr, overlaps):
-    target_map = {(cs.symbol.file_path, cs.symbol.name): cs for cs in target_pr.changed_symbols}
-    other_map = {(cs.symbol.file_path, cs.symbol.name): cs for cs in other_pr.changed_symbols}
-    # Use O(1) dict lookups instead of linear search
-```
-
----
-
-### P-5: Unbounded In-Memory Content Cache (MEDIUM) — FIXED (Step 24)
-
-**File:** `src/mergeguard/core/engine.py:109`
-
-`_content_cache` grows without limit. For large repos with many files, this can accumulate significant memory (100 files x 50KB = 5MB per analysis).
-
-**Fix:** Added LRU eviction to `_content_cache` with `MAX_CACHE_ENTRIES = 500`.
-
----
-
-### P-6: fnmatch Recompilation Per File (MEDIUM) — FIXED (Step 10)
-
-**File:** `src/mergeguard/core/engine.py:553-556`
-
-`fnmatch.fnmatch()` recompiles the glob pattern into a regex on every call. With 7 default ignore patterns and 100 files, that's 700 pattern compilations.
-
-```python
-pr.changed_files = [
-    cf for cf in pr.changed_files
-    if not any(fnmatch.fnmatch(cf.path, pat) for pat in self._config.ignored_paths)
-]
-```
-
-**Fix:** Pre-compile patterns in `__init__`:
-```python
-import re as _re
-self._ignore_patterns = [
-    _re.compile(fnmatch.translate(pat))
-    for pat in self._config.ignored_paths
-]
-```
-
----
-
-### P-7: SequenceMatcher for PR Description Similarity (MEDIUM) — FIXED (Step 25)
-
-**File:** `src/mergeguard/core/conflict.py` — `_check_pr_duplication()`
-
-Uses `difflib.SequenceMatcher` (O(N*M)) to compare potentially long PR descriptions. Called for every PR pair.
-
-**Fix:** Added `_quick_token_similarity` Jaccard pre-filter that skips SequenceMatcher if title similarity < 0.15.
-
----
-
-### P-8: Pydantic model_validate on Every Cache Hit (MEDIUM)
-
-**File:** `src/mergeguard/core/engine.py:187`
-
-Every cache hit runs full Pydantic validation via `model_validate()`. For reports with 50+ conflicts, this adds 10-50ms.
-
-**Fix:** Use `model_construct()` for trusted cached data:
-```python
-return ConflictReport.model_construct(**cached)
-```
-
----
-
-### P-9: ThreadPoolExecutor Without Timeout (LOW) — FIXED (Step 13)
-
-**File:** `src/mergeguard/core/engine.py:208-211, 303-306`
-
-`as_completed(futures)` has no timeout. A hung API call blocks the entire analysis indefinitely.
-
-**Fix:** Add timeout: `as_completed(futures, timeout=300)`
-
----
-
-### P-10: Multi-Pass String Splitting in Diff Extraction (LOW)
-
-**File:** `src/mergeguard/core/engine.py:67-93`
-
-`_extract_file_patches()` splits large diffs multiple times: once on `"diff --git "`, then each segment on `"\n"`. For 1MB+ diffs, this creates significant temporary memory.
-
-**Fix:** Use single-pass line-by-line processing.
-
----
-
-## 4. Bugs & Logic Errors
-
-### B-1: Guardrails Use Wrong ConflictType (HIGH) — FIXED (Step 4)
-
-**File:** `src/mergeguard/core/guardrails.py:60, 81`
-
-Guardrail violations are tagged as `ConflictType.REGRESSION`, which is semantically incorrect. They are rule violations, not regressions. This causes:
-- Incorrect categorization in reports and PR comments
-- Misleading severity breakdown
-- Potential confusion with actual regression conflicts
-
-```python
-Conflict(
-    conflict_type=ConflictType.REGRESSION,  # Wrong — should be GUARDRAIL or BEHAVIORAL
-    severity=ConflictSeverity.WARNING,
+secret = os.environ.get("MERGEGUARD_WEBHOOK_SECRET_GITHUB", "")
+if secret and not verify_github_signature(body, x_hub_signature_256, secret):
     ...
-)
 ```
 
-**Fix:** Either add a `GUARDRAIL` variant to `ConflictType` or use a more appropriate existing type.
+With no secret configured (the default), anyone can send forged payloads to trigger analysis, post PR comments, commit statuses, and Slack notifications with attacker-controlled content.
+
+**Fix:** Reject requests when no secret is configured, or at minimum fail-open with a loud startup warning. Default to "reject" not "accept."
 
 ---
 
-### B-2: Unused `import sys` in CLI (HIGH) — FIXED (Step 6)
+### SEC-02: SSRF via user-controllable notification webhook URLs (P1)
 
-**File:** `src/mergeguard/cli.py:12`
+**Files:** `src/mergeguard/output/notifications.py:124, 220, 321`, `src/mergeguard/core/policy.py:336, 342`
+
+Slack/Teams notification functions call `httpx.post(webhook_url, ...)` with zero URL validation. The `webhook_url` comes from `.mergeguard.yml` (controlled by PR authors). An attacker could set it to `http://169.254.169.254/latest/meta-data/` or an internal endpoint.
+
+**Fix:** Validate URLs against expected patterns (e.g., must be `https://hooks.slack.com/` for Slack). Block RFC 1918 and link-local addresses.
+
+---
+
+### SEC-03: SSRF via GitHub Enterprise / GitLab base URLs leaking API tokens (P1)
+
+**Files:** `src/mergeguard/integrations/github_client.py:47-55, 127`, `src/mergeguard/integrations/gitlab_client.py:44-46`, `src/mergeguard/server/webhook.py:299, 308`
+
+The `github_url` field in `.mergeguard.yml` (line 536 of `models.py`) controls the base URL for all API requests. The `Authorization: token {self._token}` header is sent to whatever host this points to. An attacker who modifies the config file in a PR could redirect API calls to their server and steal the token.
+
+**Fix:** Never send API tokens to config-file-sourced URLs without host validation. Environment-variable-sourced URLs are lower risk.
+
+---
+
+### SEC-04: MCP server accepts GitHub tokens as tool parameters (P1)
+
+**Files:** `src/mergeguard/mcp/server.py:63-68, 152-156, 203-206`
 
 ```python
-import sys  # Never used
+async def check_conflicts(repo: str, files: list[str], token: str) -> dict[str, Any]:
 ```
 
-**Fix:** Remove the import.
+Tokens are passed through the MCP protocol in plain text, end up in conversation history, logs, and potentially third-party tool systems.
+
+**Fix:** Read tokens from environment variables within the tool implementation.
 
 ---
 
-### B-3: UnicodeDecodeError in AST Parser (MEDIUM) — FIXED (Step 5)
+### SEC-05: Shell injection risk in GitHub Action entrypoint (P1)
 
-**File:** `src/mergeguard/analysis/ast_parser.py` — multiple `.text.decode("utf-8")` calls
+**Files:** `action/entrypoint.sh:10, 57, 83, 128-133`
 
-Tree-sitter node `.text` is raw bytes. If source code contains non-UTF-8 sequences (binary files, mixed encodings), `decode("utf-8")` raises `UnicodeDecodeError` without a handler.
+Unquoted variable expansions and string-interpolated JSON in curl commands:
 
-**Fix:** Use `decode("utf-8", errors="replace")` or wrap in try/except.
-
----
-
-### B-4: Windows Path Separator in Module Name Resolution (MEDIUM) — FIXED (Step 23)
-
-**File:** `src/mergeguard/core/engine.py:404`
-
-Module name resolution hardcodes `/` as the path separator.
-
-**Fix:** Replaced `fp[:-3].split("/")` with `list(PurePosixPath(fp).with_suffix("").parts)`.
-
----
-
-### B-5: Missing Type Annotations on LLM Method (MEDIUM) — FIXED (Step 14)
-
-**File:** `src/mergeguard/core/engine.py:471-472`
-
-```python
-def _apply_llm_analysis(self, ..., conflicts: list) -> list:
-    # Should be: conflicts: list[Conflict]) -> list[Conflict]
+```bash
+REPORT=$(mergeguard $GLOBAL_OPTS analyze $ANALYZE_OPTS 2>/dev/null || echo '{"conflicts":[]}')
+curl ... -d "{\"state\":\"$state\",\"description\":\"${description:0:140}\"}"
 ```
 
-This makes the code harder to maintain and prevents type checkers from catching errors.
+A repo name or description containing shell metacharacters or `"` could break the JSON or cause injection.
+
+**Fix:** Quote all variable expansions. Use `jq --arg` to construct JSON payloads.
 
 ---
 
-### B-6: LLM Response Not Type-Checked (LOW) — FIXED (Step 7)
+### SEC-06: Docker image runs as root (P1)
 
-**File:** `src/mergeguard/integrations/llm_analyzer.py:80-84`
+**File:** `Dockerfile`
 
-After JSON parsing, the result is used without checking if it's actually a dict:
+The container never creates a non-root user. The webhook server runs as root inside the container.
 
-```python
-result = json.loads(response.content[0].text)
-# result could be a list, string, int, etc.
-if result.get("compatible", True):  # Crashes if not a dict
-```
-
-**Fix:** Add `if not isinstance(result, dict): return None`
+**Fix:** Add `RUN useradd -m mergeguard` and `USER mergeguard` before the entrypoint.
 
 ---
 
-### B-7: Magic Numbers in Risk Scorer (LOW) — FIXED (Step 19)
+### SEC-07: ReDoS risk in user-supplied secret patterns (P2)
 
-**File:** `src/mergeguard/core/risk_scorer.py`
+**Files:** `src/mergeguard/core/secrets.py:66-70`, `src/mergeguard/core/secret_patterns.py:53`
 
-Hardcoded constants with no names or documentation.
+User-supplied patterns from `.mergeguard.yml` are compiled with `re.compile()` with no timeout or complexity check. The builtin Heroku pattern also uses `.*` which can backtrack on long lines.
 
-**Fix:** Extracted 11 magic numbers to named constants: `DEPENDENCY_DEPTH_MULTIPLIER`, `CONFLICTING_PR_MULTIPLIER`, `AI_CONFIRMED_PENALTY`, `AI_SUSPECTED_PENALTY`, `CRITICAL_SEVERITY_SCORE`, `WARNING_SEVERITY_SCORE`, `INFO_SEVERITY_SCORE`, `DIMINISHING_RETURN_BASE`, `CONCENTRATION_FLOOR`, `CONCENTRATION_VARIABLE`, and `CHURN_MAX_LINES` in engine.py.
-
----
-
-### B-8: Inconsistent Error Logging Levels (LOW) — FIXED (Step 8)
-
-**File:** `src/mergeguard/core/engine.py`
-
-Some failures are logged at `debug` (invisible by default) while others at `warning`:
-- Cache failures → `debug` (line 190, 293)
-- PR enrichment failure → `warning` (line 465)
-- Regression detection failure → `debug` (line 251)
-
-**Fix:** Standardize: operational issues at `warning`, expected skips at `debug`.
+**Fix:** Use `re.compile(pattern)` with timeout (Python 3.12+), or use `re2`. At minimum, wrap `regex.search()` calls with a timeout.
 
 ---
 
-## 5. Code Quality Issues
+### SEC-08: No rate limiting on webhook endpoints (P2)
 
-### Q-1: God Method — `_enrich_pr()` (HIGH) — FIXED (Step 16)
+**File:** `src/mergeguard/server/webhook.py`
 
-**File:** `src/mergeguard/core/engine.py:550-629`
+No request rate limiting. Combined with SEC-01, an attacker could flood the server with forged events, exhausting GitHub API rate limits and triggering excessive notifications.
 
-80 lines, handles: path filtering, diff parsing, file fetching, symbol extraction, signature comparison, call graph extraction, symbol mapping.
-
-**Fix:** Split into 3 focused helpers: `_parse_file_diff`, `_fetch_and_validate_content`, `_build_changed_symbols`. The `_enrich_pr` coordinator is now ~15 lines.
+**Fix:** Add FastAPI rate limiting middleware (e.g., `slowapi`). Rate-limit by source IP or repository.
 
 ---
 
-### Q-2: Duplicated Logic in `analyze_pr` vs `analyze_all_open_prs` (MEDIUM) — FIXED (Step 17)
+### SEC-09: Git ref injection in local git operations (P2)
 
-**File:** `src/mergeguard/core/engine.py:160-295 vs 297-380`
+**Files:** `src/mergeguard/integrations/git_local.py:64-77`
 
-The conflict detection loop (file overlaps → classify → guardrails → regression) was duplicated between single-PR and batch analysis.
+User-controlled strings (`base`, `head`, `ref`, `path`) are passed directly to git commands. A `ref` starting with `-` could be interpreted as a git flag.
 
-**Fix:** Extracted shared `_detect_all_conflicts()` method. Both `analyze_pr` and `analyze_all_open_prs` now call it.
-
----
-
-### Q-3: `_get_matching_files` Return Value Unused (MEDIUM) — FIXED (Step 18)
-
-**File:** `src/mergeguard/core/guardrails.py:53, 98-104`
-
-`_check_rule()` calls `_get_matching_files()` but never uses the result — the size-limit checks looked at all `pr.changed_files`, not just pattern-matched files.
-
-**Fix:** Size-limit checks now use `matching_files` for file counts and `matching_cfs` for line counts.
+**Fix:** Validate that ref/base/head params don't start with `-`. Use `--` separator where possible.
 
 ---
 
-### Q-4: Inconsistent Logging Import Position (LOW) — FIXED (Step 27)
+### SEC-10: Token potentially logged in HTTP error tracebacks (P2)
 
-**File:** `src/mergeguard/core/engine.py:17-19`
+**File:** `src/mergeguard/integrations/github_client.py:122-131`
 
-Module-level `logger` was placed before imports.
+The `Authorization` header is passed per-request. On `raise_for_status()`, httpx may include full request details (including the token) in the exception message.
 
-**Fix:** Moved `logger = logging.getLogger(__name__)` after all imports per PEP 8.
-
----
-
-### Q-5: Dead Code — `_get_matching_files` Result (LOW) — FIXED (Step 18)
-
-Same as Q-3. Fixed along with Q-3 — matching files are now used for size limit checks.
+**Fix:** Set the Authorization header on the `httpx.Client` at construction time. Catch `HTTPStatusError` and re-raise with sanitized details.
 
 ---
 
-### Q-6: No `__all__` Exports in Public Modules (LOW)
+### SEC-11: Unauthenticated health/metrics endpoints expose internal state (P3)
 
-No module defines `__all__`, making it unclear what the public API is.
+**File:** `src/mergeguard/server/webhook.py:360-377`
 
----
+`/health` and `/metrics` expose uptime, queue depth, analysis counts, and timing data without authentication.
 
-### Q-7: Inconsistent Docstring Style (LOW)
-
-Some functions use Google-style docstrings, others use one-liners, some have none.
+**Fix:** Put behind basic auth or restrict to internal networks.
 
 ---
 
-## 6. Test Coverage Gaps
+### SEC-12: Secret redaction reveals too many characters (P3)
 
-### T-1: No Edge Case Tests for Empty/Minimal PRs (MEDIUM) — FIXED (Step 29)
+**File:** `src/mergeguard/core/secrets.py:33-37`
 
-**Added:** `tests/unit/test_edge_cases.py` with 5 tests covering all cases: empty PR, deleted-only, binary-only, all-ignored, empty content.
+`_redact()` shows first 4 + last 3 characters (7 of 20 chars for AWS keys). For short secrets this is a significant portion.
 
----
-
-### T-2: No Concurrent Access Tests (MEDIUM) — FIXED (Step 31)
-
-**Added:** `tests/unit/test_concurrency.py` with 3 tests: thread-safe SymbolIndex, thread-safe content cache, parallel PR enrichment.
+**Fix:** Show fewer characters or just the pattern name.
 
 ---
 
-### T-3: No Error Recovery Tests (MEDIUM) — FIXED (Step 30)
+### SEC-13: Unbounded `_pending` dict in analysis queue (P3)
 
-**Added:** `tests/unit/test_error_recovery.py` with 4 tests: corrupt cache JSON, non-dict JSON, API timeout, disk-full cleanup.
+**File:** `src/mergeguard/server/queue.py:83-85`
 
----
+The deduplication dict grows without bound. Keys are only removed when tasks complete. If events arrive faster than they're processed, memory grows.
 
-## 7. Robustness Gaps
-
-### R-1: No File Size Limit Before Parsing (HIGH) — FIXED (Step 1)
-
-**File:** `src/mergeguard/core/engine.py`
-
-No check on file size before fetching content and running tree-sitter. A 50MB file could:
-- Hang tree-sitter parsing
-- Exhaust memory
-- Exceed GitHub API response limits
-
-**Fix:** Add a size check before parsing:
-```python
-MAX_FILE_SIZE = 500_000  # 500KB
-if content and len(content) > MAX_FILE_SIZE:
-    logger.warning("Skipping %s (%.0fKB exceeds limit)", path, len(content)/1024)
-    pr.skipped_files.append(changed_file.path)
-    continue
-```
+**Fix:** Add a size limit or periodic pruning.
 
 ---
 
-### R-2: Binary Files Not Detected (MEDIUM) — FIXED (Step 1)
+## 2. Reliability
 
-**File:** `src/mergeguard/core/engine.py`
+### REL-01: httpx.Client never closed — connection leak in all SCM clients (P0)
 
-No detection for binary files (images, executables, compiled assets). These will produce meaningless diff/symbol data or cause parsing errors.
+**Files:** `src/mergeguard/integrations/github_client.py:56`, `src/mergeguard/integrations/gitlab_client.py:47`, `src/mergeguard/integrations/bitbucket_client.py:49`
 
-**Fix:** Check for null bytes in first 8KB of content:
-```python
-def _is_binary(content: str) -> bool:
-    return "\x00" in content[:8192]
-```
+All three clients create `httpx.Client()` in `__init__` but have no `close()`, `__enter__`, or `__exit__`. The `SCMClient` protocol also lacks `close()`. In the long-running webhook server, TCP connections leak indefinitely.
+
+**Fix:** Add `close()` to the `SCMClient` protocol. Implement `__enter__`/`__exit__` on all clients. Ensure the engine and webhook handler call cleanup.
 
 ---
 
-### R-3: No Diff Size Limit (MEDIUM) — FIXED (Step 20)
+### REL-02: No retry logic for GitLab and Bitbucket clients (P1)
 
-**File:** `src/mergeguard/analysis/diff_parser.py`
+**Files:** `src/mergeguard/integrations/gitlab_client.py`, `src/mergeguard/integrations/bitbucket_client.py`
 
-The diff parser processes all lines without a limit.
+GitHub client has retry via `GithubRetry`, but GitLab and Bitbucket use raw `httpx.Client` with no retry. Transient 5xx and connection resets fail immediately.
 
-**Fix:** Added `max_lines` parameter (default `MAX_DIFF_LINES = 50_000`) to `parse_unified_diff()` with a warning when truncated.
-
----
-
-### R-4: Deleted Files Still Processed in `_enrich_pr` (MEDIUM) — FIXED (Step 1)
-
-**File:** `src/mergeguard/core/engine.py:558`
-
-Deleted files pass through `_enrich_pr` relying on `if not changed_file.patch` to skip them. This works but is fragile — an explicit status check is more robust.
-
-**Fix:** Add explicit check:
-```python
-if changed_file.status == FileChangeStatus.REMOVED:
-    continue
-```
+**Fix:** Use `httpx.HTTPTransport(retries=3)` or `tenacity`.
 
 ---
 
-### R-5: Circular Dependencies Silently Ignored (LOW) — FIXED (Step 21)
+### REL-03: `assert` statements in production code — 7 instances (P1)
 
-**File:** `src/mergeguard/analysis/dependency.py`
+**Files:**
+- `src/mergeguard/server/webhook.py:401, 430, 457` — `assert _queue is not None`
+- `src/mergeguard/core/guardrails.py:198, 235` — `assert max_lines/max_complexity is not None`
+- `src/mergeguard/core/engine.py:185` — `assert token is not None`
+- `src/mergeguard/output/inline_annotations.py:52` — `assert conflict.source_lines is not None`
 
-The dependency graph used a visited set to prevent infinite loops, but circular dependencies were neither detected nor reported.
+All stripped under `python -O`. The webhook ones are particularly dangerous — a race could leave `_queue` as `None`, causing silent `NoneType` crashes.
 
-**Fix:** Added `logger.debug()` when a cycle is detected (neighbor == `file_path` during BFS).
-
----
-
-## 8. Fix Plan
-
-### Phase 1: High-Priority Fixes (Robustness + Security)
-
-Target: Make the engine resilient to real-world inputs.
-
-| # | Issue | Files | Effort |
-|---|-------|-------|--------|
-| 1 | Add file size limit before parsing (R-1) | engine.py | S |
-| 2 | Detect and skip binary files (R-2) | engine.py | S |
-| 3 | Skip deleted files explicitly (R-4) | engine.py | S |
-| 4 | Fix symlink attack on cache dir (S-1) | cache.py | S |
-| 5 | Fix /tmp file permissions (S-2) | json_report.py | S |
-| 6 | Atomic cache writes (S-6) | cache.py | S |
-| 7 | Validate cache JSON type (S-5) | cache.py | S |
-| 8 | Fix guardrails ConflictType (B-1) | guardrails.py, models.py | S |
-| 9 | Remove unused `import sys` (B-2) | cli.py | S |
-| 10 | Add UnicodeDecodeError handling in AST parser (B-3) | ast_parser.py | S |
-
-**Estimated effort:** 1-2 hours. All are small, isolated changes with clear fixes.
-
-### Phase 2: Performance Wins (High Impact)
-
-Target: Reduce analysis time by ~30-40%.
-
-| # | Issue | Files | Effort |
-|---|-------|-------|--------|
-| 11 | Merge tree-sitter parsing (single parse per file) (P-1) | ast_parser.py, engine.py, symbol_index.py | M |
-| 12 | Fix O(N^2) collision map (P-2) | cli.py | M |
-| 13 | Reduce lock contention on content cache (P-3) | engine.py | S |
-| 14 | Build symbol lookup dicts in classify_conflicts (P-4) | conflict.py | M |
-| 15 | Pre-compile fnmatch patterns (P-6) | engine.py | S |
-| 16 | Add ThreadPoolExecutor timeout (P-9) | engine.py | S |
-
-**Estimated effort:** 3-4 hours. P-1 is the most complex (requires refactoring AST parser interface).
-
-### Phase 3: Exception Handling Cleanup
-
-Target: Replace all bare `except Exception` with specific catches.
-
-| # | Issue | Files | Effort |
-|---|-------|-------|--------|
-| 17 | Replace 9 broad exception handlers (S-3) | engine.py | M |
-| 18 | Mask token in httpx client (S-4) | github_client.py | S |
-| 19 | Standardize logging levels (B-8) | engine.py | S |
-| 20 | Add type check on LLM response (B-6) | llm_analyzer.py | S |
-| 21 | Add type annotations to LLM method (B-5) | engine.py | S |
-
-**Estimated effort:** 1-2 hours.
-
-### Phase 4: Code Quality Refactors
-
-Target: Reduce maintenance burden.
-
-| # | Issue | Files | Effort |
-|---|-------|-------|--------|
-| 22 | Split `_enrich_pr()` into focused helpers (Q-1) | engine.py | M |
-| 23 | Extract shared conflict detection loop (Q-2) | engine.py | M |
-| 24 | Fix guardrails `_get_matching_files` unused result (Q-3) | guardrails.py | S |
-| 25 | Extract magic numbers to named constants (B-7) | risk_scorer.py, engine.py | S |
-| 26 | Add diff size limit (R-3) | diff_parser.py | S |
-
-**Estimated effort:** 2-3 hours.
-
-### Phase 5: Input Validation + Testing
-
-Target: Harden CLI inputs and fill test gaps.
-
-| # | Issue | Files | Effort |
-|---|-------|-------|--------|
-| 27 | Validate --pr range and --repo format (S-10, S-11) | cli.py | S |
-| 28 | Add edge case tests (T-1) | tests/ | M |
-| 29 | Add error recovery tests (T-3) | tests/ | M |
-| 30 | Add concurrency tests (T-2) | tests/ | L |
-| 31 | Bound content cache size (P-5) | engine.py | S |
-
-**Estimated effort:** 3-4 hours.
+**Fix:** Replace with `if x is None: raise RuntimeError("...")`.
 
 ---
 
-### Priority Summary
+### REL-04: No circuit breaker for API outages (P1)
 
-| Phase | Issues | Effort | Impact |
-|-------|--------|--------|--------|
-| Phase 1 | 10 fixes | ~2h | Eliminates crashes on real-world input |
-| Phase 2 | 6 fixes | ~4h | 30-40% faster analysis |
-| Phase 3 | 5 fixes | ~2h | Proper error visibility |
-| Phase 4 | 5 fixes | ~3h | Cleaner, maintainable code |
-| Phase 5 | 5 fixes | ~4h | Hardened inputs, better coverage |
-| **Total** | **31 fixes** | **~15h** | **Production-ready** |
+**File:** `src/mergeguard/server/webhook.py`
 
-Phases 1-3 are required for production deployment. Phases 4-5 improve long-term maintainability.
+When GitHub is down, every webhook queues an analysis that immediately fails. The queue worker keeps trying, logging errors at high volume with no cooldown.
+
+**Fix:** Implement a circuit breaker that detects repeated failures and stops making calls for a cooldown period.
+
+---
+
+### REL-05: No graceful shutdown — no SIGTERM handler (P1)
+
+**File:** `src/mergeguard/server/webhook.py`
+
+No signal handler to stop accepting new webhooks before draining. In Kubernetes (30s SIGTERM grace), the server should return 503 on new requests and drain the queue. The `_shutting_down` flag exists but nothing prevents new enqueue calls during shutdown.
+
+**Fix:** Add SIGTERM handler that sets `_shutting_down`, returns 503 on new requests, and drains with a configurable timeout.
+
+---
+
+### REL-06: No drain timeout on queue shutdown (P2)
+
+**File:** `src/mergeguard/server/queue.py:63-69`
+
+`AnalysisQueue.stop()` puts a sentinel and awaits the worker. If mid-analysis (up to 300s), shutdown hangs for 5 minutes.
+
+**Fix:** Add configurable drain timeout, after which in-flight work is abandoned.
+
+---
+
+### REL-07: ThreadPoolExecutor timeout has no partial-result recovery (P2)
+
+**File:** `src/mergeguard/core/engine.py:353, 473, 533`
+
+`as_completed(futures, timeout=300)` on timeout raises `TimeoutError` that crashes the entire analysis. If 1 of 200 PRs hangs, all fail.
+
+**Fix:** Catch per-future `TimeoutError`, log it, and continue with partial results.
+
+---
+
+### REL-08: Rate limiting is reactive only (P3)
+
+**Files:** All three SCM client `_check_rate_limit` methods
+
+Rate limit handling only kicks in when `remaining < 10`. No proactive throttling. Analyzing 200 PRs fires 600+ API calls in rapid succession, which can exhaust the quota before the check triggers.
+
+**Fix:** Query remaining quota upfront and throttle accordingly.
+
+---
+
+## 3. Performance
+
+### PERF-01: Synchronous engine call blocks async webhook handler (P1)
+
+**File:** `src/mergeguard/server/webhook.py:186-204`
+
+`_handle_analysis()` is `async` but calls `engine.analyze_pr()` synchronously — blocking the asyncio event loop. Because there's one queue worker, all webhook processing is serialized and blocking.
+
+**Fix:** Wrap in `asyncio.to_thread()` (the MCP server already does this at `mcp/server.py:149`).
+
+---
+
+### PERF-02: Blocking `time.sleep()` in rate limit handlers called from async context (P1)
+
+**Files:** `src/mergeguard/integrations/github_client.py:256`, `gitlab_client.py:308`, `bitbucket_client.py:323`
+
+All three clients use `time.sleep(min(wait, 300))` when rate limits are low. When called from the webhook server path (via ThreadPoolExecutor), this blocks the worker thread for up to 300 seconds.
+
+**Fix:** Cap sleep at 30s. For async paths, use `asyncio.sleep()` or async HTTP clients.
+
+---
+
+### PERF-03: N+1 API pattern in MCP `check_conflicts` tool (P1)
+
+**File:** `src/mergeguard/mcp/server.py:107-121`
+
+Fetches all open PRs, then loops calling `client.get_pr_files(pr.number)` for each one. 50 open PRs = 51 sequential API calls.
+
+**Fix:** Use `ThreadPoolExecutor` to fetch PR files in parallel. Short-circuit once all target files are matched.
+
+---
+
+### PERF-04: O(N*M) duplication detection with no short-circuit (P2)
+
+**File:** `src/mergeguard/analysis/similarity.py:52-84`
+
+Nested loop over all symbols from both PRs. `_tokenize_signature()` (line 87-92) also has `import re` inside the function body and uses an uncompiled pattern.
+
+**Fix:** Pre-compile regex at module level. Group symbols by `symbol_type` to reduce comparison space.
+
+---
+
+### PERF-05: `list.pop(0)` in BFS — O(N) per dequeue (P2)
+
+**File:** `src/mergeguard/analysis/dependency.py:80, 96, 123`
+
+Three BFS implementations use `list.pop(0)` which shifts all elements. Degrades BFS from O(V+E) to O(V^2). The codebase already uses `deque` correctly in `blast_radius.py:69`.
+
+**Fix:** Use `collections.deque` with `popleft()`.
+
+---
+
+### PERF-06: Duplicate dependency graph construction (P2)
+
+**File:** `src/mergeguard/core/engine.py:970, 750`
+
+`_detect_cross_file_conflicts()` builds a dependency graph at line 970, then `_detect_transitive_conflicts()` builds another at line 750. Both fetch the same file contents and parse the same imports twice.
+
+**Fix:** Build the graph once and pass to both methods.
+
+---
+
+### PERF-07: Regex compiled inside hot loops (P2)
+
+**Files:** `src/mergeguard/analysis/similarity.py:87-92`, `src/mergeguard/analysis/ast_parser.py:654-691`
+
+`_tokenize_signature()` uses `re.findall(r"\w+", ...)` inside the O(N*M) duplication loop. `_fallback_extract()` compiles two regex patterns on every call.
+
+**Fix:** Pre-compile all patterns as module-level constants.
+
+---
+
+### PERF-08: Tree-sitter parser re-created on every file (P2)
+
+**File:** `src/mergeguard/analysis/ast_parser.py:116, 283, 324, 605`
+
+`get_parser()` is called every time `extract_symbols()` etc. is invoked. `compute_cyclomatic_complexity()` calls it per-function in guardrails checking.
+
+**Fix:** Cache parser instances per language in a module-level dict.
+
+---
+
+### PERF-09: Sequential LLM calls for individual conflicts (P2)
+
+**File:** `src/mergeguard/core/engine.py:1224-1267`
+
+Individual behavioral conflicts are analyzed one at a time. Each LLM call adds 1-5 seconds of latency.
+
+**Fix:** Batch LLM calls using `ThreadPoolExecutor` or `asyncio.gather()`.
+
+---
+
+### PERF-10: O(N*M*K) interface conflict check (P2)
+
+**File:** `src/mergeguard/core/conflict.py:457-491`
+
+For each target symbol, iterates over all other symbols checking `if cs.symbol.name in other_cs.symbol.dependencies` — where `dependencies` is a `list[str]`, making `in` check O(K).
+
+**Fix:** Pre-build a set of all dependency names: `all_deps = {dep for ocs in other_pr.changed_symbols for dep in ocs.symbol.dependencies}`.
+
+---
+
+### PERF-11: Sequential merge group analysis (P2)
+
+**File:** `src/mergeguard/server/webhook.py:132-137`
+
+Each PR in a merge group is analyzed sequentially. 5 PRs = 5x latency.
+
+**Fix:** Analyze PRs in parallel with `asyncio.gather()` + `asyncio.to_thread()`.
+
+---
+
+### PERF-12: Config reloaded from disk on every webhook event (P2)
+
+**File:** `src/mergeguard/server/webhook.py:178`
+
+`load_config()` reads and parses `.mergeguard.yml` from disk on every single webhook event.
+
+**Fix:** Load once at startup. Cache with file-mtime invalidation for hot-reload.
+
+---
+
+### PERF-13: Missing `per_page` on GitHub PR fetch (P2)
+
+**File:** `src/mergeguard/integrations/github_client.py:61-93`
+
+PyGithub defaults to 30 items per page. Fetching 200 PRs requires ~7 API calls instead of 2 with `per_page=100`.
+
+**Fix:** Pass `per_page=100` to `get_pulls()`.
+
+---
+
+### PERF-14: Double `splitlines()` in diff preview (P3)
+
+**File:** `src/mergeguard/core/conflict.py:628-640`
+
+`cf.patch.splitlines()[:10]` and `len(cf.patch.splitlines()) > 10` — splitting the same string twice. Same pattern in GitLab client at line 383-393.
+
+**Fix:** Split once, store the result.
+
+---
+
+### PERF-15: Per-record SQLite COMMIT (P3)
+
+**File:** `src/mergeguard/storage/metrics_store.py:89, 105`
+
+`record_snapshot()` commits after every upsert. Batch scenarios create many small transactions with fsync overhead.
+
+**Fix:** Expose `begin()`/`commit()` context manager for batching.
+
+---
+
+### PERF-16: Content cache uses FIFO eviction, not LRU (P3)
+
+**File:** `src/mergeguard/core/engine.py:190, 197-216`
+
+Cache eviction uses `pop(next(iter(...)))` (FIFO). Frequently accessed files can be evicted while rarely-used entries persist. Also, 500 entries x 500KB = up to 250MB with no byte-size limit.
+
+**Fix:** Use `functools.lru_cache` or `OrderedDict` with LRU semantics. Add byte-size tracking.
+
+---
+
+### PERF-17: `file_paths` property materializes new set on every call (P3)
+
+**File:** `src/mergeguard/models.py:156-158`
+
+`PRInfo.file_paths` creates a new `set[str]` every time. Called in loops during file overlap computation.
+
+**Fix:** Use `functools.cached_property`.
+
+---
+
+### PERF-18: Recomputed BFS per other PR in transitive detection (P3)
+
+**File:** `src/mergeguard/core/engine.py:833-844`
+
+In Direction B of `_detect_transitive_conflicts()`, `graph.get_dependents(cf.path)` triggers a BFS for every file of every PR. Combined with PERF-05 (list.pop(0)), this compounds significantly.
+
+**Fix:** Pre-compute dependents for all relevant files once and cache in a dict.
+
+---
+
+## 4. Quality
+
+### QUAL-01: Version string mismatch — 0.1.0 / 0.2.0 / 0.5.0 (P1)
+
+**Files:** `src/mergeguard/__init__.py:5` (`"0.1.0"`), `pyproject.toml:3` (`"0.2.0"`), `src/mergeguard/server/webhook.py:355` (`"0.5.0"`)
+
+Three different versions across the codebase. Confuses users, logs, and debugging.
+
+**Fix:** Single source of truth. Use `importlib.metadata.version("mergeguard")` in `__init__.py` and import from there.
+
+---
+
+### QUAL-02: Naive vs timezone-aware datetimes mixed (P1)
+
+**Files:** `src/mergeguard/models.py:256`, `src/mergeguard/output/blast_radius.py:174`, `src/mergeguard/core/policy.py:198, 223`
+
+Four call sites use `datetime.now(tz=None)` producing naive datetimes. Other parts correctly use `datetime.now(UTC)`. Comparing aware and naive datetimes raises `TypeError` at runtime.
+
+**Fix:** Replace all `datetime.now(tz=None)` with `datetime.now(UTC)`.
+
+---
+
+### QUAL-03: Pervasive `Any` typing in webhook handlers (P2)
+
+**File:** `src/mergeguard/server/webhook.py:50, 76-78, 100-102`
+
+Six function parameters typed as `Any` (`client: Any`, `report: Any`, `cfg: Any`, `engine: Any`). Defeats type checking for the most security-sensitive module.
+
+**Fix:** Use actual types: `SCMClient`, `ConflictReport`, `MergeGuardConfig`, `MergeGuardEngine`.
+
+---
+
+### QUAL-04: `FieldExtractor = Any` instead of Callable (P2)
+
+**File:** `src/mergeguard/core/policy.py:32`
+
+Comment says `Callable[[ConflictReport], Any]` but the actual type is `Any`.
+
+**Fix:** `FieldExtractor = Callable[[ConflictReport], Any]`
+
+---
+
+### QUAL-05: Broad `except Exception` handlers — 25+ instances (P2)
+
+**Files:** Throughout — `engine.py` (5), `webhook.py` (4), `ast_parser.py` (4), `cli.py` (2), `llm_analyzer.py` (2), `policy.py`, `queue.py`, `sarif.py`, `cache.py`, `github_client.py`, `bitbucket_client.py`, `codeowners.py`
+
+Many silently swallow errors and continue with fallback behavior. In `llm_analyzer.py:292, 387`, `except (json.JSONDecodeError, Exception)` is redundant — `Exception` is the superclass.
+
+**Fix:** Catch specific exceptions. Log at `WARNING` minimum when using broad catches.
+
+---
+
+### QUAL-06: No httpx/SQLite context managers (P2)
+
+**Files:** `src/mergeguard/integrations/github_client.py:56`, `gitlab_client.py:47`, `bitbucket_client.py:49`, `src/mergeguard/storage/decisions_log.py:117`, `src/mergeguard/storage/metrics_store.py:182`
+
+Both SCM clients and storage classes create resources in `__init__` with no `__enter__`/`__exit__`. Callers must manually manage cleanup, and exceptions can leak connections/handles.
+
+**Fix:** Implement context manager protocol on all resource-owning classes.
+
+---
+
+### QUAL-07: Missing `ConflictType.SECRET` in fix templates (P2)
+
+**File:** `src/mergeguard/core/fix_templates.py:98-106`
+
+The `_GENERATORS` dict maps conflict types to fix suggestion generators, but `SECRET` is missing. Secret findings never get remediation guidance — `generate_fix_suggestion()` returns `None` silently.
+
+**Fix:** Add a `_secret_suggestion` generator recommending credential rotation and env vars.
+
+---
+
+### QUAL-08: Bitbucket `patch=None` silently disables symbol-level analysis (P2)
+
+**File:** `src/mergeguard/integrations/bitbucket_client.py:410`
+
+Bitbucket's diffstat API doesn't return patch content. `ChangedFile.patch` is always `None`, so diff parsing, secret scanning, and symbol detection produce no results. No warning is logged.
+
+**Fix:** Log a warning. Fetch actual diff content via Bitbucket's diff endpoint.
+
+---
+
+### QUAL-09: Confidence score can exceed 1.0 in attribution (P2)
+
+**File:** `src/mergeguard/analysis/attribution.py:43-75`
+
+Additive scoring: title(0.6) + description(0.4) + marker(0.5) + branch(0.3) + label(0.7) = max 2.5. Conceptually wrong if ever exposed.
+
+**Fix:** Cap at 1.0 with `confidence = min(confidence, 1.0)`, or rename to `score`.
+
+---
+
+### QUAL-10: `queue_depth` metric is a Counter, not a Gauge (P2)
+
+**File:** `src/mergeguard/server/metrics.py:63`
+
+Named `queue_depth` but implemented as a monotonically increasing counter. Produces misleading metrics that never decrease.
+
+**Fix:** Use a Gauge that increments on enqueue and decrements on dequeue, or rename to `total_enqueued`.
+
+---
+
+### QUAL-11: `handler: object` instead of proper Callable in queue (P3)
+
+**File:** `src/mergeguard/server/queue.py:46`
+
+Comment says `callable(WebhookEvent) -> awaitable` but the type is `object`. No type safety on `await self._handler(event)`.
+
+**Fix:** `Callable[[WebhookEvent], Awaitable[None]]` or a `Protocol`.
+
+---
+
+### QUAL-12: Private attribute access across module boundaries (P3)
+
+**Files:** `src/mergeguard/core/engine.py:680`, `src/mergeguard/analysis/symbol_index.py:143, 146`
+
+Both modules reach into `DependencyGraph._forward` and `DependencyGraph._symbol_forward` directly.
+
+**Fix:** Add public accessors to `DependencyGraph`.
+
+---
+
+### QUAL-13: Prometheus histogram has no buckets (P3)
+
+**File:** `src/mergeguard/server/metrics.py:29-50`
+
+`_Histogram` only tracks count and sum — no buckets or quantiles. Renders as "summary" type but can only compute averages.
+
+**Fix:** Add standard histogram buckets (1s, 5s, 10s, 30s, 60s, 120s, 300s).
+
+---
+
+## 5. Improvement
+
+### IMP-01: MCP server hardcodes GitHub — ignores GitLab/Bitbucket (P1)
+
+**Files:** `src/mergeguard/mcp/server.py:82, 170`
+
+`check_conflicts` and `get_risk_score` always create a `GitHubClient`. No `platform` parameter. GitLab/Bitbucket repos will fail.
+
+**Fix:** Add `platform` parameter and client factory matching the webhook server pattern.
+
+---
+
+### IMP-02: No `--exit-code` option for CI usage (P1)
+
+**File:** `src/mergeguard/cli.py`
+
+No CLI command exits with non-zero code when conflicts are found. Impossible to use as a CI gate without parsing JSON output.
+
+**Fix:** Add `--exit-code` / `--fail-on-critical` that returns exit code 1 on critical conflicts.
+
+---
+
+### IMP-03: Config validation doesn't warn on unknown keys (P2)
+
+**File:** `src/mergeguard/config.py`
+
+Pydantic V2 ignores unknown fields by default. A typo like `rissk_threshold: 50` is silently ignored.
+
+**Fix:** Use `model_config = ConfigDict(extra="forbid")` or `extra="warn"`.
+
+---
+
+### IMP-04: No structured logging (P2)
+
+**Files:** All source files
+
+All logging uses string formatting. For production, structured JSON logging with fields like `repo`, `pr_number`, `duration_ms` would enable proper log aggregation.
+
+**Fix:** Consider `structlog` or JSON logging configuration.
+
+---
+
+### IMP-05: No request correlation ID for webhook tracing (P2)
+
+**Files:** `src/mergeguard/server/webhook.py`, `src/mergeguard/server/queue.py`
+
+No correlation ID flows through queue, analysis, and comment posting. Debugging requires correlating log lines by timestamp.
+
+**Fix:** Generate a UUID at webhook receipt and propagate through the pipeline.
+
+---
+
+### IMP-06: `scan-secrets` command does full analysis — wasted work (P2)
+
+**File:** `src/mergeguard/cli.py:988-989`
+
+Calls `engine.analyze_pr()` which fetches all open PRs, does pairwise comparison, etc. Secret scanning only needs the target PR's diff.
+
+**Fix:** Add a lightweight scan-only path that skips conflict detection.
+
+---
+
+### IMP-07: SQLite without WAL mode (P2)
+
+**Files:** `src/mergeguard/storage/metrics_store.py`, `src/mergeguard/storage/decisions_log.py`
+
+Default rollback journal mode causes lock contention under concurrent webhook analysis.
+
+**Fix:** Add `PRAGMA journal_mode=WAL` at connection time.
+
+---
+
+### IMP-08: No volume mount for cache/DB in docker-compose (P2)
+
+**File:** `docker-compose.yml`
+
+`.mergeguard-cache/` (containing SQLite databases) is ephemeral. Every container restart loses all history and metrics.
+
+**Fix:** Add a volume mount.
+
+---
+
+### IMP-09: No `--quiet` / `-q` flag for CI (P3)
+
+**File:** `src/mergeguard/cli.py`
+
+The CLI has `--verbose` but no quiet mode. Rich spinner output clutters CI logs.
+
+**Fix:** Add `--quiet` that suppresses everything except formatted output.
+
+---
+
+### IMP-10: No liveness vs readiness distinction for health probes (P3)
+
+**File:** `src/mergeguard/server/webhook.py:360-370`
+
+Single `/health` endpoint serves both. No readiness check during startup or shutdown.
+
+**Fix:** Separate `/healthz` (liveness) and `/readyz` (readiness).
+
+---
+
+### IMP-11: `git_local.py` doesn't handle Bitbucket or self-hosted instances (P3)
+
+**File:** `src/mergeguard/integrations/git_local.py:53-62`
+
+`detect_platform` and `get_repo_full_name` only handle `github.com` and `gitlab.com` URLs.
+
+**Fix:** Add `bitbucket.org` support and a generic fallback.
+
+---
+
+## 6. Testing
+
+### TEST-01: 14 source modules with no dedicated test file (P2)
+
+Missing test coverage for:
+
+| Module | Lines | Risk |
+|--------|-------|------|
+| `output/notifications.py` | 329 | Untested user-facing Slack/Teams formatting |
+| `output/html_report.py` | — | HTML generation |
+| `output/dashboard_html.py` | — | Dashboard HTML |
+| `output/metrics_html.py` | — | Metrics HTML |
+| `output/badge.py` | — | Badge SVG |
+| `output/terminal.py` | — | Terminal output |
+| `mcp/server.py` | — | MCP integration |
+| `server/metrics.py` | — | Buggy `queue_depth` Counter |
+| `integrations/llm_analyzer.py` | 404 | Complex parsing with `Any` types |
+| `integrations/bitbucket_client.py` | — | No unit tests; patch=None bug |
+| `integrations/git_local.py` | — | Local git operations |
+| `core/merge_order.py` | 310 | Merge ordering algorithm |
+| `core/fix_templates.py` | — | Fix template generation |
+| `core/guardrails.py` | — | Production `assert` statements |
+
+**Fix:** Prioritize `notifications.py`, `llm_analyzer.py`, `bitbucket_client.py`, and `guardrails.py`.
+
+---
+
+## 7. Cleanup
+
+### CLN-01: Rate limit checking duplicated across three SCM clients (P2)
+
+**Files:** `github_client.py`, `gitlab_client.py`, `bitbucket_client.py`
+
+Nearly identical `_check_rate_limit` logic in all three. Also duplicated PR-to-model mapping logic.
+
+**Fix:** Extract `RateLimitMixin` or standalone helper.
+
+---
+
+### CLN-02: Duplicated `_DEFAULT_BRANCHES` constant with diverging values (P2)
+
+**Files:** `src/mergeguard/cli.py:21`, `src/mergeguard/analysis/stacked_prs.py:19`
+
+Defined separately in both files — `cli.py` includes `"HEAD"`, `stacked_prs.py` does not.
+
+**Fix:** Single canonical set in `constants.py`.
+
+---
+
+### CLN-03: `constants.py` is largely dead code (P3)
+
+**File:** `src/mergeguard/constants.py`
+
+`DEFAULT_MAX_OPEN_PRS = 30` vs `MergeGuardConfig.max_open_prs = 200`. Most constants are either duplicated in config model defaults or never referenced.
+
+**Fix:** Audit references and remove dead constants.
+
+---
+
+### CLN-04: Duplicated `MAX_FILE_SIZE` constant (P3)
+
+**Files:** `src/mergeguard/constants.py:21`, `src/mergeguard/core/engine.py:59`
+
+Same value (500,000), different name, no import relationship.
+
+**Fix:** Remove from `engine.py`, import from `constants.py`.
+
+---
+
+### CLN-05: Constants defined in both `constants.py` and `MergeGuardConfig` with different defaults (P3)
+
+**Files:** `src/mergeguard/constants.py:20` (`DEFAULT_MAX_OPEN_PRS = 30`), `src/mergeguard/models.py:515` (`max_open_prs = 200`)
+
+Maintenance hazard — which is the real default?
+
+**Fix:** Remove constants.py values that are superseded by config model defaults.
+
+---
+
+### CLN-06: Unnecessary `getattr(self, "_config", None)` pattern — 5 instances (P3)
+
+**File:** `src/mergeguard/core/engine.py:210, 771, 910, 1110, 1552`
+
+`_config` is always assigned in `__init__`. The defensive `getattr` adds noise and confuses readers.
+
+**Fix:** Use `self._config` directly.
+
+---
+
+### CLN-07: Severity counting duplicated in notification formatters (P3)
+
+**File:** `src/mergeguard/output/notifications.py:47-49, 156-158`
+
+Same dict accumulation pattern copy-pasted in `notify_slack` and `notify_teams`.
+
+**Fix:** Extract `_count_severities()` helper.
+
+---
+
+### CLN-08: `import re` inside function body (P3)
+
+**File:** `src/mergeguard/analysis/similarity.py:89`
+
+Inconsistent with rest of codebase where `re` is imported at module level.
+
+**Fix:** Move to top of file.
+
+---
+
+### CLN-09: `map` CLI command shadows Python builtin (P3)
+
+**File:** `src/mergeguard/cli.py:360`
+
+The function is named `map`, shadowing Python's `map()`.
+
+**Fix:** Rename the function (Click command name stays `map` via decorator).
+
+---
+
+## Recommended Fix Order
+
+### Phase 1: Blockers (P0) — fix before any deployment
+
+| # | Finding | Effort |
+|---|---------|--------|
+| 1 | SEC-01: Webhook auth bypass | S |
+| 2 | REL-01: httpx Client leak | M |
+
+### Phase 2: Production-critical (P1) — fix before production
+
+| # | Finding | Effort |
+|---|---------|--------|
+| 3 | SEC-02: SSRF via webhook URLs | S |
+| 4 | SEC-03: SSRF via base URLs + token leak | M |
+| 5 | SEC-04: MCP token exposure | S |
+| 6 | SEC-05: Shell injection in entrypoint.sh | M |
+| 7 | SEC-06: Docker runs as root | S |
+| 8 | REL-02: No retry for GitLab/Bitbucket | M |
+| 9 | REL-03: assert in production code | S |
+| 10 | REL-04: No circuit breaker | M |
+| 11 | REL-05: No graceful shutdown | M |
+| 12 | QUAL-01: Version mismatch | S |
+| 13 | QUAL-02: Naive datetimes | S |
+| 14 | PERF-01: Sync call in async handler | S |
+| 15 | PERF-02: Blocking sleep in async context | S |
+| 16 | PERF-03: N+1 in MCP tool | M |
+| 17 | IMP-01: MCP hardcodes GitHub | M |
+| 18 | IMP-02: No CI exit codes | S |
+
+### Phase 3: Post-launch (P2) — fix soon after launch
+
+33 findings — see P2 items above. Prioritize by effort/impact.
+
+### Phase 4: Tech debt (P3) — address incrementally
+
+22 findings — cleanup, naming, minor optimizations.

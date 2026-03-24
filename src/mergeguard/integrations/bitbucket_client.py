@@ -7,7 +7,7 @@ Method names follow the SCMClient protocol.
 from __future__ import annotations
 
 import logging
-import time
+import re
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -47,10 +47,21 @@ class BitbucketClient:
             f"https://api.bitbucket.org/2.0/repositories/{self._workspace}/{self._repo_slug}"
         )
         self._http = httpx.Client(
+            transport=httpx.HTTPTransport(retries=3),
             auth=(username, app_password),
             headers={"Accept": "application/json"},
             timeout=30.0,
         )
+
+    def close(self) -> None:
+        """Close the underlying HTTP client."""
+        self._http.close()
+
+    def __enter__(self) -> BitbucketClient:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
 
     # ── Public API (SCMClient protocol) ──
 
@@ -122,6 +133,16 @@ class BitbucketClient:
                 files.append(self._diffstat_to_changed_file(entry))
             url = data.get("next")
             params = {}
+
+        # Fetch full diff and attach per-file patches for symbol analysis
+        try:
+            raw_diff = self.get_pr_diff(pr_number)
+            patches = _split_diff_by_file(raw_diff)
+            for f in files:
+                if f.patch is None:
+                    f.patch = patches.get(f.path)
+        except Exception:
+            logger.debug("Failed to fetch diff for patch attachment", exc_info=True)
 
         return files
 
@@ -305,22 +326,14 @@ class BitbucketClient:
         return resp
 
     def _check_rate_limit(self, response: httpx.Response) -> None:
-        """Sleep if Bitbucket rate limit is nearly exhausted.
+        """Sleep if Bitbucket rate limit is nearly exhausted."""
+        from mergeguard.integrations.rate_limit import check_rate_limit
 
-        Bitbucket Cloud uses standard rate-limit headers.
-        """
-        remaining = response.headers.get("X-RateLimit-Remaining")
-        if remaining is not None and int(remaining) < 10:
-            reset_ts = response.headers.get("X-RateLimit-Reset")
-            if reset_ts:
-                wait = max(0, int(reset_ts) - int(time.time()) + 1)
-                if wait > 0:
-                    logger.warning(
-                        "Rate limit low (%s remaining), sleeping %ds",
-                        remaining,
-                        wait,
-                    )
-                    time.sleep(min(wait, 300))
+        check_rate_limit(
+            response,
+            remaining_header="X-RateLimit-Remaining",
+            reset_header="X-RateLimit-Reset",
+        )
 
     def _pr_to_info(self, pr: dict[str, Any]) -> PRInfo:
         """Convert a Bitbucket PR JSON dict to PRInfo."""
@@ -410,6 +423,21 @@ class BitbucketClient:
             patch=None,  # Bitbucket diffstat doesn't include patch content
             previous_path=previous_path,
         )
+
+
+_DIFF_FILE_RE = re.compile(r"^diff --git a/(.+?) b/(.+)$", re.MULTILINE)
+
+
+def _split_diff_by_file(raw_diff: str) -> dict[str, str]:
+    """Parse a unified diff into {file_path: patch_content}."""
+    patches: dict[str, str] = {}
+    matches = list(_DIFF_FILE_RE.finditer(raw_diff))
+    for i, match in enumerate(matches):
+        file_path = match.group(2)
+        start = match.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(raw_diff)
+        patches[file_path] = raw_diff[start:end].strip()
+    return patches
 
 
 def _parse_bitbucket_datetime(dt_str: str) -> datetime:

@@ -9,7 +9,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # ──────────────────────────────────────────────
 # Enums
@@ -387,6 +387,15 @@ class PolicyAction(BaseModel):
     status_state: str = "failure"
     status_context: str = "mergeguard/policy"
 
+    @field_validator("webhook_url")
+    @classmethod
+    def _check_webhook_url(cls, v: str) -> str:
+        if v:
+            from mergeguard.output.notifications import _validate_webhook_url
+
+            _validate_webhook_url(v)
+        return v
+
 
 class PolicyRule(BaseModel):
     """A named policy rule with conditions and actions."""
@@ -508,6 +517,8 @@ class DORAReport(BaseModel):
 
 class MergeGuardConfig(BaseModel):
     """Configuration loaded from .mergeguard.yml."""
+
+    model_config = ConfigDict(extra="forbid")
 
     inline_annotations: bool = True  # Post line-level review comments alongside summary
     risk_threshold: int = 50  # Only comment if risk > threshold

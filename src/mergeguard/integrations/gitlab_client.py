@@ -7,7 +7,6 @@ Method names follow the SCMClient protocol (get_pr, not get_mr).
 from __future__ import annotations
 
 import logging
-import time
 import urllib.parse
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -45,12 +44,23 @@ class GitLabClient:
         self._encoded_project = urllib.parse.quote(project_path, safe="")
         self._base_url = f"{self._gitlab_url}/api/v4/projects/{self._encoded_project}"
         self._http = httpx.Client(
+            transport=httpx.HTTPTransport(retries=3),
             headers={
                 "PRIVATE-TOKEN": token,
                 "Accept": "application/json",
             },
             timeout=30.0,
         )
+
+    def close(self) -> None:
+        """Close the underlying HTTP client."""
+        self._http.close()
+
+    def __enter__(self) -> GitLabClient:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
 
     # ── Public API (SCMClient protocol) ──
 
@@ -294,18 +304,13 @@ class GitLabClient:
 
     def _check_rate_limit(self, response: httpx.Response) -> None:
         """Sleep if GitLab rate limit is nearly exhausted."""
-        remaining = response.headers.get("RateLimit-Remaining")
-        if remaining is not None and int(remaining) < 10:
-            reset_ts = response.headers.get("RateLimit-Reset")
-            if reset_ts:
-                wait = max(0, int(reset_ts) - int(time.time()) + 1)
-                if wait > 0:
-                    logger.warning(
-                        "Rate limit low (%s remaining), sleeping %ds",
-                        remaining,
-                        wait,
-                    )
-                    time.sleep(min(wait, 300))
+        from mergeguard.integrations.rate_limit import check_rate_limit
+
+        check_rate_limit(
+            response,
+            remaining_header="RateLimit-Remaining",
+            reset_header="RateLimit-Reset",
+        )
 
     def _get_all_diffs(self, mr_iid: int) -> list[dict[str, Any]]:
         """Fetch all diff entries for an MR, handling pagination."""

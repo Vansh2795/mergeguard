@@ -26,6 +26,26 @@ class _Counter:
         return self._value
 
 
+class _Gauge:
+    __slots__ = ("_value", "_lock")
+
+    def __init__(self) -> None:
+        self._value = 0
+        self._lock = threading.Lock()
+
+    def inc(self, amount: int = 1) -> None:
+        with self._lock:
+            self._value += amount
+
+    def dec(self, amount: int = 1) -> None:
+        with self._lock:
+            self._value -= amount
+
+    @property
+    def value(self) -> int:
+        return self._value
+
+
 class _Histogram:
     """Simple histogram that tracks count and sum (no buckets)."""
 
@@ -60,7 +80,7 @@ class Metrics:
         self.analyses_completed = _Counter()
         self.analyses_failed = _Counter()
         self.analysis_duration = _Histogram()
-        self.queue_depth = _Counter()  # inc on enqueue, we track total enqueued
+        self.queue_depth = _Gauge()  # inc on enqueue, dec after task_done
         self.statuses_posted = _Counter()
         self.statuses_failed = _Counter()
         self.merge_groups_analyzed = _Counter()
@@ -98,6 +118,10 @@ class Metrics:
             "# TYPE mergeguard_analysis_duration_seconds summary",
             f"mergeguard_analysis_duration_seconds_count {self.analysis_duration.count}",
             f"mergeguard_analysis_duration_seconds_sum {self.analysis_duration.total:.3f}",
+            "",
+            "# HELP mergeguard_queue_depth Current queue depth.",
+            "# TYPE mergeguard_queue_depth gauge",
+            f"mergeguard_queue_depth {self.queue_depth.value}",
             "",
             "# HELP mergeguard_statuses_posted_total Commit statuses posted.",
             "# TYPE mergeguard_statuses_posted_total counter",

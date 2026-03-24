@@ -182,7 +182,8 @@ class MergeGuardEngine:
         if client is not None:
             self._client = client
         else:
-            assert token is not None, "token is required when no client is provided"
+            if token is None:
+                raise ValueError("token is required when no client is provided")
             self._client = GitHubClient(token, repo_full_name)
         self._config = config if config is not None else MergeGuardConfig()
         self._repo_full_name = repo_full_name
@@ -275,7 +276,7 @@ class MergeGuardEngine:
                     self._repo_full_name,
                     ref=report.pr.head_sha if report.pr.head_sha else "HEAD",
                 )
-            except Exception:
+            except (OSError, ValueError):
                 logger.debug("Failed to load CODEOWNERS", exc_info=True)
                 return
 
@@ -350,8 +351,14 @@ class MergeGuardEngine:
         prs_to_enrich = [pr for pr in other_prs if pr.number != pr_number]
         with ThreadPoolExecutor(max_workers=min(8, len(prs_to_enrich) or 1)) as executor:
             futures = {executor.submit(self._fetch_and_enrich_pr, pr): pr for pr in prs_to_enrich}
-            for future in as_completed(futures, timeout=300):
-                future.result()
+            try:
+                for future in as_completed(futures, timeout=300):
+                    try:
+                        future.result(timeout=1)
+                    except Exception:
+                        logger.warning("Partial failure enriching PR", exc_info=True)
+            except TimeoutError:
+                logger.warning("Timeout enriching PRs — continuing with partial results")
 
         # Step 3: Detect AI attribution
         target_pr.ai_attribution = detect_attribution(target_pr)
@@ -374,7 +381,7 @@ class MergeGuardEngine:
         if self._config.fix_suggestions and self._config.llm_enabled:
             try:
                 self._generate_fix_suggestions(target_pr, other_prs, all_conflicts)
-            except Exception:
+            except (httpx.HTTPError, ValueError, KeyError, OSError):
                 logger.warning("Fix suggestion generation failed", exc_info=True)
 
         # Step 4f: Demote intra-stack conflicts
@@ -432,10 +439,34 @@ class MergeGuardEngine:
                 from mergeguard.core.metrics import record_analysis
 
                 record_analysis(report, self._repo_full_name)
-            except Exception:
+            except (OSError, sqlite3.Error):
                 logger.debug("Failed to record metrics snapshot", exc_info=True)
 
         return report
+
+    def scan_secrets_only(self, pr_number: int) -> ConflictReport:
+        """Fast path: fetch only the target PR diff and run secret scanning.
+
+        Skips conflict detection, blast radius, and policy evaluation.
+        """
+        from mergeguard.core.secrets import scan_secrets
+
+        start_time = time.monotonic()
+        target_pr = self._client.get_pr(pr_number)
+        target_pr.changed_files = self._client.get_pr_files(pr_number)
+        self._backfill_truncated_patches(target_pr)
+
+        secret_conflicts = scan_secrets(target_pr, self._config)
+        elapsed_ms = int((time.monotonic() - start_time) * 1000)
+
+        return ConflictReport(
+            pr=target_pr,
+            conflicts=secret_conflicts,
+            risk_score=0.0,
+            risk_factors={},
+            no_conflict_prs=[],
+            analysis_duration_ms=elapsed_ms,
+        )
 
     def analyze_pr_targeted(
         self,
@@ -469,8 +500,14 @@ class MergeGuardEngine:
         if unenriched:
             with ThreadPoolExecutor(max_workers=min(8, len(unenriched))) as executor:
                 futures = {executor.submit(self._fetch_and_enrich_pr, pr): pr for pr in unenriched}
-                for future in as_completed(futures, timeout=300):
-                    future.result()
+                try:
+                    for future in as_completed(futures, timeout=300):
+                        try:
+                            future.result(timeout=1)
+                        except Exception:
+                            logger.warning("Partial failure enriching PR", exc_info=True)
+                except TimeoutError:
+                    logger.warning("Timeout enriching PRs — continuing with partial results")
 
         # Detect stacked PR groups
         stack_groups: list[StackGroup] = []
@@ -530,8 +567,14 @@ class MergeGuardEngine:
         # Enrich each PR once (parallel)
         with ThreadPoolExecutor(max_workers=min(8, len(all_prs) or 1)) as executor:
             futures = {executor.submit(self._fetch_and_enrich_pr, pr): pr for pr in all_prs}
-            for future in as_completed(futures, timeout=300):
-                future.result()
+            try:
+                for future in as_completed(futures, timeout=300):
+                    try:
+                        future.result(timeout=1)
+                    except Exception:
+                        logger.warning("Partial failure enriching PR", exc_info=True)
+            except TimeoutError:
+                logger.warning("Timeout enriching PRs — continuing with partial results")
 
         for pr in all_prs:
             pr.ai_attribution = detect_attribution(pr)
@@ -733,6 +776,7 @@ class MergeGuardEngine:
         target_pr: PRInfo,
         other_prs: list[PRInfo],
         existing_conflicts: list[Conflict],
+        graph: DependencyGraph | None = None,
     ) -> list[Conflict]:
         """Detect transitive conflicts through the dependency graph.
 
@@ -747,7 +791,8 @@ class MergeGuardEngine:
         if not other_prs:
             return []
 
-        graph = self._build_cross_pr_dependency_graph(target_pr, other_prs)
+        if graph is None:
+            graph = self._build_cross_pr_dependency_graph(target_pr, other_prs)
 
         # Skip pairs that already have a direct conflict
         existing_pairs: set[int] = set()
@@ -955,6 +1000,7 @@ class MergeGuardEngine:
         target_pr: PRInfo,
         other_prs: list[PRInfo],
         existing_conflicts: list[Conflict],
+        graph: DependencyGraph | None = None,
     ) -> list[Conflict]:
         """Detect conflicts across different files via import/symbol analysis.
 
@@ -967,7 +1013,8 @@ class MergeGuardEngine:
         if not other_prs:
             return []
 
-        graph = self._build_cross_pr_dependency_graph(target_pr, other_prs)
+        if graph is None:
+            graph = self._build_cross_pr_dependency_graph(target_pr, other_prs)
         cross_file_conflicts: list[Conflict] = []
 
         # Build index of other PRs' changed files for quick lookup
@@ -1086,11 +1133,17 @@ class MergeGuardEngine:
             if not conflicts:
                 no_conflict_prs.append(other_pr.number)
 
+        # Build dependency graph once for both cross-file and transitive detection
+        dep_graph = (
+            self._build_cross_pr_dependency_graph(target_pr, other_prs) if other_prs else None
+        )
+
         # Cross-file conflict detection (symbol-level imports)
         cross_file = self._detect_cross_file_conflicts(
             target_pr,
             other_prs,
             all_conflicts,
+            graph=dep_graph,
         )
         all_conflicts.extend(cross_file)
         cross_file_prs = {c.target_pr for c in cross_file}
@@ -1101,6 +1154,7 @@ class MergeGuardEngine:
             target_pr,
             other_prs,
             all_conflicts,
+            graph=dep_graph,
         )
         all_conflicts.extend(transitive)
         transitive_prs = {c.target_pr for c in transitive}
@@ -1213,7 +1267,7 @@ class MergeGuardEngine:
             if len(group) > 3:
                 try:
                     llm.analyze_conflict_batch(group)
-                except Exception:
+                except (httpx.HTTPError, ValueError, KeyError, OSError):
                     logger.debug(
                         "Holistic LLM analysis failed for PR #%d",
                         target_pr_num,
@@ -1221,17 +1275,17 @@ class MergeGuardEngine:
                     )
                 continue
 
-            # Individual analysis for smaller groups
-            for conflict in group:
-                if conflict.conflict_type != ConflictType.BEHAVIORAL:
-                    continue
-                if not conflict.symbol_name:
-                    continue
+            # Individual analysis for smaller groups — parallelize LLM calls
+            behavioral = [
+                c
+                for c in group
+                if c.conflict_type == ConflictType.BEHAVIORAL
+                and c.symbol_name
+                and other_pr_map.get(c.target_pr)
+            ]
 
-                other_pr = other_pr_map.get(conflict.target_pr)
-                if not other_pr:
-                    continue
-
+            def _analyze_single(conflict: Conflict) -> None:
+                other_pr = other_pr_map[conflict.target_pr]
                 source_diff = self._get_symbol_diff(
                     target_pr, conflict.symbol_name, conflict.file_path
                 )
@@ -1239,31 +1293,36 @@ class MergeGuardEngine:
                     other_pr, conflict.symbol_name, conflict.file_path
                 )
                 if not source_diff or not target_diff:
-                    continue
+                    return
+                llm_result = llm.analyze_behavioral_conflict(
+                    symbol_name=conflict.symbol_name,
+                    file_path=conflict.file_path,
+                    pr_a_number=conflict.source_pr,
+                    pr_a_diff=source_diff,
+                    pr_b_number=conflict.target_pr,
+                    pr_b_diff=target_diff,
+                )
+                if llm_result is None:
+                    conflict.severity = ConflictSeverity.INFO
+                    conflict.description += " (LLM: changes are compatible)"
+                else:
+                    conflict.severity = llm_result.severity
+                    conflict.description = llm_result.description
+                    conflict.recommendation = llm_result.recommendation
 
-                try:
-                    llm_result = llm.analyze_behavioral_conflict(
-                        symbol_name=conflict.symbol_name,
-                        file_path=conflict.file_path,
-                        pr_a_number=conflict.source_pr,
-                        pr_a_diff=source_diff,
-                        pr_b_number=conflict.target_pr,
-                        pr_b_diff=target_diff,
-                    )
-                    if llm_result is None:
-                        conflict.severity = ConflictSeverity.INFO
-                        conflict.description += " (LLM: changes are compatible)"
-                    else:
-                        conflict.severity = llm_result.severity
-                        conflict.description = llm_result.description
-                        conflict.recommendation = llm_result.recommendation
-                except (httpx.HTTPError, ValueError, KeyError):
-                    logger.debug(
-                        "LLM analysis failed for %s in %s",
-                        conflict.symbol_name,
-                        conflict.file_path,
-                        exc_info=True,
-                    )
+            with ThreadPoolExecutor(max_workers=min(5, len(behavioral) or 1)) as pool:
+                futures = {pool.submit(_analyze_single, c): c for c in behavioral}
+                for future in as_completed(futures):
+                    try:
+                        future.result()
+                    except (httpx.HTTPError, ValueError, KeyError):
+                        c = futures[future]
+                        logger.debug(
+                            "LLM analysis failed for %s in %s",
+                            c.symbol_name,
+                            c.file_path,
+                            exc_info=True,
+                        )
 
         return conflicts
 
@@ -1331,7 +1390,7 @@ class MergeGuardEngine:
                     for conflict, suggestion in zip(group, results, strict=True):
                         if suggestion:
                             conflict.fix_suggestion = suggestion
-            except Exception:
+            except (httpx.HTTPError, ValueError, KeyError, OSError):
                 logger.debug(
                     "Fix suggestion failed for %s",
                     file_path,

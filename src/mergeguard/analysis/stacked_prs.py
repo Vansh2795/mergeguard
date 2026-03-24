@@ -12,11 +12,10 @@ import logging
 import re
 from collections import defaultdict
 
+from mergeguard.constants import DEFAULT_BRANCHES
 from mergeguard.models import PRInfo, StackedPRConfig, StackGroup
 
 logger = logging.getLogger(__name__)
-
-_DEFAULT_BRANCHES = {"main", "master", "develop"}
 _MAX_CHAIN_LENGTH = 20
 
 
@@ -78,7 +77,7 @@ def _detect_branch_chains(prs: list[PRInfo]) -> list[StackGroup]:
     # Find roots: PRs targeting a default branch whose head is another PR's base
     roots: list[PRInfo] = []
     for pr in prs:
-        if pr.base_branch in _DEFAULT_BRANCHES and pr.head_branch in base_to_prs:
+        if pr.base_branch in DEFAULT_BRANCHES and pr.head_branch in base_to_prs:
             # Check that at least one PR actually targets this head_branch
             children = [p for p in base_to_prs[pr.head_branch] if p.number != pr.number]
             if children:
@@ -223,7 +222,7 @@ def _detect_graphite(prs: list[PRInfo]) -> list[StackGroup]:
 
     # Walk chains from default-branch roots
     for parent_branch in sorted(children_of.keys()):
-        if parent_branch not in _DEFAULT_BRANCHES:
+        if parent_branch not in DEFAULT_BRANCHES:
             continue
 
         for root_pr in sorted(children_of[parent_branch], key=lambda p: (p.created_at, p.number)):

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import time
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -43,7 +42,7 @@ class GitHubClient:
         self._base_url = base_url
         auth = Auth.Token(token)
         retry = GithubRetry(secondary_rate_wait=60)
-        gh_kwargs: dict[str, object] = {"auth": auth, "retry": retry}
+        gh_kwargs: dict[str, object] = {"auth": auth, "retry": retry, "per_page": 100}
         if base_url:
             # PyGithub expects base_url to end with /api/v3
             api_url = base_url.rstrip("/")
@@ -54,9 +53,24 @@ class GitHubClient:
         self._repo = self._gh.get_repo(repo_full_name)
         self._api_base = f"{base_url.rstrip('/')}/api/v3" if base_url else "https://api.github.com"
         self._http = httpx.Client(
-            headers={"Accept": "application/vnd.github.v3+json"},
+            transport=httpx.HTTPTransport(retries=3),
+            headers={
+                "Accept": "application/vnd.github.v3+json",
+                "Authorization": f"token {token}",
+            },
             timeout=float(timeout),
         )
+
+    def close(self) -> None:
+        """Close the underlying HTTP clients."""
+        self._http.close()
+        self._gh.close()
+
+    def __enter__(self) -> GitHubClient:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
 
     def get_open_prs(self, max_count: int = 200, max_age_days: int | None = None) -> list[PRInfo]:
         """Fetch open PRs with metadata, filtered by age and capped by count.
@@ -120,14 +134,7 @@ class GitHubClient:
         """Fetch the full unified diff of a PR."""
         logger.debug("Fetching diff for PR #%d", pr_number)
         url = f"{self._api_base}/repos/{self._repo.full_name}/pulls/{pr_number}"
-        resp = self._http.get(
-            url,
-            headers={
-                "Accept": "application/vnd.github.v3.diff",
-                "Authorization": f"token {self._token}",
-            },
-        )
-        resp.raise_for_status()
+        resp = self._get(url, headers={"Accept": "application/vnd.github.v3.diff"})
         self._check_httpx_rate_limit(resp)
         return resp.text
 
@@ -244,16 +251,28 @@ class GitHubClient:
 
     # ── Private helpers ──
 
+    def _get(self, url: str, **kwargs: object) -> httpx.Response:
+        """Perform an HTTP GET with sanitized error messages (no token leaks)."""
+        try:
+            resp = self._http.get(url, **kwargs)  # type: ignore[arg-type]
+            resp.raise_for_status()
+            return resp
+        except httpx.HTTPStatusError as exc:
+            raise httpx.HTTPStatusError(
+                f"GitHub API error: {exc.response.status_code}",
+                request=exc.request,
+                response=exc.response,
+            ) from None
+
     def _check_httpx_rate_limit(self, response: httpx.Response) -> None:
         """Sleep if rate limit nearly exhausted."""
-        remaining = response.headers.get("X-RateLimit-Remaining")
-        if remaining is not None and int(remaining) < 10:
-            reset_ts = response.headers.get("X-RateLimit-Reset")
-            if reset_ts:
-                wait = max(0, int(reset_ts) - int(time.time()) + 1)
-                if wait > 0:
-                    logger.warning("Rate limit low (%s remaining), sleeping %ds", remaining, wait)
-                    time.sleep(min(wait, 300))
+        from mergeguard.integrations.rate_limit import check_rate_limit
+
+        check_rate_limit(
+            response,
+            remaining_header="X-RateLimit-Remaining",
+            reset_header="X-RateLimit-Reset",
+        )
 
     def _pr_to_info(self, pr: GHPullRequest) -> PRInfo:
         is_fork = False

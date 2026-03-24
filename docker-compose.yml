@@ -11,6 +11,8 @@ services:
       - MERGEGUARD_WEBHOOK_SECRET_GITLAB=${MERGEGUARD_WEBHOOK_SECRET_GITLAB:-}
       - MERGEGUARD_WEBHOOK_SECRET_BITBUCKET=${MERGEGUARD_WEBHOOK_SECRET_BITBUCKET:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    volumes:
+      - mergeguard-data:/home/mergeguard/.mergeguard-cache
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health').raise_for_status()"]
@@ -18,3 +20,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+volumes:
+  mergeguard-data:
