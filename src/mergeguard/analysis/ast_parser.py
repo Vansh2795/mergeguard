@@ -10,10 +10,10 @@ from tree_sitter_language_pack import get_parser as _get_parser_uncached
 from mergeguard.models import Symbol, SymbolType
 
 # Cache parser instances per language to avoid re-creation per file
-_PARSER_CACHE: dict[str, object] = {}
+_PARSER_CACHE: dict[str, Any] = {}
 
 
-def _get_cached_parser(language: str) -> object:
+def _get_cached_parser(language: str) -> Any:
     """Get or create a cached tree-sitter parser for the given language."""
     if language not in _PARSER_CACHE:
         _PARSER_CACHE[language] = _get_parser_uncached(cast("Any", language))

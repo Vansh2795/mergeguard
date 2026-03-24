@@ -76,7 +76,7 @@ _rate_limiter = _RateLimiter()
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):  # type: ignore[override]
+    async def dispatch(self, request: Request, call_next: Any) -> Response:
         if request.url.path.startswith("/webhooks/"):
             client_ip = request.client.host if request.client else "unknown"
             if not _rate_limiter.is_allowed(client_ip):
@@ -85,7 +85,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     status_code=429,
                     media_type="application/json",
                 )
-        return await call_next(request)
+        response: Response = await call_next(request)
+        return response
 
 
 def _post_status_safe(

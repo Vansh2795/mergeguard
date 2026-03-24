@@ -6,7 +6,10 @@ import sqlite3
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 from mergeguard.models import MetricsSnapshot
 
@@ -32,7 +35,7 @@ class MetricsStore:
             self._conn.commit()
 
     @contextmanager
-    def batch(self):
+    def batch(self) -> Iterator[None]:
         """Context manager that defers commits until the batch completes."""
         self._batching = True
         try:

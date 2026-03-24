@@ -5,7 +5,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import re as _re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import click
 from rich.console import Console
@@ -23,7 +23,7 @@ console = Console(stderr=True)
 _quiet = False
 
 
-def _spinner(msg: str) -> contextlib.AbstractContextManager:
+def _spinner(msg: str) -> contextlib.AbstractContextManager[Any]:
     """Return a Rich status spinner, or a no-op context manager when --quiet."""
     if _quiet:
         return contextlib.nullcontext()

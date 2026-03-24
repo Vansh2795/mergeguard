@@ -1279,16 +1279,14 @@ class MergeGuardEngine:
 
             def _analyze_single(conflict: Conflict) -> None:
                 other_pr = other_pr_map[conflict.target_pr]
-                source_diff = self._get_symbol_diff(
-                    target_pr, conflict.symbol_name, conflict.file_path
-                )
-                target_diff = self._get_symbol_diff(
-                    other_pr, conflict.symbol_name, conflict.file_path
-                )
+                symbol = conflict.symbol_name
+                assert symbol is not None  # guaranteed by filter above
+                source_diff = self._get_symbol_diff(target_pr, symbol, conflict.file_path)
+                target_diff = self._get_symbol_diff(other_pr, symbol, conflict.file_path)
                 if not source_diff or not target_diff:
                     return
                 llm_result = llm.analyze_behavioral_conflict(
-                    symbol_name=conflict.symbol_name,
+                    symbol_name=symbol,
                     file_path=conflict.file_path,
                     pr_a_number=conflict.source_pr,
                     pr_a_diff=source_diff,
