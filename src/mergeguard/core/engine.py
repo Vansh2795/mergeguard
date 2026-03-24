@@ -13,6 +13,7 @@ import re as _re
 import sqlite3
 import threading
 import time
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
@@ -53,11 +54,6 @@ from mergeguard.storage.cache import AnalysisCache
 from mergeguard.storage.decisions_log import DecisionsLog
 
 logger = logging.getLogger(__name__)
-
-# Defaults — overridable via MergeGuardConfig
-CHURN_MAX_LINES = 500
-MAX_FILE_SIZE = 500_000
-MAX_CACHE_ENTRIES = 500
 
 
 def _demote_intra_stack_conflicts(
@@ -188,7 +184,7 @@ class MergeGuardEngine:
         self._config = config if config is not None else MergeGuardConfig()
         self._repo_full_name = repo_full_name
         self._symbol_index = SymbolIndex()
-        self._content_cache: dict[tuple[str, str], str | None] = {}
+        self._content_cache: OrderedDict[tuple[str, str], str | None] = OrderedDict()
         self._cache_lock = threading.Lock()
         self._ignore_res = [
             _re.compile(fnmatch.translate(pat)) for pat in self._config.ignored_paths
@@ -196,24 +192,21 @@ class MergeGuardEngine:
         self._codeowners: CodeOwners | None = None  # Lazy-loaded per repo
 
     def _get_file_content_cached(self, path: str, ref: str) -> str | None:
-        """Fetch file content with caching to avoid duplicate API calls."""
+        """Fetch file content with LRU caching to avoid duplicate API calls."""
         key = (path, ref)
-        # Fast path: dict reads are thread-safe in CPython (GIL)
-        cached = self._content_cache.get(key)
-        if cached is not None:
-            return cached
-        if key in self._content_cache:  # Cached None (file doesn't exist)
-            return None
+        with self._cache_lock:
+            if key in self._content_cache:
+                self._content_cache.move_to_end(key)
+                return self._content_cache[key]
         content = self._client.get_file_content(path, ref)
         with self._cache_lock:
-            self._content_cache.setdefault(key, content)
-            # Evict oldest entries if cache exceeds max size
-            cfg = getattr(self, "_config", None)
-            max_entries = getattr(cfg, "max_cache_entries", None)
-            if not isinstance(max_entries, int):
-                max_entries = MAX_CACHE_ENTRIES
-            while len(self._content_cache) > max_entries:
-                self._content_cache.pop(next(iter(self._content_cache)))
+            if key not in self._content_cache:
+                self._content_cache[key] = content
+                # Evict LRU entries if cache exceeds max size
+                while len(self._content_cache) > self._config.max_cache_entries:
+                    self._content_cache.popitem(last=False)
+            else:
+                self._content_cache.move_to_end(key)
         return self._content_cache[key]
 
     def _backfill_truncated_patches(self, pr: PRInfo) -> None:
@@ -720,7 +713,7 @@ class MergeGuardEngine:
         graph: DependencyGraph,
     ) -> str:
         """Find which upstream_pr file the dependent_path imports from."""
-        direct_imports = graph._forward.get(dependent_path, set())
+        direct_imports = graph.get_direct_imports(dependent_path)
         for tcf in upstream_pr.changed_files:
             if tcf.path in direct_imports:
                 return tcf.path
@@ -804,19 +797,24 @@ class MergeGuardEngine:
             ):
                 existing_pairs.add(c.target_pr)
 
+        # Local cache for BFS results to avoid redundant traversals
+        _dep_cache: dict[str, set[str]] = {}
+
+        def _cached_get_dependents(path: str) -> set[str]:
+            if path not in _dep_cache:
+                _dep_cache[path] = graph.get_dependents(path)
+            return _dep_cache[path]
+
         # --- Direction A: other_pr's files depend on target_pr's files ---
         target_dependents: set[str] = set()
         for cf in target_pr.changed_files:
-            target_dependents |= graph.get_dependents(cf.path)
+            target_dependents |= _cached_get_dependents(cf.path)
             for module_form in self._file_path_module_forms(cf.path):
-                target_dependents |= graph.get_dependents(module_form)
+                target_dependents |= _cached_get_dependents(module_form)
 
         transitive: list[Conflict] = []
         per_pair_count: dict[int, int] = {}  # PR number -> count of transitive conflicts
-        cfg = getattr(self, "_config", None)
-        max_per_pair = getattr(cfg, "max_transitive_per_pair", None)
-        if not isinstance(max_per_pair, int):
-            max_per_pair = 5
+        max_per_pair = self._config.max_transitive_per_pair
 
         for other_pr in other_prs:
             if other_pr.number in existing_pairs:
@@ -884,9 +882,9 @@ class MergeGuardEngine:
                 continue
             other_dependents: set[str] = set()
             for cf in other_pr.changed_files:
-                other_dependents |= graph.get_dependents(cf.path)
+                other_dependents |= _cached_get_dependents(cf.path)
                 for module_form in self._file_path_module_forms(cf.path):
-                    other_dependents |= graph.get_dependents(module_form)
+                    other_dependents |= _cached_get_dependents(module_form)
             # Check if target_pr's files appear in other_pr's dependents
             for cf in target_pr.changed_files:
                 if per_pair_count.get(other_pr.number, 0) >= max_per_pair:
@@ -901,9 +899,9 @@ class MergeGuardEngine:
                     # Find the other_pr file that creates the dependency link
                     linking_file = other_pr.changed_files[0].path
                     for ocf in other_pr.changed_files:
-                        deps = graph.get_dependents(ocf.path)
+                        deps = _cached_get_dependents(ocf.path)
                         for module_form in self._file_path_module_forms(ocf.path):
-                            deps |= graph.get_dependents(module_form)
+                            deps |= _cached_get_dependents(module_form)
                         if cf.path in deps or any(
                             mf in deps for mf in self._file_path_module_forms(cf.path)
                         ):
@@ -952,11 +950,7 @@ class MergeGuardEngine:
         Normalizes total line changes so that CHURN_MAX_LINES+ lines = max churn (1.0).
         """
         total_changes = sum(cf.additions + cf.deletions for cf in pr.changed_files)
-        cfg = getattr(self, "_config", None)
-        max_lines = getattr(cfg, "churn_max_lines", None)
-        if not isinstance(max_lines, int):
-            max_lines = CHURN_MAX_LINES
-        return min(1.0, total_changes / max_lines)
+        return min(1.0, total_changes / self._config.churn_max_lines)
 
     def _compute_pattern_deviation(self, pr: PRInfo) -> float:
         """Compute pattern deviation as 1 - symbol_name_similarity.
@@ -1161,19 +1155,18 @@ class MergeGuardEngine:
         no_conflict_prs = [n for n in no_conflict_prs if n not in transitive_prs]
 
         # Guardrails
-        cfg = getattr(self, "_config", None)
-        if cfg and cfg.rules:
-            all_conflicts.extend(enforce_guardrails(target_pr, cfg))
+        if self._config.rules:
+            all_conflicts.extend(enforce_guardrails(target_pr, self._config))
 
         # Secret scanning
-        if cfg and cfg.secrets.enabled:
+        if self._config.secrets.enabled:
             from mergeguard.core.secrets import scan_secrets
 
-            all_conflicts.extend(scan_secrets(target_pr, cfg))
+            all_conflicts.extend(scan_secrets(target_pr, self._config))
 
         # Regression detection
         own_log = False
-        if decisions_log is None and cfg and cfg.check_regressions:
+        if decisions_log is None and self._config.check_regressions:
             try:
                 decisions_log = DecisionsLog()
                 own_log = True
@@ -1608,10 +1601,7 @@ class MergeGuardEngine:
             if parsed is None:
                 continue
             file_diffs, modified_ranges = parsed
-            cfg = getattr(self, "_config", None)
-            max_file = getattr(cfg, "max_file_size", None)
-            if not isinstance(max_file, int):
-                max_file = MAX_FILE_SIZE
+            max_file = self._config.max_file_size
             content = self._fetch_and_validate_content(
                 changed_file.path,
                 pr.base_branch,

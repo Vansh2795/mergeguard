@@ -5,6 +5,7 @@ from __future__ import annotations
 import ipaddress
 import logging
 import socket
+from collections import Counter
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
@@ -87,9 +88,7 @@ def notify_slack(
     if not matching:
         return False
 
-    severity_counts: dict[str, int] = {}
-    for c in matching:
-        severity_counts[c.severity.value] = severity_counts.get(c.severity.value, 0) + 1
+    severity_counts = Counter(c.severity.value for c in matching)
 
     # Build Block Kit payload
     blocks: list[dict[str, Any]] = [
@@ -197,9 +196,7 @@ def notify_teams(
     if not matching:
         return False
 
-    severity_counts: dict[str, int] = {}
-    for c in matching:
-        severity_counts[c.severity.value] = severity_counts.get(c.severity.value, 0) + 1
+    severity_counts = Counter(c.severity.value for c in matching)
 
     # Build Adaptive Card
     facts = []

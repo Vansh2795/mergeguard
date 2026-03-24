@@ -69,6 +69,17 @@ class DependencyGraph:
                 result[source_file] = targets[target_file]
         return result
 
+    def get_direct_imports(self, file_path: str) -> set[str]:
+        """Get files directly imported by the given file."""
+        return self._forward.get(file_path, set())
+
+    def get_symbol_imports(self, file_path: str) -> dict[str, set[str]]:
+        """Get symbol-level imports for the given file.
+
+        Returns {target_file: {symbol_names}}.
+        """
+        return self._symbol_forward.get(file_path, {})
+
     def get_dependents(self, file_path: str, max_depth: int = 5) -> set[str]:
         """Find all files that transitively depend on the given file.
 

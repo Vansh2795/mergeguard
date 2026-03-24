@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import re as _re
 from typing import TYPE_CHECKING
@@ -19,6 +20,14 @@ from mergeguard.constants import DEFAULT_BRANCHES
 
 logger = logging.getLogger(__name__)
 console = Console(stderr=True)
+_quiet = False
+
+
+def _spinner(msg: str) -> contextlib.AbstractContextManager:
+    """Return a Rich status spinner, or a no-op context manager when --quiet."""
+    if _quiet:
+        return contextlib.nullcontext()
+    return console.status(msg, spinner="dots")
 
 
 def _detect_platform_from_remote() -> str:
@@ -150,6 +159,7 @@ def _validate_repo(ctx: click.Context, param: click.Parameter, value: str | None
 @click.group()
 @click.version_option(package_name="py-mergeguard")
 @click.option("--verbose", "-v", is_flag=True, default=False, help="Enable debug logging.")
+@click.option("--quiet", "-q", is_flag=True, default=False, help="Suppress Rich spinners.")
 @click.option(
     "--platform",
     type=click.Choice(["github", "gitlab", "bitbucket", "auto"]),
@@ -168,9 +178,17 @@ def _validate_repo(ctx: click.Context, param: click.Parameter, value: str | None
 )
 @click.pass_context
 def main(
-    ctx: click.Context, verbose: bool, platform: str, gitlab_url: str, github_url: str | None
+    ctx: click.Context,
+    verbose: bool,
+    quiet: bool,
+    platform: str,
+    gitlab_url: str,
+    github_url: str | None,
 ) -> None:
     """MergeGuard: Cross-PR intelligence for the agentic coding era."""
+    global _quiet
+    if quiet:
+        _quiet = True
     ctx.ensure_object(dict)
     ctx.obj["platform"] = platform
     ctx.obj["gitlab_url"] = gitlab_url
@@ -285,7 +303,7 @@ def analyze(
         cfg.secrets.enabled = secrets
 
     client = _create_client(platform, token, repo, gitlab_url, github_url)
-    with console.status("[bold blue]Analyzing cross-PR conflicts...", spinner="dots"):
+    with _spinner("[bold blue]Analyzing cross-PR conflicts..."):
         engine = MergeGuardEngine(config=cfg, client=client)
         report = engine.analyze_pr(pr)
 
@@ -348,7 +366,7 @@ def analyze(
         raise SystemExit(2 if report.has_critical else 1)
 
 
-@main.command()
+@main.command("map")
 @click.option("--repo", "-r", callback=_validate_repo, help="Repo (owner/repo).")
 @click.option("--token", "-t", envvar=["GITHUB_TOKEN", "GITLAB_TOKEN"])
 @click.option("--max-prs", type=int, default=None, help="Max open PRs to scan.")
@@ -360,7 +378,7 @@ def analyze(
     default="terminal",
 )
 @click.pass_context
-def map(
+def map_cmd(
     ctx: click.Context,
     repo: str | None,
     token: str | None,
@@ -485,7 +503,7 @@ def dashboard(
     client = _create_client(platform, token, repo, gitlab_url, github_url)
     engine = MergeGuardEngine(config=cfg, client=client)
 
-    with console.status("[bold blue]Analyzing all open PRs...", spinner="dots"):
+    with _spinner("[bold blue]Analyzing all open PRs..."):
         reports = engine.analyze_all_open_prs()
 
     if output_format == "html":
@@ -589,7 +607,7 @@ def blast_radius(
     client = _create_client(platform, token, repo, gitlab_url, github_url)
     engine = MergeGuardEngine(config=cfg, client=client)
 
-    with console.status("[bold blue]Analyzing blast radius...", spinner="dots"):
+    with _spinner("[bold blue]Analyzing blast radius..."):
         reports = engine.analyze_all_open_prs()
         file_graph = None
         if output_format == "html":
@@ -675,7 +693,7 @@ def policy_check(
         cfg.github_url = github_url
 
     client = _create_client(platform, token, repo, gitlab_url, github_url)
-    with console.status("[bold blue]Analyzing PR and evaluating policies...", spinner="dots"):
+    with _spinner("[bold blue]Analyzing PR and evaluating policies..."):
         engine = MergeGuardEngine(config=cfg, client=client)
         report = engine.analyze_pr(pr)
 
@@ -789,7 +807,7 @@ def suggest_order(
     client = _create_client(platform, token, repo, gitlab_url, github_url)
     engine = MergeGuardEngine(config=cfg, client=client)
 
-    with console.status("[bold blue]Analyzing merge order...", spinner="dots"):
+    with _spinner("[bold blue]Analyzing merge order..."):
         reports = engine.analyze_all_open_prs()
 
     from mergeguard.core.merge_order import format_merge_order, suggest_merge_order
@@ -992,7 +1010,7 @@ def scan_secrets_cmd(
         cfg.github_url = github_url
 
     client = _create_client(platform, token, repo, gitlab_url, github_url)
-    with console.status("[bold blue]Scanning for secrets...", spinner="dots"):
+    with _spinner("[bold blue]Scanning for secrets..."):
         engine = MergeGuardEngine(config=cfg, client=client)
         report = engine.scan_secrets_only(pr)
 
@@ -1072,7 +1090,7 @@ def metrics(
 
     time_windows = list(windows) if windows else cfg.metrics.time_windows
 
-    with console.status("[bold blue]Computing DORA metrics...", spinner="dots"):
+    with _spinner("[bold blue]Computing DORA metrics..."):
         report = compute_dora_metrics(repo, time_windows)
 
     if output_format == "json":
@@ -1351,7 +1369,7 @@ def analyze_multi(
         client = _create_client(resolved_platform, token, repo_path, gitlab_url, github_url)
         engine = MergeGuardEngine(config=cfg, client=client)
 
-        with console.status(f"[bold blue]Scanning {repo_name}...", spinner="dots"):
+        with _spinner(f"[bold blue]Scanning {repo_name}..."):
             reports = engine.analyze_all_open_prs()
 
         for report in reports:

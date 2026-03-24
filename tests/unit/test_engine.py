@@ -283,16 +283,18 @@ class TestEnrichPRRobustness:
 
     def _make_engine(self):
         import threading
+        from collections import OrderedDict
 
         from mergeguard.core.engine import MergeGuardEngine
 
         engine = MergeGuardEngine.__new__(MergeGuardEngine)
-        engine._content_cache = {}
+        engine._content_cache = OrderedDict()
         engine._cache_lock = threading.Lock()
         engine._symbol_index = MagicMock()
         engine._symbol_index.get_symbols.return_value = []
         engine._config = MagicMock()
         engine._config.ignored_paths = []
+        engine._config.max_file_size = 500_000
         engine._ignore_res = []
         engine._client = MagicMock()
         return engine
@@ -336,10 +338,14 @@ class TestTransitiveConflictDetection:
     """Tests for transitive conflict detection through dependency graphs."""
 
     def _make_engine(self):
+        from collections import OrderedDict
+
         engine = MergeGuardEngine.__new__(MergeGuardEngine)
-        engine._content_cache = {}
+        engine._content_cache = OrderedDict()
         engine._cache_lock = threading.Lock()
         engine._symbol_index = MagicMock()
+        engine._config = MagicMock()
+        engine._config.max_transitive_per_pair = 5
         engine._get_file_content_cached = MagicMock(return_value="import models")
         return engine
 
@@ -449,7 +455,9 @@ class TestTransitiveConflictDetection:
         """PR with transitive conflict is removed from no_conflict_prs in _detect_all_conflicts."""
         engine = self._make_engine()
         engine._config = MagicMock()
+        engine._config.max_transitive_per_pair = 5
         engine._config.rules = []
+        engine._config.secrets.enabled = False
         engine._config.check_regressions = False
 
         target = _make_pr(1, ["src/models.py"])

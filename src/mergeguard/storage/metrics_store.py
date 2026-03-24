@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -22,7 +23,23 @@ class MetricsStore:
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(self._db_path))
         self._conn.execute("PRAGMA journal_mode=WAL")
+        self._batching = False
         self._create_tables()
+
+    def _commit(self) -> None:
+        """Commit unless inside a batch context."""
+        if not self._batching:
+            self._conn.commit()
+
+    @contextmanager
+    def batch(self):
+        """Context manager that defers commits until the batch completes."""
+        self._batching = True
+        try:
+            yield
+            self._conn.commit()
+        finally:
+            self._batching = False
 
     def _create_tables(self) -> None:
         self._conn.execute("""
@@ -87,7 +104,7 @@ class MetricsStore:
                     snapshot.resolution_type,
                 ),
             )
-        self._conn.commit()
+        self._commit()
 
     def resolve_pr(
         self,
@@ -103,7 +120,7 @@ class MetricsStore:
                WHERE pr_number = ? AND repo = ? AND resolved_at IS NULL""",
             (resolved_at.isoformat(), resolution_type, pr_number, repo),
         )
-        self._conn.commit()
+        self._commit()
         return cursor.rowcount
 
     def get_snapshots(
@@ -164,7 +181,7 @@ class MetricsStore:
                AND julianday('now') - julianday(resolved_at) > ?""",
             (retention_days,),
         )
-        self._conn.commit()
+        self._commit()
         return cursor.rowcount
 
     @staticmethod

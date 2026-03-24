@@ -41,10 +41,10 @@ BUILTIN_ALLOWLIST: list[str] = [
 
 
 def _redact(value: str) -> str:
-    """Redact a secret value, showing only first 4 and last 3 chars."""
-    if len(value) <= 8:
+    """Redact a secret value, showing only first 3 chars."""
+    if len(value) <= 10:
         return "***"
-    return f"{value[:4]}...{value[-3:]}"
+    return f"{value[:3]}{'*' * (len(value) - 3)}"
 
 
 def scan_secrets(pr: PRInfo, config: MergeGuardConfig) -> list[Conflict]:

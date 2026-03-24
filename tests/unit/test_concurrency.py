@@ -107,11 +107,15 @@ class TestThreadSafeContentCache:
     """Concurrent _get_file_content_cached calls should not lose entries."""
 
     def test_concurrent_cache_access(self):
+        from collections import OrderedDict
+
         from mergeguard.core.engine import MergeGuardEngine
+        from mergeguard.models import MergeGuardConfig
 
         engine = MergeGuardEngine.__new__(MergeGuardEngine)
-        engine._content_cache = {}
+        engine._content_cache = OrderedDict()
         engine._cache_lock = threading.Lock()
+        engine._config = MergeGuardConfig()
 
         call_count = {"n": 0}
         call_lock = threading.Lock()

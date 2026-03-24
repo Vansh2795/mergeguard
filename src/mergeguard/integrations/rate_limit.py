@@ -24,7 +24,10 @@ def check_rate_limit(
     platform-specific names.
     """
     remaining = response.headers.get(remaining_header)
-    if remaining is not None and int(remaining) < 10:
+    if remaining is None:
+        return
+    remaining_int = int(remaining)
+    if remaining_int < 10:
         reset_ts = response.headers.get(reset_header)
         if reset_ts:
             wait = max(0, int(reset_ts) - int(time.time()) + 1)
@@ -35,3 +38,13 @@ def check_rate_limit(
                     wait,
                 )
                 time.sleep(min(wait, 30))
+    elif remaining_int < 100:
+        # Proportional backoff: linearly scale from 0s at 100 to ~2s at 10
+        backoff = 2.0 * (100 - remaining_int) / 90
+        if backoff > 0.1:
+            logger.debug(
+                "Rate limit approaching (%s remaining), sleeping %.1fs",
+                remaining,
+                backoff,
+            )
+            time.sleep(backoff)

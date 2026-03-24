@@ -132,9 +132,9 @@ class TestSecretDetection:
         assert len(aws) == 1
         # Full secret should not appear in description
         assert "AKIAI44QH8DHBR9MPVQZ" not in aws[0].description
-        # Redacted form should appear
-        assert "AKIA" in aws[0].description
-        assert "..." in aws[0].description
+        # Redacted form should appear (first 3 chars + asterisks)
+        assert "AKI" in aws[0].description
+        assert "***" in aws[0].description
 
     def test_source_lines_populated(self):
         pr = _make_pr("@@ -1,2 +1,3 @@\n context\n+AWS_KEY = 'AKIAI44QH8DHBR9MPVQZ'\n context")

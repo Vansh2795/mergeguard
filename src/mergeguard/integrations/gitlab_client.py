@@ -385,15 +385,12 @@ class GitLabClient:
             status = FileChangeStatus.MODIFIED
 
         diff_text = d.get("diff", "")
+        diff_lines = diff_text.splitlines()
         additions = sum(
-            1
-            for line in diff_text.splitlines()
-            if line.startswith("+") and not line.startswith("+++")
+            1 for line in diff_lines if line.startswith("+") and not line.startswith("+++")
         )
         deletions = sum(
-            1
-            for line in diff_text.splitlines()
-            if line.startswith("-") and not line.startswith("---")
+            1 for line in diff_lines if line.startswith("-") and not line.startswith("---")
         )
 
         # Extract patch (hunk headers + diff lines, without the diff --git header)

@@ -42,8 +42,8 @@ class GitLocalClient:
             parts = url.split(":")[-1]
             return parts.removesuffix(".git")
 
-        # Handle HTTPS URLs for GitHub and GitLab
-        for host in ("github.com", "gitlab.com"):
+        # Handle HTTPS URLs for GitHub, GitLab, and Bitbucket
+        for host in ("github.com", "gitlab.com", "bitbucket.org"):
             if host in url:
                 parts = url.split(f"{host}/")[-1]
                 return parts.removesuffix(".git")
@@ -51,7 +51,7 @@ class GitLocalClient:
         return None
 
     def detect_platform(self) -> str | None:
-        """Detect 'github' or 'gitlab' from the remote URL."""
+        """Detect 'github', 'gitlab', or 'bitbucket' from the remote URL."""
         url = self.get_remote_url()
         if not url:
             return None
@@ -59,6 +59,8 @@ class GitLocalClient:
             return "github"
         if "gitlab.com" in url:
             return "gitlab"
+        if "bitbucket.org" in url:
+            return "bitbucket"
         return None
 
     def get_diff(self, base: str, head: str = "HEAD") -> str:

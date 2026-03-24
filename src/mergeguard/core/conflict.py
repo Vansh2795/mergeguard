@@ -629,18 +629,18 @@ def _get_symbol_diff_preview(pr: PRInfo, file_path: str, symbol_name: str | None
         # File-level: use first 10 lines of patch
         for cf in pr.changed_files:
             if cf.path == file_path and cf.patch:
-                lines = cf.patch.splitlines()[:10]
-                preview = "\n".join(lines)
-                if len(cf.patch.splitlines()) > 10:
+                all_lines = cf.patch.splitlines()
+                preview = "\n".join(all_lines[:10])
+                if len(all_lines) > 10:
                     preview += "\n..."
                 return preview
         return None
     # Symbol-level: find the matching ChangedSymbol's raw_diff
     for cs in pr.changed_symbols:
         if cs.symbol.file_path == file_path and cs.symbol.name == symbol_name and cs.raw_diff:
-            lines = cs.raw_diff.splitlines()[:10]
-            preview = "\n".join(lines)
-            if len(cs.raw_diff.splitlines()) > 10:
+            all_lines = cs.raw_diff.splitlines()
+            preview = "\n".join(all_lines[:10])
+            if len(all_lines) > 10:
                 preview += "\n..."
             return preview
     return None

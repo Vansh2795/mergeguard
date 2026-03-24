@@ -469,23 +469,62 @@ app = FastAPI(
 app.add_middleware(RateLimitMiddleware)
 
 
-@app.get("/health")
-async def health() -> dict[str, Any]:
-    """Health check endpoint."""
+@app.get("/health/live")
+async def health_live() -> dict[str, str]:
+    """Liveness probe — always returns 200 if the process is running."""
+    return {"status": "ok"}
+
+
+@app.get("/health/ready")
+async def health_ready(request: Request) -> Response:
+    """Readiness probe — returns 503 if shutting down or all circuits are open."""
+    _enforce_metrics_token(request)
+    if _queue and (_queue.is_shutting_down or _queue.all_circuits_open):
+        return Response(
+            content='{"status":"unavailable"}',
+            status_code=503,
+            media_type="application/json",
+        )
     uptime = time.monotonic() - _start_time
-    return {
-        "status": "ok",
-        "uptime_seconds": round(uptime, 1),
-        "queue_pending": _queue.pending_count if _queue else 0,
-        "analyses_completed": metrics.analyses_completed.value,
-        "analyses_failed": metrics.analyses_failed.value,
-    }
+    import json as _json
+
+    body = _json.dumps(
+        {
+            "status": "ok",
+            "uptime_seconds": round(uptime, 1),
+            "queue_pending": _queue.pending_count if _queue else 0,
+            "analyses_completed": metrics.analyses_completed.value,
+            "analyses_failed": metrics.analyses_failed.value,
+        }
+    )
+    return Response(content=body, status_code=200, media_type="application/json")
+
+
+@app.get("/health")
+async def health() -> Response:
+    """Backward-compatible alias for /health/live."""
+    return Response(
+        content='{"status":"ok"}',
+        status_code=200,
+        media_type="application/json",
+    )
 
 
 @app.get("/metrics")
-async def prometheus_metrics() -> Response:
+async def prometheus_metrics(request: Request) -> Response:
     """Prometheus metrics endpoint."""
+    _enforce_metrics_token(request)
     return Response(content=metrics.render(), media_type="text/plain; charset=utf-8")
+
+
+def _enforce_metrics_token(request: Request) -> None:
+    """Check Bearer token against MERGEGUARD_METRICS_TOKEN if configured."""
+    token = os.environ.get("MERGEGUARD_METRICS_TOKEN")
+    if not token:
+        return
+    auth = request.headers.get("authorization", "")
+    if not auth.startswith("Bearer ") or not hmac.compare_digest(auth[7:], token):
+        raise HTTPException(status_code=401, detail="Invalid or missing metrics token")
 
 
 @app.post("/webhooks/github")

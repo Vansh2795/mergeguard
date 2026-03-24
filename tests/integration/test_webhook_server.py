@@ -55,6 +55,20 @@ class TestHealthEndpoint:
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "ok"
+
+    @pytest.mark.asyncio
+    async def test_health_live_returns_ok(self, client):
+        resp = await client.get("/health/live")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "ok"
+
+    @pytest.mark.asyncio
+    async def test_health_ready_returns_details(self, client):
+        resp = await client.get("/health/ready")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "ok"
         assert "uptime_seconds" in data
         assert "queue_pending" in data
 

@@ -140,10 +140,10 @@ class SymbolIndex:
                 continue
 
             # Get files this file imports
-            imported_files = graph._forward.get(fp, set())
+            imported_files = graph.get_direct_imports(fp)
 
             # Get symbol-level imports
-            symbol_imports = graph._symbol_forward.get(fp, {})
+            symbol_imports = graph.get_symbol_imports(fp)
 
             for sym in symbols:
                 if not sym.dependencies:

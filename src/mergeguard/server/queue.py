@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
     from mergeguard.server.events import MergeGroupEvent, WebhookEvent
 
 from mergeguard.server.metrics import metrics
@@ -43,7 +45,7 @@ class AnalysisQueue:
 
     def __init__(
         self,
-        handler: object,  # callable(WebhookEvent) -> awaitable
+        handler: Callable[[WebhookEvent | MergeGroupEvent], Awaitable[None]],
         cooldown: float = _DEFAULT_COOLDOWN,
         max_size: int = 1000,
     ) -> None:
@@ -110,6 +112,7 @@ class AnalysisQueue:
 
             # Skip if a newer task has superseded this one
             if self._pending.get(key) is not task:
+                metrics.queue_depth.dec()
                 self._queue.task_done()
                 continue
 
@@ -136,11 +139,17 @@ class AnalysisQueue:
             metrics.analyses_started.inc()
             start = time.monotonic()
             try:
-                await self._handler(event)  # type: ignore[operator]
+                await self._handler(event)
                 duration = time.monotonic() - start
                 metrics.analysis_duration.observe(duration)
                 metrics.analyses_completed.inc()
-                self._failure_counts[repo] = 0
+                self._failure_counts.pop(repo, None)
+                # Prune stale _last_run entries older than 1 hour
+                cutoff = time.monotonic() - 3600
+                stale = [r for r, t in self._last_run.items() if t < cutoff and r != repo]
+                for r in stale:
+                    del self._last_run[r]
+                    self._failure_counts.pop(r, None)
                 event_label = (
                     f"merge_group:{event.head_sha[:8]}"
                     if isinstance(event, MergeGroupEvent)
@@ -181,3 +190,15 @@ class AnalysisQueue:
     @property
     def pending_count(self) -> int:
         return self._queue.qsize()
+
+    @property
+    def all_circuits_open(self) -> bool:
+        """True if every tracked repo currently has an open circuit breaker."""
+        if not self._circuit_open_until:
+            return False
+        now = time.monotonic()
+        return all(now < until for until in self._circuit_open_until.values())
+
+    @property
+    def is_shutting_down(self) -> bool:
+        return self._shutting_down

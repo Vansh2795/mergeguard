@@ -1,60 +1,6 @@
-"""Shared constants and enums for MergeGuard."""
+"""Shared constants for MergeGuard."""
 
 from __future__ import annotations
 
-# GitHub API
-GITHUB_API_BASE = "https://api.github.com"
-GITHUB_DIFF_ACCEPT = "application/vnd.github.v3.diff"
-GITHUB_JSON_ACCEPT = "application/vnd.github.v3+json"
-
-# MergeGuard comment marker (used to identify/update existing comments)
-COMMENT_MARKER = "<!-- mergeguard-report -->"
-
-# Default config file name
-DEFAULT_CONFIG_FILE = ".mergeguard.yml"
-
-# Cache directory
-CACHE_DIR = ".mergeguard-cache"
-
-# Performance limits
-DEFAULT_MAX_OPEN_PRS = 30
-DEFAULT_MAX_FILE_SIZE = 500_000  # 500KB — skip very large files
-DEFAULT_MAX_DIFF_SIZE = 100_000  # 100KB — truncate very large diffs
-
-# Risk score thresholds
-RISK_HIGH = 70
-RISK_MEDIUM = 40
-RISK_LOW = 0
-
-# Supported file extensions for AST parsing
-SUPPORTED_EXTENSIONS = {
-    ".py",
-    ".js",
-    ".jsx",
-    ".ts",
-    ".tsx",
-    ".go",
-    ".rs",
-    ".java",
-    ".rb",
-    ".php",
-    ".c",
-    ".cpp",
-    ".cs",
-    ".swift",
-    ".kt",
-}
-
 # Default/protected branch names (used by CLI and stacked PR detection)
 DEFAULT_BRANCHES = {"main", "master", "develop", "HEAD"}
-
-# File patterns to always ignore
-DEFAULT_IGNORED_PATTERNS = [
-    "*.lock",
-    "*.min.js",
-    "*.min.css",
-    "package-lock.json",
-    "yarn.lock",
-    "pnpm-lock.yaml",
-    "poetry.lock",
-]
