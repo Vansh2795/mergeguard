@@ -51,7 +51,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: Vansh2795/mergeguard@v0.1
+      - uses: Vansh2795/mergeguard@v0.5
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 ```

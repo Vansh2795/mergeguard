@@ -50,7 +50,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: Vansh2795/mergeguard@v0.1
+      - uses: Vansh2795/mergeguard@v0.5
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
@@ -82,8 +82,23 @@ mergeguard dashboard --repo owner/repo --format html
 # Suggest optimal merge order
 mergeguard suggest-order --repo owner/repo
 
+# Blast radius visualization (interactive HTML graph)
+mergeguard blast-radius --repo owner/repo
+
 # Watch for PR changes and re-analyze
 mergeguard watch --repo owner/repo
+
+# Policy enforcement
+mergeguard policy-check --repo owner/repo --pr 42
+
+# Secret scanning
+mergeguard scan-secrets --repo owner/repo --pr 42
+
+# DORA metrics
+mergeguard metrics --repo owner/repo
+
+# Start webhook server for real-time analysis
+mergeguard serve --port 8000
 
 # Interactive setup wizard
 mergeguard init

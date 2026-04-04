@@ -11,38 +11,55 @@ src/mergeguard/
 ├── config.py          # Configuration loader (YAML via PyYAML)
 ├── constants.py       # Shared constants
 ├── core/              # Core analysis logic
-│   ├── engine.py      # Main orchestrator (same-file, cross-file, transitive)
-│   ├── conflict.py    # Conflict detection algorithm
-│   ├── risk_scorer.py # Risk score computation (configurable weights)
-│   ├── regression.py  # Regression detection
-│   ├── guardrails.py  # Rule enforcement (6 rule types)
-│   └── merge_order.py # Merge order suggestion algorithm
+│   ├── engine.py          # Main orchestrator (same-file, cross-file, transitive)
+│   ├── conflict.py        # Conflict detection algorithm
+│   ├── risk_scorer.py     # Risk score computation (configurable weights)
+│   ├── regression.py      # Regression detection
+│   ├── guardrails.py      # Rule enforcement (6 rule types)
+│   ├── merge_order.py     # Merge order suggestion algorithm
+│   ├── policy.py          # Policy evaluation engine (conditions + actions)
+│   ├── secrets.py         # Secret scanning logic
+│   ├── secret_patterns.py # Builtin secret regex patterns
+│   ├── metrics.py         # DORA metrics recording
+│   └── fix_templates.py   # Fix suggestion templates
 ├── analysis/          # Code analysis modules
-│   ├── ast_parser.py  # Tree-sitter AST extraction + cyclomatic complexity
-│   ├── symbol_index.py # Symbol caching + cross-file call graph
-│   ├── dependency.py  # Import graph builder + symbol-level tracking
-│   ├── diff_parser.py # Unified diff parser
-│   ├── attribution.py # AI code detection
-│   ├── similarity.py  # Duplication detection
-│   └── patch_backfill.py # Truncated patch recovery
+│   ├── ast_parser.py      # Tree-sitter AST extraction + cyclomatic complexity
+│   ├── symbol_index.py    # Symbol caching + cross-file call graph
+│   ├── dependency.py      # Import graph builder + symbol-level tracking
+│   ├── diff_parser.py     # Unified diff parser
+│   ├── attribution.py     # AI code detection
+│   ├── similarity.py      # Duplication detection
+│   ├── codeowners.py      # CODEOWNERS file parsing
+│   └── stacked_prs.py     # Stacked PR detection
 ├── integrations/      # External services
-│   ├── github_client.py  # GitHub Cloud + Enterprise Server
-│   ├── gitlab_client.py  # GitLab Cloud + self-hosted
+│   ├── protocol.py        # SCMClient abstract protocol
+│   ├── github_client.py   # GitHub Cloud + Enterprise Server
+│   ├── gitlab_client.py   # GitLab Cloud + self-hosted
 │   ├── bitbucket_client.py # Bitbucket Cloud REST API 2.0
-│   ├── git_local.py
-│   └── llm_analyzer.py  # Single + holistic batch analysis
+│   ├── git_local.py       # Local git operations + auto-detection
+│   ├── llm_analyzer.py    # Single + holistic batch analysis
+│   └── rate_limit.py      # Rate limiting utilities
 ├── storage/           # Persistence
-│   ├── decisions_log.py # SQLite decisions store
-│   └── cache.py         # File-based cache
+│   ├── decisions_log.py   # SQLite decisions store
+│   ├── metrics_store.py   # SQLite metrics storage (DORA)
+│   └── cache.py           # File-based cache
+├── server/            # Webhook server
+│   ├── webhook.py         # GitHub/GitLab/Bitbucket webhook handler
+│   ├── queue.py           # Task queue with circuit breaker
+│   ├── events.py          # Webhook event models
+│   └── metrics.py         # Metrics endpoint handler
 ├── output/            # Report formatters
-│   ├── github_comment.py  # Markdown PR comments
-│   ├── terminal.py        # Rich terminal + diff previews
-│   ├── html_report.py     # Self-contained HTML report
-│   ├── dashboard_html.py  # Chart.js dashboard
-│   ├── notifications.py   # Slack/Teams webhooks
+│   ├── github_comment.py      # Markdown PR comments
+│   ├── terminal.py            # Rich terminal + diff previews
+│   ├── inline_annotations.py  # Line-level review comments
+│   ├── html_report.py         # Self-contained HTML report
+│   ├── dashboard_html.py      # Chart.js dashboard
+│   ├── blast_radius.py        # D3.js force-directed graph
+│   ├── notifications.py       # Slack/Teams webhooks
 │   ├── json_report.py
-│   ├── sarif.py           # SARIF v2.1.0 formatter
-│   └── badge.py
+│   ├── sarif.py               # SARIF v2.1.0 formatter
+│   ├── metrics_html.py        # DORA metrics HTML dashboard
+│   └── badge.py               # SVG badge generation
 └── mcp/               # AI agent integration
     └── server.py      # check_conflicts, get_risk_score, suggest_merge_order
 ```

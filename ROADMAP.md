@@ -37,7 +37,7 @@ Focus: integrations, reporting, and developer experience.
 - :white_check_mark: **`mergeguard init` wizard** — Interactive setup that detects your stack and generates a tailored config.
 - :white_check_mark: **Static web dashboard** — Single HTML file with Chart.js visualizations, deployable to GitHub Pages (`mergeguard dashboard --format html`).
 
-## v0.5 — Enterprise Workflows (In Progress)
+## v0.5 — Enterprise Workflows :white_check_mark:
 
 Focus: real-time workflows, inline developer experience, and deployment infrastructure.
 
@@ -50,10 +50,15 @@ Focus: real-time workflows, inline developer experience, and deployment infrastr
 - :white_check_mark: **Policy engine** — Declarative conditions-and-actions system for automated merge policies based on conflict analysis
 - :white_check_mark: **DORA metrics** — Track conflict resolution time, merge frequency, conflict rate, and MTTRC across configurable time windows
 - :white_check_mark: **Secret scanning** — Detect accidentally committed secrets in PR diffs
+
+## v0.6 — Next Horizon (Planned)
+
 - :calendar: **Self-hosted runner** — On-prem deployment option
 - :calendar: **AI conflict resolution** — LLM-powered merge conflict resolution suggestions
 - :calendar: **IDE integration** — VS Code extension for real-time conflict warnings
 - :calendar: **Service mesh awareness** — Cross-service conflict detection for microservices
+- :calendar: **Azure DevOps integration** — Support for Azure Repos and Pipelines
+- :calendar: **Gitea/Forgejo integration** — Support for self-hosted forges
 
 ---
 

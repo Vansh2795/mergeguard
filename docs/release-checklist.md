@@ -1,4 +1,4 @@
-# MergeGuard v0.1.0 Release Checklist
+# MergeGuard v0.5.0 Release Checklist
 
 ---
 
@@ -87,10 +87,10 @@ Benchmarks: <15s for 10 PRs, <45s for 30 PRs, ~92 API calls per analysis.
 
 ---
 
-## Known Limitations (v0.1.0)
+## Known Limitations (v0.5.0)
 
-- GitLab support is stub-only (`NotImplementedError`)
-- MCP server tools return `"not_implemented"`
-- React dashboard not started (Phase 3 Weeks 15-16)
-- No Docker image yet
-- 6 deferred low-impact audit issues (S-7, S-9, P-8, P-10, Q-6, Q-7)
+- Bitbucket Cloud does not support labels (no-ops gracefully)
+- Redis queue backend for webhook server is experimental
+- Self-hosted runner deployment not yet documented
+- IDE integration (VS Code extension) not yet started
+- AI conflict resolution (LLM-powered merge suggestions) not yet started

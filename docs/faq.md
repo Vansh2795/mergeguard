@@ -75,8 +75,24 @@ Yes. MergeGuard uses import graph analysis to detect cross-file conflicts. If PR
 
 ### How do I get Slack/Teams notifications?
 
-Configure webhook notifications via the `notify_slack()` or `notify_teams()` functions, or integrate them into your CI pipeline. See the [Configuration Guide](configuration.md).
+Configure webhook notifications in `.mergeguard.yml` or use the policy engine to trigger notifications based on conditions (e.g., notify Slack when risk score exceeds 80). CODEOWNERS-aware routing can send notifications to team-specific Slack channels. See the [Configuration Guide](configuration.md).
 
 ### What is the MCP server?
 
 The MCP (Model Context Protocol) server lets AI agents like Claude query MergeGuard directly. It provides three tools: `check_conflicts` (what-if analysis before creating a PR), `get_risk_score` (risk assessment for an existing PR), and `suggest_merge_order` (optimal merge sequence). Install with `pip install py-mergeguard[mcp]`.
+
+### How does secret scanning work?
+
+MergeGuard scans only added lines in PR diffs using 15 builtin regex patterns (AWS keys, GitHub PATs, Slack tokens, etc.) plus custom patterns you define. Findings are surfaced as CRITICAL conflicts with inline annotations on the exact lines. Secret values are automatically redacted in all reports.
+
+### What are stacked PRs?
+
+Stacked PRs are PRs that build on each other (PR B is based on PR A's branch). MergeGuard detects stacks via branch chains, labels, or Graphite metadata and automatically demotes intra-stack conflicts to INFO since they're expected.
+
+### How does the policy engine work?
+
+The policy engine lets you define declarative rules with conditions and actions. For example, you can block merges when AI-authored PRs have critical conflicts, auto-label high-risk PRs, or require additional reviewers for infrastructure changes. Conditions evaluate fields like `risk_score`, `conflict_count`, `ai_authored`, etc.
+
+### Can MergeGuard run as a webhook server?
+
+Yes. `mergeguard serve` starts a FastAPI server that receives webhooks from GitHub, GitLab, and Bitbucket. It analyzes PRs in real-time on open/update events with HMAC-SHA256 signature verification. Deploy via Docker or `pip install py-mergeguard[server]`.

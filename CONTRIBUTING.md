@@ -42,21 +42,52 @@ uv run pytest -k "test_parse"                    # Pattern match
 
 ```
 src/mergeguard/
-├── models.py              # Pydantic data models (PRInfo, Conflict, etc.)
-├── cli.py                 # Click CLI commands (analyze, map, dashboard)
+├── models.py              # Pydantic V2 data models (PRInfo, Conflict, etc.)
+├── cli.py                 # Click CLI commands (13 commands)
 ├── config.py              # YAML config loader
 ├── constants.py           # Shared constants
 ├── analysis/              # Diff parsing, AST analysis, symbol extraction
+│   ├── ast_parser.py      # Tree-sitter AST extraction
+│   ├── symbol_index.py    # Symbol caching + cross-file call graph
+│   ├── dependency.py      # Import graph + symbol-level tracking
+│   ├── diff_parser.py     # Unified diff parser
+│   ├── attribution.py     # AI code detection
+│   ├── similarity.py      # Duplication detection
+│   ├── codeowners.py      # CODEOWNERS parsing
+│   └── stacked_prs.py     # Stacked PR detection
 ├── core/                  # Engine, conflict detection, risk scoring
 │   ├── engine.py          # Main orchestrator
 │   ├── conflict.py        # Conflict classification
-│   └── risk_scorer.py     # Risk score computation
+│   ├── risk_scorer.py     # Risk score computation
+│   ├── policy.py          # Policy evaluation engine
+│   ├── secrets.py         # Secret scanning
+│   └── metrics.py         # DORA metrics recording
 ├── integrations/          # Platform clients
 │   ├── protocol.py        # SCMClient protocol (interface for all platforms)
-│   ├── github_client.py   # GitHub REST API
+│   ├── github_client.py   # GitHub Cloud + Enterprise Server
 │   ├── gitlab_client.py   # GitLab REST API v4
-│   └── git_local.py       # Local git operations
-└── output/                # Report formatters (markdown, JSON, terminal)
+│   ├── bitbucket_client.py # Bitbucket Cloud REST API 2.0
+│   ├── git_local.py       # Local git operations
+│   └── llm_analyzer.py    # LLM-powered semantic analysis
+├── server/                # Webhook server (FastAPI)
+│   ├── webhook.py         # GitHub/GitLab/Bitbucket webhooks
+│   ├── queue.py           # Task queue with circuit breaker
+│   └── events.py          # Webhook event models
+├── storage/               # Persistence
+│   ├── decisions_log.py   # SQLite decisions store
+│   ├── metrics_store.py   # SQLite DORA metrics storage
+│   └── cache.py           # File-based cache
+├── output/                # Report formatters
+│   ├── terminal.py        # Rich terminal output
+│   ├── github_comment.py  # Markdown PR comments
+│   ├── inline_annotations.py # Line-level review comments
+│   ├── html_report.py     # Self-contained HTML report
+│   ├── blast_radius.py    # D3.js force-directed graph
+│   ├── notifications.py   # Slack/Teams webhooks
+│   ├── sarif.py           # SARIF v2.1.0
+│   └── json_report.py     # JSON output
+└── mcp/                   # AI agent integration
+    └── server.py          # MCP tools for AI agents
 ```
 
 ## Where to Contribute
@@ -67,10 +98,10 @@ Look for issues labeled [`good first issue`](https://github.com/Vansh2795/mergeg
 
 ### Areas We Need Help With
 
-- **New platform integrations** — Bitbucket, Azure DevOps, Gitea ([#2](https://github.com/Vansh2795/mergeguard/issues/2))
-- **Output formats** — JUnit XML, HTML reports
-- **CI/CD examples** — GitHub Actions, GitLab CI, Jenkins ([#4](https://github.com/Vansh2795/mergeguard/issues/4))
-- **Documentation** — tutorials, blog posts, demo recordings ([#6](https://github.com/Vansh2795/mergeguard/issues/6))
+- **New platform integrations** — Azure DevOps, Gitea/Forgejo
+- **IDE integrations** — VS Code extension for real-time conflict warnings
+- **CI/CD examples** — Jenkins, CircleCI, Buildkite
+- **Documentation** — tutorials, blog posts, demo recordings
 - **Bug reports and fixes** — always welcome
 
 ### Adding a New Platform Integration
