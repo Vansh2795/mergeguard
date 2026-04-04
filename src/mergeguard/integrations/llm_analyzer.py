@@ -6,6 +6,8 @@ import json
 import logging
 import os
 
+import httpx
+
 from mergeguard.models import Conflict, ConflictSeverity, ConflictType
 
 logger = logging.getLogger(__name__)
@@ -347,7 +349,7 @@ class LLMAnalyzer:
         try:
             result = self._llm_call(prompt, max_tokens=300)
             return result.strip() or None
-        except Exception:
+        except (httpx.HTTPError, json.JSONDecodeError, ValueError, OSError):
             logger.debug("Fix suggestion generation failed", exc_info=True)
             return None
 

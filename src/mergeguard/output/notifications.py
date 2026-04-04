@@ -17,6 +17,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _ALLOWED_SCHEMES = {"https"}
+_KNOWN_WEBHOOK_HOSTS = {
+    "hooks.slack.com",
+    "outlook.office.com",
+    "webhook.office.com",
+    "discord.com",
+    "discordapp.com",
+}
 _BLOCKED_NETWORKS = [
     ipaddress.ip_network("10.0.0.0/8"),
     ipaddress.ip_network("172.16.0.0/12"),
@@ -54,6 +61,13 @@ def _validate_webhook_url(url: str) -> None:
                         )
         except socket.gaierror:
             pass  # DNS resolution failure — let httpx handle it
+    # Warn on non-standard webhook hosts (may indicate config-based SSRF)
+    if not any(hostname.endswith(h) for h in _KNOWN_WEBHOOK_HOSTS):
+        logger.warning(
+            "Webhook URL host %r is not a recognized webhook provider — "
+            "consider using environment variables for webhook URLs",
+            hostname,
+        )
 
 
 _SEVERITY_EMOJI = {

@@ -11,18 +11,23 @@ Routes:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import hmac
 import logging
 import os
+import signal
 import time
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any
 
+import httpx
+
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
+    from mergeguard.core.engine import MergeGuardEngine
     from mergeguard.integrations.protocol import SCMClient
     from mergeguard.models import ConflictReport, MergeGuardConfig
 
@@ -142,7 +147,7 @@ def _handle_merge_group(
     event: MergeGroupEvent,
     cfg: MergeGuardConfig,
     client: SCMClient,
-    engine: Any,
+    engine: MergeGuardEngine,
 ) -> None:
     """Handle a merge_group webhook event (sync — no real awaits)."""
     metrics.merge_groups_analyzed.inc()
@@ -295,7 +300,7 @@ def _run_analysis_sync(event: WebhookEvent | MergeGroupEvent) -> None:
                     review_body = format_review_summary(report, len(review_comments))
                     try:
                         client.post_pr_review(event.pr_number, review_body, review_comments)
-                    except Exception:
+                    except (httpx.HTTPError, OSError, ValueError):
                         logger.warning(
                             "Failed to post inline annotations for %s #%d",
                             event.repo_full_name,
@@ -323,7 +328,7 @@ def _run_analysis_sync(event: WebhookEvent | MergeGroupEvent) -> None:
 
                 try:
                     record_analysis(report, event.repo_full_name)
-                except Exception:
+                except (OSError, ValueError):
                     logger.warning("Failed to record metrics snapshot", exc_info=True)
 
         elif event.action == EventAction.CLOSED:
@@ -346,7 +351,7 @@ def _run_analysis_sync(event: WebhookEvent | MergeGroupEvent) -> None:
                         _dt.now(UTC),
                         resolution_type,
                     )
-                except Exception:
+                except (OSError, ValueError):
                     logger.warning("Failed to record resolution", exc_info=True)
     finally:
         client.close()
@@ -457,6 +462,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     _queue = AnalysisQueue(handler=_handle_analysis)
     await _queue.start()
+
+    # Register SIGTERM handler for graceful shutdown (e.g. Kubernetes)
+    loop = asyncio.get_running_loop()
+    with contextlib.suppress(NotImplementedError):
+        loop.add_signal_handler(signal.SIGTERM, lambda: asyncio.ensure_future(_queue.stop()))
+
     yield
     await _queue.stop()
 
@@ -528,6 +539,12 @@ def _enforce_metrics_token(request: Request) -> None:
         raise HTTPException(status_code=401, detail="Invalid or missing metrics token")
 
 
+def _reject_if_shutting_down() -> None:
+    """Raise 503 if the server is draining."""
+    if _queue and _queue.is_shutting_down:
+        raise HTTPException(status_code=503, detail="Server is shutting down")
+
+
 @app.post("/webhooks/github")
 async def github_webhook(
     request: Request,
@@ -535,6 +552,7 @@ async def github_webhook(
     x_github_event: str | None = Header(None),
 ) -> dict[str, Any]:
     """Receive GitHub webhook events."""
+    _reject_if_shutting_down()
     body = await request.body()
     metrics.webhooks_received.inc()
 
@@ -566,6 +584,7 @@ async def gitlab_webhook(
     x_gitlab_event: str | None = Header(None),
 ) -> dict[str, Any]:
     """Receive GitLab webhook events."""
+    _reject_if_shutting_down()
     metrics.webhooks_received.inc()
 
     secret = _get_webhook_secret("gitlab")
@@ -593,6 +612,7 @@ async def bitbucket_webhook(
     x_event_key: str | None = Header(None),
 ) -> dict[str, Any]:
     """Receive Bitbucket webhook events."""
+    _reject_if_shutting_down()
     body = await request.body()
     metrics.webhooks_received.inc()
 

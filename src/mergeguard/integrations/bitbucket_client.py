@@ -141,7 +141,7 @@ class BitbucketClient:
             for f in files:
                 if f.patch is None:
                     f.patch = patches.get(f.path)
-        except Exception:
+        except (httpx.HTTPError, OSError, ValueError):
             logger.debug("Failed to fetch diff for patch attachment", exc_info=True)
 
         return files
@@ -306,7 +306,7 @@ class BitbucketClient:
                 user_data = user_resp.json()
                 if user_data.get("uuid") not in existing_uuids:
                     new_reviewers.append({"uuid": user_data["uuid"]})
-            except Exception:
+            except (httpx.HTTPError, OSError, KeyError):
                 logger.warning("Bitbucket user not found: %s", username)
 
         put_resp = self._http.put(url, json={"reviewers": new_reviewers})

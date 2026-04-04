@@ -279,7 +279,7 @@ class GitHubClient:
         try:
             if pr.head.repo is None or pr.head.repo.full_name != pr.base.repo.full_name:
                 is_fork = True
-        except Exception:
+        except (AttributeError, TypeError):
             is_fork = True  # Conservative: assume fork if we can't tell
 
         now = datetime.now(UTC)

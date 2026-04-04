@@ -22,6 +22,16 @@ from mergeguard.models import (
 logger = logging.getLogger(__name__)
 
 _MAX_LINE_LENGTH = 10_000
+_NESTED_QUANTIFIER_RE = re.compile(
+    r"\([^)]*[+*][^)]*\)[+*?]"  # Matches (x+)+ , (x*)*  , (x+)? etc.
+    r"|"
+    r"\([^)]*[+*][^)]*\)\{",  # Matches (x+){n,m}
+)
+
+
+def _has_catastrophic_backtracking(pattern: str) -> bool:
+    """Detect regex patterns with known catastrophic backtracking constructs."""
+    return bool(_NESTED_QUANTIFIER_RE.search(pattern))
 
 
 def _safe_search(pattern: re.Pattern[str], text: str) -> re.Match[str] | None:
@@ -71,10 +81,16 @@ def scan_secrets(pr: PRInfo, config: MergeGuardConfig) -> list[Conflict]:
     if not patterns:
         return []
 
-    # Pre-compile all regexes
+    # Pre-compile all regexes with safety validation
     compiled: list[tuple[SecretPattern, re.Pattern[str]]] = []
     for p in patterns:
         try:
+            if _has_catastrophic_backtracking(p.pattern):
+                logger.warning(
+                    "Secret pattern '%s' has potential ReDoS risk (nested quantifiers) — skipped",
+                    p.name,
+                )
+                continue
             compiled.append((p, re.compile(p.pattern)))
         except re.error:
             logger.warning("Invalid secret pattern regex for '%s': %s", p.name, p.pattern)

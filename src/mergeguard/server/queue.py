@@ -54,6 +54,7 @@ class AnalysisQueue:
         self._cooldown = cooldown
         self._last_run: dict[str, float] = defaultdict(float)
         self._pending: dict[str, AnalysisTask] = {}  # repo:pr -> latest task
+        self._max_pending = max_size * 10  # Hard cap on pending dict size
         self._worker_task: asyncio.Task | None = None  # type: ignore[type-arg]
         self._shutting_down = False
         self._failure_counts: dict[str, int] = defaultdict(int)
@@ -90,6 +91,12 @@ class AnalysisQueue:
         else:
             key = f"{event.repo_full_name}:{event.pr_number}"
         task = AnalysisTask(event=event)
+        # Prune stale entries if pending dict grows too large
+        if len(self._pending) >= self._max_pending:
+            cutoff = time.monotonic() - 600  # Remove entries older than 10 minutes
+            stale_keys = [k for k, t in self._pending.items() if t.enqueued_at < cutoff]
+            for k in stale_keys:
+                del self._pending[k]
         self._pending[key] = task
         metrics.queue_depth.inc()
         await self._queue.put(task)

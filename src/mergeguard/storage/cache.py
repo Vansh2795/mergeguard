@@ -50,7 +50,7 @@ class AnalysisCache:
             with open(tmp_path, "w") as f:
                 json.dump(value, f)
             os.replace(tmp_path, path)
-        except Exception:
+        except (OSError, TypeError, ValueError):
             tmp_path.unlink(missing_ok=True)
             raise
 

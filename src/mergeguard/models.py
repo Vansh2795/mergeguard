@@ -5,7 +5,7 @@ All models use Pydantic V2 for validation, serialization, and type safety.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
@@ -253,7 +253,7 @@ class ConflictReport(BaseModel):
     no_conflict_prs: list[int] = Field(default_factory=list)
     affected_teams: list[str] = Field(default_factory=list)  # All teams with conflicts
     analysis_duration_ms: int = 0
-    analyzed_at: datetime = Field(default_factory=lambda: datetime.now(tz=None))
+    analyzed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     stack_group: str | None = None  # StackGroup.group_id if PR is in a stack
     stack_position: int | None = None  # 1-indexed position within the stack
     stack_pr_numbers: list[int] = Field(default_factory=list)  # Full stack in order
