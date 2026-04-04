@@ -656,8 +656,28 @@ def _get_name(node: Node) -> str | None:
 
 
 def _extract_signature(node: Node) -> str | None:
-    """Extract the function/method signature (first line)."""
+    """Extract the full function/method signature including parameters.
+
+    For multi-line signatures like::
+
+        def invoke(
+            self,
+            input: Input,
+            timeout: int = 30,
+        ) -> Output:
+
+    This returns the complete text from ``def`` to ``):``, not just the first line.
+    """
     text = _safe_decode(node.text)
+    # Find the parameters node (covers all text from open to close paren)
+    for child in node.children:
+        if child.type in ("parameters", "formal_parameters", "parameter_list"):
+            # Signature = everything from start of function def to end of params
+            sig_end = child.end_point[0] - node.start_point[0]
+            sig_lines = text.split("\n")[: sig_end + 1]
+            sig = " ".join(line.strip() for line in sig_lines)
+            return sig[:500] if len(sig) > 500 else sig
+    # Fallback: first line only
     first_line = text.split("\n")[0].strip()
     return first_line[:200] if len(first_line) > 200 else first_line
 

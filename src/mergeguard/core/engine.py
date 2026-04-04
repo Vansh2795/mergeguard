@@ -49,6 +49,7 @@ from mergeguard.models import (
     PRInfo,
     StackGroup,
     Symbol,
+    SymbolType,
 )
 from mergeguard.storage.cache import AnalysisCache
 from mergeguard.storage.decisions_log import DecisionsLog
@@ -644,16 +645,29 @@ class MergeGuardEngine:
     def _file_path_module_forms(file_path: str) -> list[str]:
         """Convert a .py file path to all possible dotted module name forms.
 
-        Given ``src/mergeguard/core/conflict.py``, returns
-        ``["src.mergeguard.core.conflict", "mergeguard.core.conflict",
-          "core.conflict", "conflict"]``.
+        Given ``src/mergeguard/core/conflict.py``, returns both module-level
+        and package-level forms::
+
+            ["src.mergeguard.core.conflict", "mergeguard.core.conflict",
+             "core.conflict", "conflict",
+             "src.mergeguard.core", "mergeguard.core", "core"]
+
+        The package-level forms (without the filename) cover Python imports
+        like ``from package import Class`` where the class is defined in a
+        submodule but re-exported through the package.
 
         Returns an empty list for non-Python files.
         """
         if not file_path.endswith(".py"):
             return []
         parts = list(PurePosixPath(file_path).with_suffix("").parts)
-        return [".".join(parts[i:]) for i in range(len(parts))]
+        # Module-level forms (include filename)
+        forms = [".".join(parts[i:]) for i in range(len(parts))]
+        # Package-level forms (drop filename) — covers `from pkg import Class`
+        if len(parts) > 1:
+            pkg_parts = parts[:-1]
+            forms.extend(".".join(pkg_parts[i:]) for i in range(len(pkg_parts)))
+        return forms
 
     def _compute_dependency_depth(self, pr: PRInfo) -> int:
         """Compute the max dependency depth across all changed files."""
@@ -702,6 +716,10 @@ class MergeGuardEngine:
                     continue
                 seen.add(cf.path)
                 content = self._get_file_content_cached(cf.path, pr.base_branch)
+                # For newly added files, base branch won't have the content.
+                # Fall back to head branch so we capture imports from new files.
+                if not content:
+                    content = self._get_file_content_cached(cf.path, pr.head_branch)
                 if content:
                     file_contents.append((cf.path, content))
         return build_dependency_graph(file_contents)
@@ -1032,6 +1050,14 @@ class MergeGuardEngine:
             for mf in self._file_path_module_forms(source_file):
                 importers |= graph.get_files_importing_symbol(mf, symbol_name)
 
+            # For methods, also find files importing the parent class.
+            # e.g., if `Runnable.invoke` signature changed, find files that
+            # `from pkg import Runnable` and call `.invoke()` on instances.
+            if cs.symbol.parent and cs.symbol.symbol_type == SymbolType.METHOD:
+                importers |= graph.get_files_importing_symbol(source_file, cs.symbol.parent)
+                for mf in self._file_path_module_forms(source_file):
+                    importers |= graph.get_files_importing_symbol(mf, cs.symbol.parent)
+
             if not importers:
                 continue
 
@@ -1280,7 +1306,8 @@ class MergeGuardEngine:
             def _analyze_single(conflict: Conflict) -> None:
                 other_pr = other_pr_map[conflict.target_pr]
                 symbol = conflict.symbol_name
-                assert symbol is not None  # guaranteed by filter above
+                if symbol is None:
+                    return
                 source_diff = self._get_symbol_diff(target_pr, symbol, conflict.file_path)
                 target_diff = self._get_symbol_diff(other_pr, symbol, conflict.file_path)
                 if not source_diff or not target_diff:
@@ -1515,9 +1542,15 @@ class MergeGuardEngine:
             pr.head_branch,
         )
 
-        # Three-way classification: compare BASE vs HEAD symbols by (name, parent)
-        base_by_key = {(s.name, s.parent): s for s in base_symbols}
-        head_by_key = {(s.name, s.parent): s for s in head_symbols}
+        # Three-way classification: compare BASE vs HEAD symbols by (name, parent).
+        # Use first occurrence per key (outermost definition) — later duplicates
+        # are typically nested closures with the same name.
+        base_by_key: dict[tuple[str, str | None], Symbol] = {}
+        for s in base_symbols:
+            base_by_key.setdefault((s.name, s.parent), s)
+        head_by_key: dict[tuple[str, str | None], Symbol] = {}
+        for s in head_symbols:
+            head_by_key.setdefault((s.name, s.parent), s)
         base_keys = set(base_by_key)
         head_keys = set(head_by_key)
 
