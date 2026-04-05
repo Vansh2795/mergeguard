@@ -75,7 +75,7 @@ strict = true
 [[tool.mypy.overrides]]
 module = [
     "openai.*", "anthropic.*", "yaml.*", "fastapi.*", "uvicorn.*", "starlette.*",
-    "rich.*", "tree_sitter.*", "tree_sitter_language_pack.*", "github.*",
+    "rich.*", "tree_sitter.*", "tree_sitter_language_pack.*",
 ]
 ignore_missing_imports = true
 
