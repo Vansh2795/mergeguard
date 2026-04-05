@@ -73,7 +73,10 @@ python_version = "3.12"
 strict = true
 
 [[tool.mypy.overrides]]
-module = ["openai.*", "anthropic.*", "yaml.*", "fastapi.*", "uvicorn.*", "starlette.*"]
+module = [
+    "openai.*", "anthropic.*", "yaml.*", "fastapi.*", "uvicorn.*", "starlette.*",
+    "rich.*", "tree_sitter.*", "tree_sitter_language_pack.*", "github.*",
+]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

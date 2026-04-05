@@ -49,7 +49,7 @@ class GitHubClient:
             if not api_url.endswith("/api/v3"):
                 api_url = f"{api_url}/api/v3"
             gh_kwargs["base_url"] = api_url
-        self._gh = Github(**gh_kwargs)  # type: ignore[arg-type]
+        self._gh = Github(**gh_kwargs)
         self._repo = self._gh.get_repo(repo_full_name)
         self._api_base = f"{base_url.rstrip('/')}/api/v3" if base_url else "https://api.github.com"
         self._http = httpx.Client(
@@ -145,7 +145,7 @@ class GitHubClient:
             content = self._repo.get_contents(path, ref=ref)
             if isinstance(content, list):
                 return None  # Directory, not a file
-            return content.decoded_content.decode("utf-8")
+            return str(content.decoded_content.decode("utf-8"))
         except UnicodeDecodeError:
             logger.debug("Binary file (not UTF-8): %s at %s", path, ref)
             return None
@@ -247,7 +247,7 @@ class GitHubClient:
     @property
     def rate_limit_remaining(self) -> int:
         """Current remaining API rate limit."""
-        return self._gh.get_rate_limit().rate.remaining
+        return int(self._gh.get_rate_limit().rate.remaining)
 
     # ── Private helpers ──
 

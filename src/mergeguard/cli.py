@@ -27,7 +27,8 @@ def _spinner(msg: str) -> contextlib.AbstractContextManager[Any]:
     """Return a Rich status spinner, or a no-op context manager when --quiet."""
     if _quiet:
         return contextlib.nullcontext()
-    return console.status(msg, spinner="dots")
+    ctx: contextlib.AbstractContextManager[Any] = console.status(msg, spinner="dots")
+    return ctx
 
 
 def _detect_platform_from_remote() -> str:

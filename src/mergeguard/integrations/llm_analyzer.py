@@ -192,19 +192,20 @@ class LLMAnalyzer:
     def _llm_call(self, prompt: str, max_tokens: int = 500) -> str:
         """Dispatch a prompt to the configured LLM provider and return the text response."""
         if self._provider == "openai":
-            response = self._openai_client.chat.completions.create(
+            oai_response = self._openai_client.chat.completions.create(
                 model=self._model,
                 max_tokens=max_tokens,
                 messages=[{"role": "user", "content": prompt}],
             )
-            return response.choices[0].message.content or ""
+            return oai_response.choices[0].message.content or ""
         else:
-            response = self._anthropic_client.messages.create(
+            ant_response = self._anthropic_client.messages.create(
                 model=self._model,
                 max_tokens=max_tokens,
                 messages=[{"role": "user", "content": prompt}],
             )
-            return str(response.content[0].text)
+            block = ant_response.content[0]
+            return str(block.text) if hasattr(block, "text") else ""
 
     def analyze_behavioral_conflict(
         self,
