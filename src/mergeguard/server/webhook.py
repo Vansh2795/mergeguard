@@ -80,7 +80,7 @@ class _RateLimiter:
 _rate_limiter = _RateLimiter()
 
 
-class RateLimitMiddleware(BaseHTTPMiddleware):
+class RateLimitMiddleware(BaseHTTPMiddleware):  # type: ignore[misc]
     async def dispatch(self, request: Request, call_next: Any) -> Response:
         if request.url.path.startswith("/webhooks/"):
             client_ip = request.client.host if request.client else "unknown"
