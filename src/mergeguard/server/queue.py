@@ -7,6 +7,7 @@ so a Redis/Celery adapter can be swapped in for production scale.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 from collections import defaultdict
@@ -70,7 +71,8 @@ class AnalysisQueue:
     async def stop(self, drain_timeout: float = 30.0) -> None:
         """Signal shutdown and wait for in-flight work to finish."""
         self._shutting_down = True
-        await self._queue.put(None)  # Sentinel to wake the worker
+        with contextlib.suppress(asyncio.QueueFull):
+            self._queue.put_nowait(None)  # Sentinel to wake the worker
         if self._worker_task is not None:
             try:
                 await asyncio.wait_for(self._worker_task, timeout=drain_timeout)
@@ -104,7 +106,12 @@ class AnalysisQueue:
     async def _worker(self) -> None:
         """Process queued analysis tasks."""
         while True:
-            task = await self._queue.get()
+            try:
+                task = await asyncio.wait_for(self._queue.get(), timeout=1.0)
+            except TimeoutError:
+                if self._shutting_down:
+                    break
+                continue
             if task is None:
                 # Sentinel — finish remaining items then exit
                 break

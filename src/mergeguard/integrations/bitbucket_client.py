@@ -10,6 +10,7 @@ import logging
 import re
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
+from urllib.parse import quote as _url_quote
 
 import httpx
 
@@ -48,7 +49,7 @@ class BitbucketClient:
         )
         self._http = httpx.Client(
             transport=httpx.HTTPTransport(retries=3),
-            auth=(username, app_password),
+            auth=httpx.BasicAuth(username, app_password),
             headers={"Accept": "application/json"},
             timeout=30.0,
         )
@@ -158,7 +159,7 @@ class BitbucketClient:
     def get_file_content(self, path: str, ref: str) -> str | None:
         """Fetch raw file content at a specific ref (commit hash or branch)."""
         logger.debug("Fetching content: %s at %s", path, ref)
-        url = f"{self._base_url}/src/{ref}/{path}"
+        url = f"{self._base_url}/src/{_url_quote(ref, safe='')}/{_url_quote(path, safe='/')}"
         try:
             resp = self._http.get(url)
             resp.raise_for_status()

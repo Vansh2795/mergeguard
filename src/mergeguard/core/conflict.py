@@ -254,9 +254,13 @@ def _is_comment_only_change(raw_diff: str | None, file_path: str) -> bool:
     if not prefixes:
         return False
     for line in raw_diff.splitlines():
-        content = line[1:].strip()  # Remove +/- prefix
+        if not line or line[0] not in ("+", "-"):
+            continue  # skip context lines, headers, empty lines
+        if line.startswith("+++") or line.startswith("---"):
+            continue  # skip file header lines
+        content = line[1:].strip()
         if not content:
-            continue  # blank lines are fine
+            continue  # blank added/removed lines are fine
         if not any(content.startswith(p) for p in prefixes):
             return False
     return True
@@ -529,7 +533,7 @@ def _check_duplication_conflicts(
             and other_ct.get((other_sym.file_path, other_sym.name)) in _modify
         ):
             continue
-        pair_key = (new_sym.name, other_sym.name)
+        pair_key = (min(new_sym.name, other_sym.name), max(new_sym.name, other_sym.name))
         if pair_key in seen_pairs:
             continue
         seen_pairs.add(pair_key)

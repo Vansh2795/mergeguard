@@ -15,9 +15,24 @@ from mergeguard.models import ChangedFile, FileChangeStatus, PRInfo
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
+    import collections.abc
+
     from github.PullRequest import PullRequest as GHPullRequest
 
     from mergeguard.integrations.protocol import ReviewComment
+
+
+class _TokenAuth(httpx.Auth):
+    """Auth handler that injects token without exposing it in repr."""
+
+    def __init__(self, token: str) -> None:
+        self._token = token
+
+    def auth_flow(
+        self, request: httpx.Request
+    ) -> collections.abc.Generator[httpx.Request, httpx.Response, None]:
+        request.headers["Authorization"] = f"token {self._token}"
+        yield request
 
 
 class GitHubClient:
@@ -54,10 +69,8 @@ class GitHubClient:
         self._api_base = f"{base_url.rstrip('/')}/api/v3" if base_url else "https://api.github.com"
         self._http = httpx.Client(
             transport=httpx.HTTPTransport(retries=3),
-            headers={
-                "Accept": "application/vnd.github.v3+json",
-                "Authorization": f"token {token}",
-            },
+            auth=_TokenAuth(token),
+            headers={"Accept": "application/vnd.github.v3+json"},
             timeout=float(timeout),
         )
 

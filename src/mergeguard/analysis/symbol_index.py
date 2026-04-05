@@ -95,7 +95,9 @@ class SymbolIndex:
         Searches across all indexed files for the given ref.
         """
         callers: list[Symbol] = []
-        for (_, cached_ref), symbols in self._cache.items():
+        with self._lock:
+            cache_snapshot = list(self._cache.items())
+        for (_, cached_ref), symbols in cache_snapshot:
             if cached_ref != ref:
                 continue
             for sym in symbols:
@@ -125,9 +127,12 @@ class SymbolIndex:
 
         graph: DependencyGraph = import_graph
 
+        with self._lock:
+            cache_snapshot = list(self._cache.items())
+
         # Collect all symbols across all files for this ref
         all_symbols: dict[str, dict[str, str]] = {}  # file -> {symbol_name: qualified_name}
-        for (fp, cached_ref), symbols in self._cache.items():
+        for (fp, cached_ref), symbols in cache_snapshot:
             if cached_ref != ref:
                 continue
             for sym in symbols:
@@ -135,7 +140,7 @@ class SymbolIndex:
 
         cross_file_cg: dict[str, dict[str, set[str]]] = {}
 
-        for (fp, cached_ref), symbols in self._cache.items():
+        for (fp, cached_ref), symbols in cache_snapshot:
             if cached_ref != ref:
                 continue
 
@@ -165,8 +170,6 @@ class SymbolIndex:
 
                 if resolved:
                     cross_file_cg.setdefault(fp, {})[sym.name] = resolved
-                    # Update the symbol's dependencies with qualified references
-                    sym.dependencies = list(set(sym.dependencies) | {r for r in resolved})
 
         return cross_file_cg
 

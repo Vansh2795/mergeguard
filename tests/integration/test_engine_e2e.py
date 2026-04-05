@@ -687,14 +687,14 @@ class TestFindOverlappingRange:
         ranges = [(1, 5), (15, 25), (30, 40)]
         assert _find_overlapping_range(symbol, ranges) == (15, 25)
 
-    def test_falls_back_to_first_range(self):
+    def test_falls_back_to_symbol_range(self):
         symbol = self._make_symbol(50, 60)
         ranges = [(1, 5), (10, 15)]
-        assert _find_overlapping_range(symbol, ranges) == (1, 5)
+        assert _find_overlapping_range(symbol, ranges) == (50, 60)
 
     def test_empty_ranges(self):
         symbol = self._make_symbol(10, 20)
-        assert _find_overlapping_range(symbol, []) == (0, 0)
+        assert _find_overlapping_range(symbol, []) == (10, 20)
 
 
 class TestGuardrailsWiring:

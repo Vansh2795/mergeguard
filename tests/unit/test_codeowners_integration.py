@@ -188,7 +188,7 @@ class TestSlackNotificationOwners:
         mock_resp.raise_for_status = MagicMock()
 
         with patch(
-            "mergeguard.output.notifications.httpx.post",
+            "mergeguard.output.notifications._safe_post",
             return_value=mock_resp,
         ) as mock_post:
             result = notify_slack("https://hooks.slack.com/test", report, "owner/repo")
@@ -242,7 +242,7 @@ class TestPerTeamRouting:
         mock_resp.raise_for_status = MagicMock()
 
         with patch(
-            "mergeguard.output.notifications.httpx.post",
+            "mergeguard.output.notifications._safe_post",
             return_value=mock_resp,
         ) as mock_post:
             results = notify_slack_per_team(report, team_channels)
@@ -270,7 +270,7 @@ class TestPerTeamRouting:
         mock_resp.raise_for_status = MagicMock()
 
         with patch(
-            "mergeguard.output.notifications.httpx.post",
+            "mergeguard.output.notifications._safe_post",
             return_value=mock_resp,
         ) as mock_post:
             results = notify_slack_per_team(

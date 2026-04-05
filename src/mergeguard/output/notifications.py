@@ -70,6 +70,33 @@ def _validate_webhook_url(url: str) -> None:
         )
 
 
+class _SSRFSafeTransport(httpx.HTTPTransport):
+    """Transport that rejects connections to private IP ranges at connect time."""
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        hostname = request.url.host
+        if hostname:
+            try:
+                for _, _, _, _, sockaddr in socket.getaddrinfo(str(hostname), None):
+                    addr = ipaddress.ip_address(sockaddr[0])
+                    for net in _BLOCKED_NETWORKS:
+                        if addr in net:
+                            raise ValueError(
+                                f"Webhook blocked: {hostname} resolves to "
+                                f"private address {sockaddr[0]}"
+                            )
+            except socket.gaierror:
+                pass  # Let the actual request handle DNS failure
+        return super().handle_request(request)
+
+
+def _safe_post(url: str, **kwargs: Any) -> httpx.Response:
+    """POST to a webhook URL with connect-time SSRF protection."""
+    _validate_webhook_url(url)
+    with httpx.Client(transport=_SSRFSafeTransport(), timeout=10.0) as client:
+        return client.post(url, **kwargs)
+
+
 _SEVERITY_EMOJI = {
     "critical": ":red_circle:",
     "warning": ":warning:",
@@ -177,11 +204,10 @@ def notify_slack(
     payload = {"blocks": blocks}
 
     try:
-        _validate_webhook_url(webhook_url)
-        resp = httpx.post(webhook_url, json=payload, timeout=10.0)
+        resp = _safe_post(webhook_url, json=payload)
         resp.raise_for_status()
         return True
-    except httpx.HTTPError:
+    except (httpx.HTTPError, ValueError):
         logger.warning("Failed to send Slack notification", exc_info=True)
         return False
 
@@ -272,11 +298,10 @@ def notify_teams(
     }
 
     try:
-        _validate_webhook_url(webhook_url)
-        resp = httpx.post(webhook_url, json=card, timeout=10.0)
+        resp = _safe_post(webhook_url, json=card)
         resp.raise_for_status()
         return True
-    except httpx.HTTPError:
+    except (httpx.HTTPError, ValueError):
         logger.warning("Failed to send Teams notification", exc_info=True)
         return False
 
@@ -374,11 +399,10 @@ def notify_slack_per_team(
             )
 
         try:
-            _validate_webhook_url(webhook)
-            resp = httpx.post(webhook, json={"blocks": blocks}, timeout=10.0)
+            resp = _safe_post(webhook, json={"blocks": blocks})
             resp.raise_for_status()
             results[team] = True
-        except httpx.HTTPError:
+        except (httpx.HTTPError, ValueError):
             logger.warning("Failed to send Slack notification for team %s", team, exc_info=True)
             results[team] = False
 

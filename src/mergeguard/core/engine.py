@@ -133,7 +133,7 @@ def _find_overlapping_range(
     for start, end in modified_ranges:
         if symbol.start_line <= end and start <= symbol.end_line:
             return (start, end)
-    return modified_ranges[0] if modified_ranges else (0, 0)
+    return (symbol.start_line, symbol.end_line)
 
 
 def _extract_file_patches(full_diff: str) -> dict[str, str]:
@@ -232,7 +232,7 @@ class MergeGuardEngine:
         )
         try:
             full_diff = self._client.get_pr_diff(pr.number)
-        except (httpx.HTTPError, SCMError, Exception):
+        except (httpx.HTTPError, SCMError):
             logger.warning(
                 "Failed to fetch full diff for PR #%d, skipping backfill",
                 pr.number,
@@ -1218,7 +1218,7 @@ class MergeGuardEngine:
             pr.changed_files = self._client.get_pr_files(pr.number)
             self._backfill_truncated_patches(pr)
             self._enrich_pr(pr)
-        except (httpx.HTTPError, SCMError, Exception):
+        except (httpx.HTTPError, SCMError):
             logger.warning("Failed to enrich PR #%d, skipping", pr.number, exc_info=True)
 
     def _create_llm_analyzer(self) -> LLMAnalyzer | None:

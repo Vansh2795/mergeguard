@@ -14,6 +14,7 @@ import asyncio
 import contextlib
 import hashlib
 import hmac
+import json
 import logging
 import os
 import signal
@@ -66,15 +67,28 @@ class _RateLimiter:
         self._requests: dict[str, list[float]] = defaultdict(list)
         self._max = max_requests
         self._window = window
+        self._last_prune = 0.0
 
     def is_allowed(self, key: str) -> bool:
         now = time.monotonic()
+        # Prune stale keys periodically
+        if now - self._last_prune > self._window:
+            self._prune(now)
+            self._last_prune = now
         reqs = self._requests[key]
         self._requests[key] = [t for t in reqs if now - t < self._window]
         if len(self._requests[key]) >= self._max:
             return False
         self._requests[key].append(now)
         return True
+
+    def _prune(self, now: float) -> None:
+        """Remove keys with no recent requests."""
+        stale = [
+            k for k, reqs in self._requests.items() if all(now - t >= self._window for t in reqs)
+        ]
+        for k in stale:
+            del self._requests[k]
 
 
 _rate_limiter = _RateLimiter()
@@ -561,7 +575,7 @@ async def github_webhook(
         metrics.webhooks_invalid.inc()
         raise HTTPException(status_code=401, detail="Invalid signature")
 
-    payload = await request.json()
+    payload = json.loads(body)
     headers = {"x-github-event": x_github_event or ""}
     event = parse_github_event(headers, payload)
 
@@ -587,12 +601,13 @@ async def gitlab_webhook(
     _reject_if_shutting_down()
     metrics.webhooks_received.inc()
 
+    body = await request.body()
     secret = _get_webhook_secret("gitlab")
     if not verify_gitlab_token(x_gitlab_token, secret):
         metrics.webhooks_invalid.inc()
         raise HTTPException(status_code=401, detail="Invalid token")
 
-    payload = await request.json()
+    payload = json.loads(body)
     headers = {"x-gitlab-event": x_gitlab_event or ""}
     event = parse_gitlab_event(headers, payload)
 
@@ -621,7 +636,7 @@ async def bitbucket_webhook(
         metrics.webhooks_invalid.inc()
         raise HTTPException(status_code=401, detail="Invalid signature")
 
-    payload = await request.json()
+    payload = json.loads(body)
     headers = {"x-event-key": x_event_key or ""}
     event = parse_bitbucket_event(headers, payload)
 
