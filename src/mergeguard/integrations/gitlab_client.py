@@ -283,15 +283,20 @@ class GitLabClient:
     def request_reviewers(self, pr_number: int, reviewers: list[str]) -> None:
         """Request reviewers on a merge request by username."""
         url = f"{self._base_url}/merge_requests/{pr_number}"
+        # Fetch current reviewer IDs to merge with (not replace)
+        mr_resp = self._get(url)
+        current_ids = [r["id"] for r in mr_resp.json().get("reviewers", [])]
         # Look up user IDs by username
-        reviewer_ids: list[int] = []
+        reviewer_ids: list[int] = list(current_ids)
         for username in reviewers:
             username = username.lstrip("@")
             user_url = f"{self._gitlab_url}/api/v4/users"
             resp = self._get(user_url, params={"username": username})
             users = resp.json()
             if users:
-                reviewer_ids.append(users[0]["id"])
+                uid = users[0]["id"]
+                if uid not in reviewer_ids:
+                    reviewer_ids.append(uid)
             else:
                 logger.warning("GitLab user not found: %s", username)
         if reviewer_ids:

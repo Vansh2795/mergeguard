@@ -450,7 +450,7 @@ class SecretPattern(BaseModel):
 class SecretsConfig(BaseModel):
     """Configuration for secret scanning in PR diffs."""
 
-    enabled: bool = True
+    enabled: bool = False  # Opt-in only — V1 focuses on conflict detection
     use_builtin_patterns: bool = True
     patterns: list[SecretPattern] = Field(default_factory=list)
     allowlist: list[str] = Field(default_factory=list)

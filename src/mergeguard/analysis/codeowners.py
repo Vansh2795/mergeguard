@@ -6,7 +6,6 @@ team-aware conflict routing and @mention tagging in PR comments.
 
 from __future__ import annotations
 
-import fnmatch
 import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -134,6 +133,8 @@ def _pattern_matches(pattern: str, file_path: str) -> bool:
     - ``src/utils/*`` matches files directly in src/utils/
     - ``src/**`` matches everything under src/
     """
+    import fnmatch as _fnmatch
+
     # Normalize: strip leading slash (CODEOWNERS treats /pattern as root-anchored)
     anchored = pattern.startswith("/")
     p = pattern.lstrip("/")
@@ -142,20 +143,35 @@ def _pattern_matches(pattern: str, file_path: str) -> bool:
     if p.endswith("/"):
         p = p + "**"
 
+    # Replace ** with a multi-segment match: fnmatch's * doesn't cross /,
+    # so we convert ** patterns to a regex-friendly form via fnmatch on
+    # each segment after splitting.
+    if "**" in p:
+        # Convert ** to match any number of path segments
+        # e.g., "src/**/*.py" -> regex that matches src/a/b/c/foo.py
+        # fnmatch.translate turns * into [^/]* but ** needs to match /
+        # Replace ** with a sentinel, translate, then fix the sentinel
+        import re as _re
+
+        sentinel = "__DOUBLE_STAR__"
+        p_sentinel = p.replace("**", sentinel)
+        regex = _fnmatch.translate(p_sentinel)
+        # fnmatch.translate wraps in (?s:...) and $ — replace sentinel match
+        regex = regex.replace(sentinel, ".*")
+        return bool(_re.fullmatch(regex, file_path))
+
     # If pattern has no slash, it can match at any depth
     if "/" not in p:
-        # e.g., "*.py" should match "src/foo.py"
-        return fnmatch.fnmatch(file_path, p) or fnmatch.fnmatch(file_path.rsplit("/", 1)[-1], p)
+        return _fnmatch.fnmatch(file_path, p) or _fnmatch.fnmatch(file_path.rsplit("/", 1)[-1], p)
 
     # Pattern has a slash — match against full path
     if anchored:
-        return fnmatch.fnmatch(file_path, p)
+        return _fnmatch.fnmatch(file_path, p)
 
     # Non-anchored pattern with slash: try both root-relative and any-depth
-    if fnmatch.fnmatch(file_path, p):
+    if _fnmatch.fnmatch(file_path, p):
         return True
-    # Also try matching as if it could appear at any depth
-    return fnmatch.fnmatch(file_path, "**/" + p)
+    return _fnmatch.fnmatch(file_path, "**/" + p)
 
 
 def load_codeowners(client: SCMClient, repo: str, ref: str = "HEAD") -> CodeOwners | None:

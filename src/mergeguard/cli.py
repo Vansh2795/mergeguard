@@ -993,7 +993,7 @@ def history(
     console.print(table)
 
 
-@main.command(name="scan-secrets")
+@main.command(name="scan-secrets", hidden=True)
 @click.option(
     "--repo",
     "-r",

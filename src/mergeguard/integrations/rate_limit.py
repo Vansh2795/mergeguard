@@ -26,11 +26,17 @@ def check_rate_limit(
     remaining = response.headers.get(remaining_header)
     if remaining is None:
         return
-    remaining_int = int(remaining)
+    try:
+        remaining_int = int(remaining)
+    except (ValueError, TypeError):
+        return
     if remaining_int < 10:
         reset_ts = response.headers.get(reset_header)
         if reset_ts:
-            wait = max(0, int(reset_ts) - int(time.time()) + 1)
+            try:
+                wait = max(0, int(reset_ts) - int(time.time()) + 1)
+            except (ValueError, TypeError):
+                return
             if wait > 0:
                 logger.warning(
                     "Rate limit low (%s remaining), sleeping %ds",

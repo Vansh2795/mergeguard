@@ -82,6 +82,7 @@ class BitbucketClient:
         params: dict[str, str | int] = {
             "state": "OPEN",
             "pagelen": min(max_count, _PAGE_LEN),
+            "sort": "-updated_on",
         }
 
         result: list[PRInfo] = []
@@ -97,7 +98,7 @@ class BitbucketClient:
                 # Apply age filter client-side since Bitbucket's query
                 # language doesn't always support updated_on filtering well
                 if cutoff and info.updated_at < cutoff:
-                    continue
+                    break
                 result.append(info)
 
             # Bitbucket pagination uses "next" URL in the response body
