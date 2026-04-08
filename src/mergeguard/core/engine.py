@@ -777,6 +777,23 @@ class MergeGuardEngine:
 
         return changed_descs, specifically_imported
 
+    @staticmethod
+    def _format_skipped_transitive_desc(
+        skipped_prs: list[int], file_path: str, source_pr_num: int
+    ) -> str:
+        """Format description for capped transitive conflicts."""
+        pr_list = ", ".join(f"#{n}" for n in skipped_prs[:5])
+        suffix = (
+            f" and {len(skipped_prs) - 5} more"
+            if len(skipped_prs) > 5
+            else ""
+        )
+        return (
+            f"{len(skipped_prs)} additional PR(s) also depend on "
+            f"`{file_path}` (changed by PR #{source_pr_num}): "
+            f"{pr_list}{suffix}."
+        )
+
     def _detect_transitive_conflicts(
         self,
         target_pr: PRInfo,
@@ -870,51 +887,87 @@ class MergeGuardEngine:
                     if imported_syms:
                         agg_a[key]["has_symbol_overlap"] = True
 
-        # Emit one conflict per (other_pr, upstream_file) group
+        # Emit aggregated conflicts, capped per upstream file
+        max_per_pair = self._config.max_transitive_per_pair
+
+        # Group by upstream_file to cap emissions for widely-imported files
+        by_upstream: dict[str, list[tuple[int, dict[str, Any]]]] = {}
         for (other_pr_num, upstream_file), info in agg_a.items():
-            dep_files = info["dependent_files"]
-            imported = sorted(info["all_imported_syms"])
-            changed = info["all_changed_syms"]
-            severity = (
-                ConflictSeverity.WARNING if info["has_symbol_overlap"]
-                else ConflictSeverity.INFO
-            )
+            by_upstream.setdefault(upstream_file, []).append((other_pr_num, info))
 
-            if len(dep_files) == 1:
-                desc = (
-                    f"PR #{other_pr_num}'s `{dep_files[0]}` depends on "
-                    f"`{upstream_file}` (changed by PR #{target_pr.number})."
-                )
-            else:
-                shown = ", ".join(f"`{f}`" for f in dep_files[:3])
-                more = f" and {len(dep_files) - 3} more" if len(dep_files) > 3 else ""
-                desc = (
-                    f"{len(dep_files)} files in PR #{other_pr_num} depend on "
-                    f"`{upstream_file}` (changed by PR #{target_pr.number}): "
-                    f"{shown}{more}."
-                )
-            if imported:
-                desc += f" Imports: {', '.join(f'`{n}`' for n in imported)}."
-            if changed:
-                desc += f" Changed symbols: {', '.join(changed)}."
+        for upstream_file, entries in by_upstream.items():
+            # Sort: symbol-overlap entries first (WARNING before INFO)
+            entries.sort(key=lambda e: (not e[1]["has_symbol_overlap"], e[0]))
+            emitted = 0
+            skipped_prs: list[int] = []
 
-            rec = f"Review changes to {upstream_file} in PR #{target_pr.number}"
-            if imported:
-                rec += f" — specifically {', '.join(f'`{n}`' for n in imported)}"
-            rec += f" for compatibility with PR #{other_pr_num}."
-
-            transitive.append(
-                Conflict(
-                    conflict_type=ConflictType.TRANSITIVE,
-                    severity=severity,
-                    source_pr=target_pr.number,
-                    target_pr=other_pr_num,
-                    file_path=upstream_file,
-                    symbol_name=imported[0] if len(imported) == 1 else None,
-                    description=desc,
-                    recommendation=rec,
+            for other_pr_num, info in entries:
+                if emitted >= max_per_pair:
+                    skipped_prs.append(other_pr_num)
+                    continue
+                dep_files = info["dependent_files"]
+                imported = sorted(info["all_imported_syms"])
+                changed = info["all_changed_syms"]
+                severity = (
+                    ConflictSeverity.WARNING if info["has_symbol_overlap"]
+                    else ConflictSeverity.INFO
                 )
-            )
+
+                if len(dep_files) == 1:
+                    desc = (
+                        f"PR #{other_pr_num}'s `{dep_files[0]}` depends on "
+                        f"`{upstream_file}` (changed by PR #{target_pr.number})."
+                    )
+                else:
+                    shown = ", ".join(f"`{f}`" for f in dep_files[:3])
+                    more = f" and {len(dep_files) - 3} more" if len(dep_files) > 3 else ""
+                    desc = (
+                        f"{len(dep_files)} files in PR #{other_pr_num} depend on "
+                        f"`{upstream_file}` (changed by PR #{target_pr.number}): "
+                        f"{shown}{more}."
+                    )
+                if imported:
+                    desc += f" Imports: {', '.join(f'`{n}`' for n in imported)}."
+                if changed:
+                    desc += f" Changed symbols: {', '.join(changed)}."
+
+                rec = f"Review changes to {upstream_file} in PR #{target_pr.number}"
+                if imported:
+                    rec += f" — specifically {', '.join(f'`{n}`' for n in imported)}"
+                rec += f" for compatibility with PR #{other_pr_num}."
+
+                transitive.append(
+                    Conflict(
+                        conflict_type=ConflictType.TRANSITIVE,
+                        severity=severity,
+                        source_pr=target_pr.number,
+                        target_pr=other_pr_num,
+                        file_path=upstream_file,
+                        symbol_name=imported[0] if len(imported) == 1 else None,
+                        description=desc,
+                        recommendation=rec,
+                    )
+                )
+                emitted += 1
+
+            # Summary conflict for skipped PRs
+            if skipped_prs:
+                transitive.append(
+                    Conflict(
+                        conflict_type=ConflictType.TRANSITIVE,
+                        severity=ConflictSeverity.INFO,
+                        source_pr=target_pr.number,
+                        target_pr=skipped_prs[0],
+                        file_path=upstream_file,
+                        description=self._format_skipped_transitive_desc(
+                            skipped_prs, upstream_file, target_pr.number
+                        ),
+                        recommendation=(
+                            f"Review changes to {upstream_file} in PR #{target_pr.number} "
+                            f"for broad impact — {len(skipped_prs) + emitted} PRs depend on it."
+                        ),
+                    )
+                )
 
         # Track PR numbers already covered in Direction A to avoid duplicates
         direction_a_prs = {c.target_pr for c in transitive}
@@ -972,50 +1025,82 @@ class MergeGuardEngine:
                     if imported_syms_b:
                         agg_b[key_b]["has_symbol_overlap"] = True
 
+        # Emit Direction B, capped per linking file
+        by_linking: dict[str, list[tuple[int, dict[str, Any]]]] = {}
         for (other_pr_num, linking_file), info in agg_b.items():
-            dep_files = info["dependent_files"]
-            imported = sorted(info["all_imported_syms"])
-            changed = info["all_changed_syms"]
-            severity_b = (
-                ConflictSeverity.WARNING if info["has_symbol_overlap"]
-                else ConflictSeverity.INFO
-            )
+            by_linking.setdefault(linking_file, []).append((other_pr_num, info))
 
-            if len(dep_files) == 1:
-                desc_b = (
-                    f"PR #{target_pr.number}'s `{dep_files[0]}` depends on "
-                    f"`{linking_file}` (changed by PR #{other_pr_num})."
-                )
-            else:
-                shown = ", ".join(f"`{f}`" for f in dep_files[:3])
-                more = f" and {len(dep_files) - 3} more" if len(dep_files) > 3 else ""
-                desc_b = (
-                    f"{len(dep_files)} files in PR #{target_pr.number} depend on "
-                    f"`{linking_file}` (changed by PR #{other_pr_num}): "
-                    f"{shown}{more}."
-                )
-            if imported:
-                desc_b += f" Imports: {', '.join(f'`{n}`' for n in imported)}."
-            if changed:
-                desc_b += f" Changed symbols: {', '.join(changed)}."
+        for linking_file, entries_b in by_linking.items():
+            entries_b.sort(key=lambda e: (not e[1]["has_symbol_overlap"], e[0]))
+            emitted_b = 0
+            skipped_b: list[int] = []
 
-            rec_b = f"Review changes to {linking_file} in PR #{other_pr_num}"
-            if imported:
-                rec_b += f" — specifically {', '.join(f'`{n}`' for n in imported)}"
-            rec_b += f" for compatibility with PR #{target_pr.number}."
-
-            transitive.append(
-                Conflict(
-                    conflict_type=ConflictType.TRANSITIVE,
-                    severity=severity_b,
-                    source_pr=target_pr.number,
-                    target_pr=other_pr_num,
-                    file_path=linking_file,
-                    symbol_name=imported[0] if len(imported) == 1 else None,
-                    description=desc_b,
-                    recommendation=rec_b,
+            for other_pr_num, info in entries_b:
+                if emitted_b >= max_per_pair:
+                    skipped_b.append(other_pr_num)
+                    continue
+                dep_files = info["dependent_files"]
+                imported = sorted(info["all_imported_syms"])
+                changed = info["all_changed_syms"]
+                severity_b = (
+                    ConflictSeverity.WARNING if info["has_symbol_overlap"]
+                    else ConflictSeverity.INFO
                 )
-            )
+
+                if len(dep_files) == 1:
+                    desc_b = (
+                        f"PR #{target_pr.number}'s `{dep_files[0]}` depends on "
+                        f"`{linking_file}` (changed by PR #{other_pr_num})."
+                    )
+                else:
+                    shown = ", ".join(f"`{f}`" for f in dep_files[:3])
+                    more = f" and {len(dep_files) - 3} more" if len(dep_files) > 3 else ""
+                    desc_b = (
+                        f"{len(dep_files)} files in PR #{target_pr.number} depend on "
+                        f"`{linking_file}` (changed by PR #{other_pr_num}): "
+                        f"{shown}{more}."
+                    )
+                if imported:
+                    desc_b += f" Imports: {', '.join(f'`{n}`' for n in imported)}."
+                if changed:
+                    desc_b += f" Changed symbols: {', '.join(changed)}."
+
+                rec_b = f"Review changes to {linking_file} in PR #{other_pr_num}"
+                if imported:
+                    rec_b += f" — specifically {', '.join(f'`{n}`' for n in imported)}"
+                rec_b += f" for compatibility with PR #{target_pr.number}."
+
+                transitive.append(
+                    Conflict(
+                        conflict_type=ConflictType.TRANSITIVE,
+                        severity=severity_b,
+                        source_pr=target_pr.number,
+                        target_pr=other_pr_num,
+                        file_path=linking_file,
+                        symbol_name=imported[0] if len(imported) == 1 else None,
+                        description=desc_b,
+                        recommendation=rec_b,
+                    )
+                )
+                emitted_b += 1
+
+            if skipped_b:
+                transitive.append(
+                    Conflict(
+                        conflict_type=ConflictType.TRANSITIVE,
+                        severity=ConflictSeverity.INFO,
+                        source_pr=target_pr.number,
+                        target_pr=skipped_b[0],
+                        file_path=linking_file,
+                        description=self._format_skipped_transitive_desc(
+                            skipped_b, linking_file, target_pr.number
+                        ),
+                        recommendation=(
+                            f"Review changes to {linking_file} in PR #{target_pr.number} "
+                            f"for broad impact — {len(skipped_b) + emitted_b} PRs depend on it."
+                        ),
+                    )
+                )
 
         return transitive
 
