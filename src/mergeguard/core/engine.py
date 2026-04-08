@@ -16,7 +16,7 @@ import time
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import PurePosixPath
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from mergeguard.integrations.llm_analyzer import LLMAnalyzer
@@ -828,15 +828,14 @@ class MergeGuardEngine:
                 target_dependents |= _cached_get_dependents(module_form)
 
         transitive: list[Conflict] = []
-        per_pair_count: dict[int, int] = {}  # PR number -> count of transitive conflicts
-        max_per_pair = self._config.max_transitive_per_pair
+
+        # Collect hits per (other_pr, upstream_file) for aggregation
+        agg_a: dict[tuple[int, str], dict[str, Any]] = {}
 
         for other_pr in other_prs:
             if other_pr.number in existing_pairs:
                 continue
             for cf in other_pr.changed_files:
-                if per_pair_count.get(other_pr.number, 0) >= max_per_pair:
-                    break
                 hit = cf.path in target_dependents
                 if not hit:
                     for mf in self._file_path_module_forms(cf.path):
@@ -855,57 +854,85 @@ class MergeGuardEngine:
                         upstream_file,
                         graph,
                     )
-
-                    severity = ConflictSeverity.WARNING if imported_syms else ConflictSeverity.INFO
-
-                    desc = (
-                        f"PR #{other_pr.number}'s `{cf.path}` depends on "
-                        f"`{upstream_file}` (changed by PR #{target_pr.number})."
-                    )
+                    key = (other_pr.number, upstream_file)
+                    if key not in agg_a:
+                        agg_a[key] = {
+                            "other_pr": other_pr,
+                            "dependent_files": [],
+                            "all_imported_syms": set(),
+                            "all_changed_syms": [],
+                            "has_symbol_overlap": False,
+                        }
+                    agg_a[key]["dependent_files"].append(cf.path)
+                    agg_a[key]["all_imported_syms"].update(imported_syms)
+                    if not agg_a[key]["all_changed_syms"]:
+                        agg_a[key]["all_changed_syms"] = changed_syms
                     if imported_syms:
-                        desc += f" Imports: {', '.join(f'`{n}`' for n in imported_syms)}."
-                    if changed_syms:
-                        desc += f" Changed symbols: {', '.join(changed_syms)}."
+                        agg_a[key]["has_symbol_overlap"] = True
 
-                    rec = f"Review changes to {upstream_file} in PR #{target_pr.number}"
-                    if imported_syms:
-                        rec += f" — specifically {', '.join(f'`{n}`' for n in imported_syms)}"
-                    rec += f" for compatibility with {cf.path} in PR #{other_pr.number}."
+        # Emit one conflict per (other_pr, upstream_file) group
+        for (other_pr_num, upstream_file), info in agg_a.items():
+            dep_files = info["dependent_files"]
+            imported = sorted(info["all_imported_syms"])
+            changed = info["all_changed_syms"]
+            severity = (
+                ConflictSeverity.WARNING if info["has_symbol_overlap"]
+                else ConflictSeverity.INFO
+            )
 
-                    transitive.append(
-                        Conflict(
-                            conflict_type=ConflictType.TRANSITIVE,
-                            severity=severity,
-                            source_pr=target_pr.number,
-                            target_pr=other_pr.number,
-                            file_path=cf.path,
-                            symbol_name=imported_syms[0] if len(imported_syms) == 1 else None,
-                            description=desc,
-                            recommendation=rec,
-                        )
-                    )
-                    per_pair_count[other_pr.number] = per_pair_count.get(other_pr.number, 0) + 1
+            if len(dep_files) == 1:
+                desc = (
+                    f"PR #{other_pr_num}'s `{dep_files[0]}` depends on "
+                    f"`{upstream_file}` (changed by PR #{target_pr.number})."
+                )
+            else:
+                shown = ", ".join(f"`{f}`" for f in dep_files[:3])
+                more = f" and {len(dep_files) - 3} more" if len(dep_files) > 3 else ""
+                desc = (
+                    f"{len(dep_files)} files in PR #{other_pr_num} depend on "
+                    f"`{upstream_file}` (changed by PR #{target_pr.number}): "
+                    f"{shown}{more}."
+                )
+            if imported:
+                desc += f" Imports: {', '.join(f'`{n}`' for n in imported)}."
+            if changed:
+                desc += f" Changed symbols: {', '.join(changed)}."
+
+            rec = f"Review changes to {upstream_file} in PR #{target_pr.number}"
+            if imported:
+                rec += f" — specifically {', '.join(f'`{n}`' for n in imported)}"
+            rec += f" for compatibility with PR #{other_pr_num}."
+
+            transitive.append(
+                Conflict(
+                    conflict_type=ConflictType.TRANSITIVE,
+                    severity=severity,
+                    source_pr=target_pr.number,
+                    target_pr=other_pr_num,
+                    file_path=upstream_file,
+                    symbol_name=imported[0] if len(imported) == 1 else None,
+                    description=desc,
+                    recommendation=rec,
+                )
+            )
 
         # Track PR numbers already covered in Direction A to avoid duplicates
         direction_a_prs = {c.target_pr for c in transitive}
 
         # --- Direction B: target_pr's files depend on other_pr's files ---
+        agg_b: dict[tuple[int, str], dict[str, Any]] = {}
+
         for other_pr in other_prs:
             if other_pr.number in existing_pairs:
                 continue
             if other_pr.number in direction_a_prs:
-                continue
-            if per_pair_count.get(other_pr.number, 0) >= max_per_pair:
                 continue
             other_dependents: set[str] = set()
             for cf in other_pr.changed_files:
                 other_dependents |= _cached_get_dependents(cf.path)
                 for module_form in self._file_path_module_forms(cf.path):
                     other_dependents |= _cached_get_dependents(module_form)
-            # Check if target_pr's files appear in other_pr's dependents
             for cf in target_pr.changed_files:
-                if per_pair_count.get(other_pr.number, 0) >= max_per_pair:
-                    break
                 hit = cf.path in other_dependents
                 if not hit:
                     for mf in self._file_path_module_forms(cf.path):
@@ -913,7 +940,6 @@ class MergeGuardEngine:
                             hit = True
                             break
                 if hit:
-                    # Find the other_pr file that creates the dependency link
                     linking_file = other_pr.changed_files[0].path
                     for ocf in other_pr.changed_files:
                         deps = _cached_get_dependents(ocf.path)
@@ -930,38 +956,66 @@ class MergeGuardEngine:
                         linking_file,
                         graph,
                     )
-
-                    severity_b = (
-                        ConflictSeverity.WARNING if imported_syms_b else ConflictSeverity.INFO
-                    )
-
-                    desc_b = (
-                        f"PR #{target_pr.number}'s `{cf.path}` depends on "
-                        f"`{linking_file}` (changed by PR #{other_pr.number})."
-                    )
+                    key_b = (other_pr.number, linking_file)
+                    if key_b not in agg_b:
+                        agg_b[key_b] = {
+                            "other_pr": other_pr,
+                            "dependent_files": [],
+                            "all_imported_syms": set(),
+                            "all_changed_syms": [],
+                            "has_symbol_overlap": False,
+                        }
+                    agg_b[key_b]["dependent_files"].append(cf.path)
+                    agg_b[key_b]["all_imported_syms"].update(imported_syms_b)
+                    if not agg_b[key_b]["all_changed_syms"]:
+                        agg_b[key_b]["all_changed_syms"] = changed_syms_b
                     if imported_syms_b:
-                        desc_b += f" Imports: {', '.join(f'`{n}`' for n in imported_syms_b)}."
-                    if changed_syms_b:
-                        desc_b += f" Changed symbols: {', '.join(changed_syms_b)}."
+                        agg_b[key_b]["has_symbol_overlap"] = True
 
-                    rec_b = f"Review changes to {linking_file} in PR #{other_pr.number}"
-                    if imported_syms_b:
-                        rec_b += f" — specifically {', '.join(f'`{n}`' for n in imported_syms_b)}"
-                    rec_b += f" for compatibility with {cf.path} in PR #{target_pr.number}."
+        for (other_pr_num, linking_file), info in agg_b.items():
+            dep_files = info["dependent_files"]
+            imported = sorted(info["all_imported_syms"])
+            changed = info["all_changed_syms"]
+            severity_b = (
+                ConflictSeverity.WARNING if info["has_symbol_overlap"]
+                else ConflictSeverity.INFO
+            )
 
-                    transitive.append(
-                        Conflict(
-                            conflict_type=ConflictType.TRANSITIVE,
-                            severity=severity_b,
-                            source_pr=target_pr.number,
-                            target_pr=other_pr.number,
-                            file_path=linking_file,
-                            symbol_name=imported_syms_b[0] if len(imported_syms_b) == 1 else None,
-                            description=desc_b,
-                            recommendation=rec_b,
-                        )
-                    )
-                    per_pair_count[other_pr.number] = per_pair_count.get(other_pr.number, 0) + 1
+            if len(dep_files) == 1:
+                desc_b = (
+                    f"PR #{target_pr.number}'s `{dep_files[0]}` depends on "
+                    f"`{linking_file}` (changed by PR #{other_pr_num})."
+                )
+            else:
+                shown = ", ".join(f"`{f}`" for f in dep_files[:3])
+                more = f" and {len(dep_files) - 3} more" if len(dep_files) > 3 else ""
+                desc_b = (
+                    f"{len(dep_files)} files in PR #{target_pr.number} depend on "
+                    f"`{linking_file}` (changed by PR #{other_pr_num}): "
+                    f"{shown}{more}."
+                )
+            if imported:
+                desc_b += f" Imports: {', '.join(f'`{n}`' for n in imported)}."
+            if changed:
+                desc_b += f" Changed symbols: {', '.join(changed)}."
+
+            rec_b = f"Review changes to {linking_file} in PR #{other_pr_num}"
+            if imported:
+                rec_b += f" — specifically {', '.join(f'`{n}`' for n in imported)}"
+            rec_b += f" for compatibility with PR #{target_pr.number}."
+
+            transitive.append(
+                Conflict(
+                    conflict_type=ConflictType.TRANSITIVE,
+                    severity=severity_b,
+                    source_pr=target_pr.number,
+                    target_pr=other_pr_num,
+                    file_path=linking_file,
+                    symbol_name=imported[0] if len(imported) == 1 else None,
+                    description=desc_b,
+                    recommendation=rec_b,
+                )
+            )
 
         return transitive
 
