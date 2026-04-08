@@ -544,6 +544,7 @@ class MergeGuardConfig(BaseModel):
     rules: list[GuardrailRule] = Field(default_factory=list)
     risk_weights: dict[str, float] | None = None  # Custom risk scoring weights (must sum to ~1.0)
     max_transitive_per_pair: int = 5  # Max transitive conflicts per PR pair
+    max_transitive_depth: int = 1  # BFS depth for transitive dependency traversal
     github_url: str | None = None  # GitHub Enterprise Server URL (e.g., https://github.example.com)
     max_file_size: int = 500_000  # Max file size in bytes (skip larger files)
     max_diff_size: int = 100_000  # Max diff size in bytes (truncate larger diffs)

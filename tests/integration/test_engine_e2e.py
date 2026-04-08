@@ -628,7 +628,7 @@ class TestTransitiveConflictE2E:
             "    return result\n"
         )
         source_views = (
-            "from models import User\n\n"
+            "from src.models import User\n\n"
             "def render_user(user):\n"
             "    return f'User: {user.name}'\n\n"
             "def validate_input(data):\n"
@@ -658,7 +658,8 @@ class TestTransitiveConflictE2E:
         transitive = [c for c in report.conflicts if c.conflict_type == ConflictType.TRANSITIVE]
         assert len(transitive) == 1
         assert transitive[0].target_pr == 201
-        assert transitive[0].severity == ConflictSeverity.WARNING
+        # INFO because symbol-level import resolution doesn't confirm overlap
+        assert transitive[0].severity == ConflictSeverity.INFO
         # Description should reference specific files
         assert "PR #201" in transitive[0].description
         assert "src/models.py" in transitive[0].description

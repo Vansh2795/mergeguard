@@ -643,31 +643,26 @@ class MergeGuardEngine:
 
     @staticmethod
     def _file_path_module_forms(file_path: str) -> list[str]:
-        """Convert a .py file path to all possible dotted module name forms.
+        """Convert a .py file path to dotted module name forms.
 
-        Given ``src/mergeguard/core/conflict.py``, returns both module-level
-        and package-level forms::
+        Given ``src/mergeguard/core/conflict.py``, returns::
 
             ["src.mergeguard.core.conflict", "mergeguard.core.conflict",
-             "core.conflict", "conflict",
-             "src.mergeguard.core", "mergeguard.core", "core"]
+             "core.conflict"]
 
-        The package-level forms (without the filename) cover Python imports
-        like ``from package import Class`` where the class is defined in a
-        submodule but re-exported through the package.
+        Single-segment forms (e.g., "conflict") and package-level forms
+        (e.g., "mergeguard.core") are excluded because they create
+        ambiguous matches in the dependency graph — a bare "conflict"
+        could match unrelated imports, and "fastapi" as a package form
+        would match imports from __init__.py, not the specific file.
 
         Returns an empty list for non-Python files.
         """
         if not file_path.endswith(".py"):
             return []
         parts = list(PurePosixPath(file_path).with_suffix("").parts)
-        # Module-level forms (include filename)
-        forms = [".".join(parts[i:]) for i in range(len(parts))]
-        # Package-level forms (drop filename) — covers `from pkg import Class`
-        if len(parts) > 1:
-            pkg_parts = parts[:-1]
-            forms.extend(".".join(pkg_parts[i:]) for i in range(len(pkg_parts)))
-        return forms
+        # Only include forms with 2+ segments to avoid ambiguous matches
+        return [".".join(parts[i:]) for i in range(len(parts)) if len(parts) - i >= 2]
 
     def _compute_dependency_depth(self, pr: PRInfo) -> int:
         """Compute the max dependency depth across all changed files."""
@@ -818,9 +813,11 @@ class MergeGuardEngine:
         # Local cache for BFS results to avoid redundant traversals
         _dep_cache: dict[str, set[str]] = {}
 
+        max_depth = self._config.max_transitive_depth
+
         def _cached_get_dependents(path: str) -> set[str]:
             if path not in _dep_cache:
-                _dep_cache[path] = graph.get_dependents(path)
+                _dep_cache[path] = graph.get_dependents(path, max_depth=max_depth)
             return _dep_cache[path]
 
         # --- Direction A: other_pr's files depend on target_pr's files ---
@@ -859,6 +856,8 @@ class MergeGuardEngine:
                         graph,
                     )
 
+                    severity = ConflictSeverity.WARNING if imported_syms else ConflictSeverity.INFO
+
                     desc = (
                         f"PR #{other_pr.number}'s `{cf.path}` depends on "
                         f"`{upstream_file}` (changed by PR #{target_pr.number})."
@@ -876,7 +875,7 @@ class MergeGuardEngine:
                     transitive.append(
                         Conflict(
                             conflict_type=ConflictType.TRANSITIVE,
-                            severity=ConflictSeverity.WARNING,
+                            severity=severity,
                             source_pr=target_pr.number,
                             target_pr=other_pr.number,
                             file_path=cf.path,
@@ -932,6 +931,10 @@ class MergeGuardEngine:
                         graph,
                     )
 
+                    severity_b = (
+                        ConflictSeverity.WARNING if imported_syms_b else ConflictSeverity.INFO
+                    )
+
                     desc_b = (
                         f"PR #{target_pr.number}'s `{cf.path}` depends on "
                         f"`{linking_file}` (changed by PR #{other_pr.number})."
@@ -949,7 +952,7 @@ class MergeGuardEngine:
                     transitive.append(
                         Conflict(
                             conflict_type=ConflictType.TRANSITIVE,
-                            severity=ConflictSeverity.WARNING,
+                            severity=severity_b,
                             source_pr=target_pr.number,
                             target_pr=other_pr.number,
                             file_path=linking_file,

@@ -15,6 +15,10 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
+# Fix Windows console encoding for repos with emoji in PR titles
+if sys.stdout.encoding != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
@@ -28,6 +32,9 @@ BENCHMARK_REPOS = [
     "vercel/next.js",
     "golang/go",
 ]
+
+# Max PRs per repo — keep low to avoid rate limits with free tokens
+MAX_PRS_PER_REPO = int(os.environ.get("BENCH_MAX_PRS", "10"))
 
 RESULTS_DIR = Path(__file__).parent / "results"
 
@@ -45,14 +52,14 @@ def run_single_repo(repo: str, token: str) -> dict:
     try:
         engine = MergeGuardEngine(config=cfg, client=client)
 
-        prs = client.get_open_prs(max_count=50, max_age_days=30)
-        print(f"  Found {len(prs)} open PRs")
+        prs = client.get_open_prs(max_count=MAX_PRS_PER_REPO, max_age_days=30)
+        print(f"  Found {len(prs)} open PRs (analyzing up to {MAX_PRS_PER_REPO})")
 
         results: list[dict] = []
         errors: list[dict] = []
         start = time.monotonic()
 
-        for pr in prs[:30]:
+        for pr in prs[:MAX_PRS_PER_REPO]:
             try:
                 pr_start = time.monotonic()
                 report = engine.analyze_pr(pr.number)
