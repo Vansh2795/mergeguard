@@ -783,11 +783,7 @@ class MergeGuardEngine:
     ) -> str:
         """Format description for capped transitive conflicts."""
         pr_list = ", ".join(f"#{n}" for n in skipped_prs[:5])
-        suffix = (
-            f" and {len(skipped_prs) - 5} more"
-            if len(skipped_prs) > 5
-            else ""
-        )
+        suffix = f" and {len(skipped_prs) - 5} more" if len(skipped_prs) > 5 else ""
         return (
             f"{len(skipped_prs)} additional PR(s) also depend on "
             f"`{file_path}` (changed by PR #{source_pr_num}): "
@@ -909,7 +905,8 @@ class MergeGuardEngine:
                 imported = sorted(info["all_imported_syms"])
                 changed = info["all_changed_syms"]
                 severity = (
-                    ConflictSeverity.WARNING if info["has_symbol_overlap"]
+                    ConflictSeverity.WARNING
+                    if info["has_symbol_overlap"]
                     else ConflictSeverity.INFO
                 )
 
@@ -1043,7 +1040,8 @@ class MergeGuardEngine:
                 imported = sorted(info["all_imported_syms"])
                 changed = info["all_changed_syms"]
                 severity_b = (
-                    ConflictSeverity.WARNING if info["has_symbol_overlap"]
+                    ConflictSeverity.WARNING
+                    if info["has_symbol_overlap"]
                     else ConflictSeverity.INFO
                 )
 
@@ -1107,9 +1105,7 @@ class MergeGuardEngine:
         global_cap = max_per_pair * 2
         if len(transitive) > global_cap:
             # Sort: WARNING before INFO, then by target_pr
-            transitive.sort(
-                key=lambda c: (c.severity != ConflictSeverity.WARNING, c.target_pr)
-            )
+            transitive.sort(key=lambda c: (c.severity != ConflictSeverity.WARNING, c.target_pr))
             kept = transitive[:global_cap]
             dropped = transitive[global_cap:]
             dropped_prs = sorted({c.target_pr for c in dropped})
