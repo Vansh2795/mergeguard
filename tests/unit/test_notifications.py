@@ -141,7 +141,7 @@ class TestNotifySlack:
     def test_sends_notification_on_matching_severity(self):
         report = _make_report()
         mock_resp = _ok_response()
-        with patch("mergeguard.output.notifications.httpx.post", return_value=mock_resp):
+        with patch("mergeguard.output.notifications._safe_post", return_value=mock_resp):
             result = notify_slack("https://hooks.slack.com/test", report, "owner/repo")
         assert result is True
 
@@ -149,7 +149,7 @@ class TestNotifySlack:
         report = _make_report()
         mock_resp = _ok_response()
         with patch(
-            "mergeguard.output.notifications.httpx.post", return_value=mock_resp
+            "mergeguard.output.notifications._safe_post", return_value=mock_resp
         ) as mock_post:
             notify_slack("https://hooks.slack.com/test", report, "owner/repo")
             payload = mock_post.call_args[1]["json"]
@@ -161,7 +161,7 @@ class TestNotifySlack:
         report = _make_report(conflicts=conflicts)
         mock_resp = _ok_response()
         with patch(
-            "mergeguard.output.notifications.httpx.post", return_value=mock_resp
+            "mergeguard.output.notifications._safe_post", return_value=mock_resp
         ) as mock_post:
             notify_slack("https://hooks.slack.com/test", report, "owner/repo")
             payload = mock_post.call_args[1]["json"]
@@ -173,7 +173,7 @@ class TestNotifySlack:
     def test_returns_false_on_http_error(self):
         report = _make_report()
         with patch(
-            "mergeguard.output.notifications.httpx.post",
+            "mergeguard.output.notifications._safe_post",
             side_effect=httpx.ConnectError("fail"),
         ):
             result = notify_slack("https://hooks.slack.com/test", report, "owner/repo")
@@ -203,7 +203,7 @@ class TestNotifyTeams:
         report = _make_report()
         mock_resp = _ok_response()
         with patch(
-            "mergeguard.output.notifications.httpx.post", return_value=mock_resp
+            "mergeguard.output.notifications._safe_post", return_value=mock_resp
         ) as mock_post:
             result = notify_teams("https://teams.webhook.office.com/test", report, "owner/repo")
             assert result is True
@@ -216,7 +216,7 @@ class TestNotifyTeams:
         report = _make_report(risk_score=85.0)
         mock_resp = _ok_response()
         with patch(
-            "mergeguard.output.notifications.httpx.post", return_value=mock_resp
+            "mergeguard.output.notifications._safe_post", return_value=mock_resp
         ) as mock_post:
             notify_teams("https://teams.webhook.office.com/test", report, "owner/repo")
             payload = mock_post.call_args[1]["json"]
@@ -235,7 +235,7 @@ class TestNotifySlackPerTeam:
         report = _make_report(conflicts=[c1, c2])
 
         mock_resp = _ok_response()
-        with patch("mergeguard.output.notifications.httpx.post", return_value=mock_resp):
+        with patch("mergeguard.output.notifications._safe_post", return_value=mock_resp):
             results = notify_slack_per_team(
                 report,
                 team_channels={
@@ -251,7 +251,7 @@ class TestNotifySlackPerTeam:
         report = _make_report(conflicts=[c1])
 
         mock_resp = _ok_response()
-        with patch("mergeguard.output.notifications.httpx.post", return_value=mock_resp):
+        with patch("mergeguard.output.notifications._safe_post", return_value=mock_resp):
             results = notify_slack_per_team(
                 report,
                 team_channels={},

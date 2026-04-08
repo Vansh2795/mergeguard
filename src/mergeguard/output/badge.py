@@ -52,6 +52,10 @@ def _score_to_color(score: float) -> str:
 
 def _render_svg(label: str, value: str, color: str) -> str:
     """Render a shields.io-style SVG badge."""
+    from html import escape as _xml_escape
+
+    label = _xml_escape(label)
+    value = _xml_escape(value)
     label_width = len(label) * 7 + 10
     value_width = len(value) * 7 + 10
     total_width = label_width + value_width

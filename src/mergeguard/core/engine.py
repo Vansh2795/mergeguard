@@ -16,7 +16,7 @@ import time
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import PurePosixPath
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from mergeguard.integrations.llm_analyzer import LLMAnalyzer
@@ -49,6 +49,7 @@ from mergeguard.models import (
     PRInfo,
     StackGroup,
     Symbol,
+    SymbolType,
 )
 from mergeguard.storage.cache import AnalysisCache
 from mergeguard.storage.decisions_log import DecisionsLog
@@ -132,7 +133,7 @@ def _find_overlapping_range(
     for start, end in modified_ranges:
         if symbol.start_line <= end and start <= symbol.end_line:
             return (start, end)
-    return modified_ranges[0] if modified_ranges else (0, 0)
+    return (symbol.start_line, symbol.end_line)
 
 
 def _extract_file_patches(full_diff: str) -> dict[str, str]:
@@ -231,7 +232,7 @@ class MergeGuardEngine:
         )
         try:
             full_diff = self._client.get_pr_diff(pr.number)
-        except (httpx.HTTPError, SCMError, Exception):
+        except (httpx.HTTPError, SCMError):
             logger.warning(
                 "Failed to fetch full diff for PR #%d, skipping backfill",
                 pr.number,
@@ -642,18 +643,26 @@ class MergeGuardEngine:
 
     @staticmethod
     def _file_path_module_forms(file_path: str) -> list[str]:
-        """Convert a .py file path to all possible dotted module name forms.
+        """Convert a .py file path to dotted module name forms.
 
-        Given ``src/mergeguard/core/conflict.py``, returns
-        ``["src.mergeguard.core.conflict", "mergeguard.core.conflict",
-          "core.conflict", "conflict"]``.
+        Given ``src/mergeguard/core/conflict.py``, returns::
+
+            ["src.mergeguard.core.conflict", "mergeguard.core.conflict",
+             "core.conflict"]
+
+        Single-segment forms (e.g., "conflict") and package-level forms
+        (e.g., "mergeguard.core") are excluded because they create
+        ambiguous matches in the dependency graph — a bare "conflict"
+        could match unrelated imports, and "fastapi" as a package form
+        would match imports from __init__.py, not the specific file.
 
         Returns an empty list for non-Python files.
         """
         if not file_path.endswith(".py"):
             return []
         parts = list(PurePosixPath(file_path).with_suffix("").parts)
-        return [".".join(parts[i:]) for i in range(len(parts))]
+        # Only include forms with 2+ segments to avoid ambiguous matches
+        return [".".join(parts[i:]) for i in range(len(parts)) if len(parts) - i >= 2]
 
     def _compute_dependency_depth(self, pr: PRInfo) -> int:
         """Compute the max dependency depth across all changed files."""
@@ -702,6 +711,10 @@ class MergeGuardEngine:
                     continue
                 seen.add(cf.path)
                 content = self._get_file_content_cached(cf.path, pr.base_branch)
+                # For newly added files, base branch won't have the content.
+                # Fall back to head branch so we capture imports from new files.
+                if not content:
+                    content = self._get_file_content_cached(cf.path, pr.head_branch)
                 if content:
                     file_contents.append((cf.path, content))
         return build_dependency_graph(file_contents)
@@ -764,6 +777,19 @@ class MergeGuardEngine:
 
         return changed_descs, specifically_imported
 
+    @staticmethod
+    def _format_skipped_transitive_desc(
+        skipped_prs: list[int], file_path: str, source_pr_num: int
+    ) -> str:
+        """Format description for capped transitive conflicts."""
+        pr_list = ", ".join(f"#{n}" for n in skipped_prs[:5])
+        suffix = f" and {len(skipped_prs) - 5} more" if len(skipped_prs) > 5 else ""
+        return (
+            f"{len(skipped_prs)} additional PR(s) also depend on "
+            f"`{file_path}` (changed by PR #{source_pr_num}): "
+            f"{pr_list}{suffix}."
+        )
+
     def _detect_transitive_conflicts(
         self,
         target_pr: PRInfo,
@@ -800,9 +826,11 @@ class MergeGuardEngine:
         # Local cache for BFS results to avoid redundant traversals
         _dep_cache: dict[str, set[str]] = {}
 
+        max_depth = self._config.max_transitive_depth
+
         def _cached_get_dependents(path: str) -> set[str]:
             if path not in _dep_cache:
-                _dep_cache[path] = graph.get_dependents(path)
+                _dep_cache[path] = graph.get_dependents(path, max_depth=max_depth)
             return _dep_cache[path]
 
         # --- Direction A: other_pr's files depend on target_pr's files ---
@@ -813,15 +841,14 @@ class MergeGuardEngine:
                 target_dependents |= _cached_get_dependents(module_form)
 
         transitive: list[Conflict] = []
-        per_pair_count: dict[int, int] = {}  # PR number -> count of transitive conflicts
-        max_per_pair = self._config.max_transitive_per_pair
+
+        # Collect hits per (other_pr, upstream_file) for aggregation
+        agg_a: dict[tuple[int, str], dict[str, Any]] = {}
 
         for other_pr in other_prs:
             if other_pr.number in existing_pairs:
                 continue
             for cf in other_pr.changed_files:
-                if per_pair_count.get(other_pr.number, 0) >= max_per_pair:
-                    break
                 hit = cf.path in target_dependents
                 if not hit:
                     for mf in self._file_path_module_forms(cf.path):
@@ -840,55 +867,122 @@ class MergeGuardEngine:
                         upstream_file,
                         graph,
                     )
+                    key = (other_pr.number, upstream_file)
+                    if key not in agg_a:
+                        agg_a[key] = {
+                            "other_pr": other_pr,
+                            "dependent_files": [],
+                            "all_imported_syms": set(),
+                            "all_changed_syms": [],
+                            "has_symbol_overlap": False,
+                        }
+                    agg_a[key]["dependent_files"].append(cf.path)
+                    agg_a[key]["all_imported_syms"].update(imported_syms)
+                    if not agg_a[key]["all_changed_syms"]:
+                        agg_a[key]["all_changed_syms"] = changed_syms
+                    if imported_syms:
+                        agg_a[key]["has_symbol_overlap"] = True
 
+        # Emit aggregated conflicts, capped per upstream file
+        max_per_pair = self._config.max_transitive_per_pair
+
+        # Group by upstream_file to cap emissions for widely-imported files
+        by_upstream: dict[str, list[tuple[int, dict[str, Any]]]] = {}
+        for (other_pr_num, upstream_file), info in agg_a.items():
+            by_upstream.setdefault(upstream_file, []).append((other_pr_num, info))
+
+        for upstream_file, entries in by_upstream.items():
+            # Sort: symbol-overlap entries first (WARNING before INFO)
+            entries.sort(key=lambda e: (not e[1]["has_symbol_overlap"], e[0]))
+            emitted = 0
+            skipped_prs: list[int] = []
+
+            for other_pr_num, info in entries:
+                if emitted >= max_per_pair:
+                    skipped_prs.append(other_pr_num)
+                    continue
+                dep_files = info["dependent_files"]
+                imported = sorted(info["all_imported_syms"])
+                changed = info["all_changed_syms"]
+                severity = (
+                    ConflictSeverity.WARNING
+                    if info["has_symbol_overlap"]
+                    else ConflictSeverity.INFO
+                )
+
+                if len(dep_files) == 1:
                     desc = (
-                        f"PR #{other_pr.number}'s `{cf.path}` depends on "
+                        f"PR #{other_pr_num}'s `{dep_files[0]}` depends on "
                         f"`{upstream_file}` (changed by PR #{target_pr.number})."
                     )
-                    if imported_syms:
-                        desc += f" Imports: {', '.join(f'`{n}`' for n in imported_syms)}."
-                    if changed_syms:
-                        desc += f" Changed symbols: {', '.join(changed_syms)}."
-
-                    rec = f"Review changes to {upstream_file} in PR #{target_pr.number}"
-                    if imported_syms:
-                        rec += f" — specifically {', '.join(f'`{n}`' for n in imported_syms)}"
-                    rec += f" for compatibility with {cf.path} in PR #{other_pr.number}."
-
-                    transitive.append(
-                        Conflict(
-                            conflict_type=ConflictType.TRANSITIVE,
-                            severity=ConflictSeverity.WARNING,
-                            source_pr=target_pr.number,
-                            target_pr=other_pr.number,
-                            file_path=cf.path,
-                            symbol_name=imported_syms[0] if len(imported_syms) == 1 else None,
-                            description=desc,
-                            recommendation=rec,
-                        )
+                else:
+                    shown = ", ".join(f"`{f}`" for f in dep_files[:3])
+                    more = f" and {len(dep_files) - 3} more" if len(dep_files) > 3 else ""
+                    desc = (
+                        f"{len(dep_files)} files in PR #{other_pr_num} depend on "
+                        f"`{upstream_file}` (changed by PR #{target_pr.number}): "
+                        f"{shown}{more}."
                     )
-                    per_pair_count[other_pr.number] = per_pair_count.get(other_pr.number, 0) + 1
+                if imported:
+                    desc += f" Imports: {', '.join(f'`{n}`' for n in imported)}."
+                if changed:
+                    desc += f" Changed symbols: {', '.join(changed)}."
+
+                rec = f"Review changes to {upstream_file} in PR #{target_pr.number}"
+                if imported:
+                    rec += f" — specifically {', '.join(f'`{n}`' for n in imported)}"
+                rec += f" for compatibility with PR #{other_pr_num}."
+
+                transitive.append(
+                    Conflict(
+                        conflict_type=ConflictType.TRANSITIVE,
+                        severity=severity,
+                        source_pr=target_pr.number,
+                        target_pr=other_pr_num,
+                        file_path=upstream_file,
+                        symbol_name=imported[0] if len(imported) == 1 else None,
+                        description=desc,
+                        recommendation=rec,
+                    )
+                )
+                emitted += 1
+
+            # Summary conflict for skipped PRs
+            if skipped_prs:
+                transitive.append(
+                    Conflict(
+                        conflict_type=ConflictType.TRANSITIVE,
+                        severity=ConflictSeverity.INFO,
+                        source_pr=target_pr.number,
+                        target_pr=skipped_prs[0],
+                        file_path=upstream_file,
+                        description=self._format_skipped_transitive_desc(
+                            skipped_prs, upstream_file, target_pr.number
+                        ),
+                        recommendation=(
+                            f"Review changes to {upstream_file} in PR #{target_pr.number} "
+                            f"for broad impact — {len(skipped_prs) + emitted} PRs depend on it."
+                        ),
+                    )
+                )
 
         # Track PR numbers already covered in Direction A to avoid duplicates
         direction_a_prs = {c.target_pr for c in transitive}
 
         # --- Direction B: target_pr's files depend on other_pr's files ---
+        agg_b: dict[tuple[int, str], dict[str, Any]] = {}
+
         for other_pr in other_prs:
             if other_pr.number in existing_pairs:
                 continue
             if other_pr.number in direction_a_prs:
-                continue
-            if per_pair_count.get(other_pr.number, 0) >= max_per_pair:
                 continue
             other_dependents: set[str] = set()
             for cf in other_pr.changed_files:
                 other_dependents |= _cached_get_dependents(cf.path)
                 for module_form in self._file_path_module_forms(cf.path):
                     other_dependents |= _cached_get_dependents(module_form)
-            # Check if target_pr's files appear in other_pr's dependents
             for cf in target_pr.changed_files:
-                if per_pair_count.get(other_pr.number, 0) >= max_per_pair:
-                    break
                 hit = cf.path in other_dependents
                 if not hit:
                     for mf in self._file_path_module_forms(cf.path):
@@ -896,7 +990,6 @@ class MergeGuardEngine:
                             hit = True
                             break
                 if hit:
-                    # Find the other_pr file that creates the dependency link
                     linking_file = other_pr.changed_files[0].path
                     for ocf in other_pr.changed_files:
                         deps = _cached_get_dependents(ocf.path)
@@ -913,34 +1006,130 @@ class MergeGuardEngine:
                         linking_file,
                         graph,
                     )
+                    key_b = (other_pr.number, linking_file)
+                    if key_b not in agg_b:
+                        agg_b[key_b] = {
+                            "other_pr": other_pr,
+                            "dependent_files": [],
+                            "all_imported_syms": set(),
+                            "all_changed_syms": [],
+                            "has_symbol_overlap": False,
+                        }
+                    agg_b[key_b]["dependent_files"].append(cf.path)
+                    agg_b[key_b]["all_imported_syms"].update(imported_syms_b)
+                    if not agg_b[key_b]["all_changed_syms"]:
+                        agg_b[key_b]["all_changed_syms"] = changed_syms_b
+                    if imported_syms_b:
+                        agg_b[key_b]["has_symbol_overlap"] = True
 
+        # Emit Direction B, capped per linking file
+        by_linking: dict[str, list[tuple[int, dict[str, Any]]]] = {}
+        for (other_pr_num, linking_file), info in agg_b.items():
+            by_linking.setdefault(linking_file, []).append((other_pr_num, info))
+
+        for linking_file, entries_b in by_linking.items():
+            entries_b.sort(key=lambda e: (not e[1]["has_symbol_overlap"], e[0]))
+            emitted_b = 0
+            skipped_b: list[int] = []
+
+            for other_pr_num, info in entries_b:
+                if emitted_b >= max_per_pair:
+                    skipped_b.append(other_pr_num)
+                    continue
+                dep_files = info["dependent_files"]
+                imported = sorted(info["all_imported_syms"])
+                changed = info["all_changed_syms"]
+                severity_b = (
+                    ConflictSeverity.WARNING
+                    if info["has_symbol_overlap"]
+                    else ConflictSeverity.INFO
+                )
+
+                if len(dep_files) == 1:
                     desc_b = (
-                        f"PR #{target_pr.number}'s `{cf.path}` depends on "
-                        f"`{linking_file}` (changed by PR #{other_pr.number})."
+                        f"PR #{target_pr.number}'s `{dep_files[0]}` depends on "
+                        f"`{linking_file}` (changed by PR #{other_pr_num})."
                     )
-                    if imported_syms_b:
-                        desc_b += f" Imports: {', '.join(f'`{n}`' for n in imported_syms_b)}."
-                    if changed_syms_b:
-                        desc_b += f" Changed symbols: {', '.join(changed_syms_b)}."
-
-                    rec_b = f"Review changes to {linking_file} in PR #{other_pr.number}"
-                    if imported_syms_b:
-                        rec_b += f" — specifically {', '.join(f'`{n}`' for n in imported_syms_b)}"
-                    rec_b += f" for compatibility with {cf.path} in PR #{target_pr.number}."
-
-                    transitive.append(
-                        Conflict(
-                            conflict_type=ConflictType.TRANSITIVE,
-                            severity=ConflictSeverity.WARNING,
-                            source_pr=target_pr.number,
-                            target_pr=other_pr.number,
-                            file_path=linking_file,
-                            symbol_name=imported_syms_b[0] if len(imported_syms_b) == 1 else None,
-                            description=desc_b,
-                            recommendation=rec_b,
-                        )
+                else:
+                    shown = ", ".join(f"`{f}`" for f in dep_files[:3])
+                    more = f" and {len(dep_files) - 3} more" if len(dep_files) > 3 else ""
+                    desc_b = (
+                        f"{len(dep_files)} files in PR #{target_pr.number} depend on "
+                        f"`{linking_file}` (changed by PR #{other_pr_num}): "
+                        f"{shown}{more}."
                     )
-                    per_pair_count[other_pr.number] = per_pair_count.get(other_pr.number, 0) + 1
+                if imported:
+                    desc_b += f" Imports: {', '.join(f'`{n}`' for n in imported)}."
+                if changed:
+                    desc_b += f" Changed symbols: {', '.join(changed)}."
+
+                rec_b = f"Review changes to {linking_file} in PR #{other_pr_num}"
+                if imported:
+                    rec_b += f" — specifically {', '.join(f'`{n}`' for n in imported)}"
+                rec_b += f" for compatibility with PR #{target_pr.number}."
+
+                transitive.append(
+                    Conflict(
+                        conflict_type=ConflictType.TRANSITIVE,
+                        severity=severity_b,
+                        source_pr=target_pr.number,
+                        target_pr=other_pr_num,
+                        file_path=linking_file,
+                        symbol_name=imported[0] if len(imported) == 1 else None,
+                        description=desc_b,
+                        recommendation=rec_b,
+                    )
+                )
+                emitted_b += 1
+
+            if skipped_b:
+                transitive.append(
+                    Conflict(
+                        conflict_type=ConflictType.TRANSITIVE,
+                        severity=ConflictSeverity.INFO,
+                        source_pr=target_pr.number,
+                        target_pr=skipped_b[0],
+                        file_path=linking_file,
+                        description=self._format_skipped_transitive_desc(
+                            skipped_b, linking_file, target_pr.number
+                        ),
+                        recommendation=(
+                            f"Review changes to {linking_file} in PR #{target_pr.number} "
+                            f"for broad impact — {len(skipped_b) + emitted_b} PRs depend on it."
+                        ),
+                    )
+                )
+
+        # Global cap: if transitive conflicts exceed 2x max_per_pair, keep only
+        # the highest-severity ones and add a summary for the rest
+        global_cap = max_per_pair * 2
+        if len(transitive) > global_cap:
+            # Sort: WARNING before INFO, then by target_pr
+            transitive.sort(key=lambda c: (c.severity != ConflictSeverity.WARNING, c.target_pr))
+            kept = transitive[:global_cap]
+            dropped = transitive[global_cap:]
+            dropped_prs = sorted({c.target_pr for c in dropped})
+            kept.append(
+                Conflict(
+                    conflict_type=ConflictType.TRANSITIVE,
+                    severity=ConflictSeverity.INFO,
+                    source_pr=target_pr.number,
+                    target_pr=dropped_prs[0],
+                    file_path=target_pr.changed_files[0].path,
+                    description=(
+                        f"{len(dropped)} additional transitive conflict(s) across "
+                        f"{len(dropped_prs)} PR(s) omitted. "
+                        f"PRs: {', '.join(f'#{n}' for n in dropped_prs[:5])}"
+                        + (f" and {len(dropped_prs) - 5} more" if len(dropped_prs) > 5 else "")
+                        + "."
+                    ),
+                    recommendation=(
+                        "Consider reviewing the most critical conflicts above. "
+                        "Run with a higher max_transitive_per_pair to see all."
+                    ),
+                )
+            )
+            transitive = kept
 
         return transitive
 
@@ -1031,6 +1220,14 @@ class MergeGuardEngine:
             # Also check module-form paths
             for mf in self._file_path_module_forms(source_file):
                 importers |= graph.get_files_importing_symbol(mf, symbol_name)
+
+            # For methods, also find files importing the parent class.
+            # e.g., if `Runnable.invoke` signature changed, find files that
+            # `from pkg import Runnable` and call `.invoke()` on instances.
+            if cs.symbol.parent and cs.symbol.symbol_type == SymbolType.METHOD:
+                importers |= graph.get_files_importing_symbol(source_file, cs.symbol.parent)
+                for mf in self._file_path_module_forms(source_file):
+                    importers |= graph.get_files_importing_symbol(mf, cs.symbol.parent)
 
             if not importers:
                 continue
@@ -1192,7 +1389,7 @@ class MergeGuardEngine:
             pr.changed_files = self._client.get_pr_files(pr.number)
             self._backfill_truncated_patches(pr)
             self._enrich_pr(pr)
-        except (httpx.HTTPError, SCMError, Exception):
+        except (httpx.HTTPError, SCMError):
             logger.warning("Failed to enrich PR #%d, skipping", pr.number, exc_info=True)
 
     def _create_llm_analyzer(self) -> LLMAnalyzer | None:
@@ -1280,7 +1477,8 @@ class MergeGuardEngine:
             def _analyze_single(conflict: Conflict) -> None:
                 other_pr = other_pr_map[conflict.target_pr]
                 symbol = conflict.symbol_name
-                assert symbol is not None  # guaranteed by filter above
+                if symbol is None:
+                    return
                 source_diff = self._get_symbol_diff(target_pr, symbol, conflict.file_path)
                 target_diff = self._get_symbol_diff(other_pr, symbol, conflict.file_path)
                 if not source_diff or not target_diff:
@@ -1515,9 +1713,15 @@ class MergeGuardEngine:
             pr.head_branch,
         )
 
-        # Three-way classification: compare BASE vs HEAD symbols by (name, parent)
-        base_by_key = {(s.name, s.parent): s for s in base_symbols}
-        head_by_key = {(s.name, s.parent): s for s in head_symbols}
+        # Three-way classification: compare BASE vs HEAD symbols by (name, parent).
+        # Use first occurrence per key (outermost definition) — later duplicates
+        # are typically nested closures with the same name.
+        base_by_key: dict[tuple[str, str | None], Symbol] = {}
+        for s in base_symbols:
+            base_by_key.setdefault((s.name, s.parent), s)
+        head_by_key: dict[tuple[str, str | None], Symbol] = {}
+        for s in head_symbols:
+            head_by_key.setdefault((s.name, s.parent), s)
         base_keys = set(base_by_key)
         head_keys = set(head_by_key)
 

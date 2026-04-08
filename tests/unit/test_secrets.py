@@ -39,7 +39,9 @@ def _make_pr(patch: str, path: str = "config.py") -> PRInfo:
 
 
 def _make_config(**kwargs) -> MergeGuardConfig:
-    return MergeGuardConfig(**kwargs)
+    cfg = MergeGuardConfig(**kwargs)
+    cfg.secrets.enabled = True  # Tests need secrets enabled
+    return cfg
 
 
 class TestSecretDetection:

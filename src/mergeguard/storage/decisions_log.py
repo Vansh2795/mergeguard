@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -19,7 +20,8 @@ class DecisionsLog:
     def __init__(self, db_path: str | Path = ".mergeguard-cache/decisions.db"):
         self._db_path = Path(db_path)
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(self._db_path))
+        self._conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
+        self._lock = threading.Lock()
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._create_tables()
 
@@ -46,37 +48,40 @@ class DecisionsLog:
 
     def record_merge(self, entry: DecisionsEntry) -> None:
         """Record decisions from a newly merged PR."""
-        for decision in entry.decisions:
-            self._conn.execute(
-                """INSERT INTO decisions
-                   (pr_number, title, merged_at, author, decision_type,
-                    entity, file_path, description)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    entry.pr_number,
-                    entry.title,
-                    entry.merged_at.isoformat(),
-                    entry.author,
-                    decision.decision_type.value,
-                    decision.entity,
-                    decision.file_path,
-                    decision.description,
-                ),
-            )
-        self._conn.commit()
+        with self._lock:
+            for decision in entry.decisions:
+                self._conn.execute(
+                    """INSERT INTO decisions
+                       (pr_number, title, merged_at, author, decision_type,
+                        entity, file_path, description)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        entry.pr_number,
+                        entry.title,
+                        entry.merged_at.isoformat(),
+                        entry.author,
+                        decision.decision_type.value,
+                        decision.entity,
+                        decision.file_path,
+                        decision.description,
+                    ),
+                )
+            self._conn.commit()
 
     def get_recent_decisions(self, limit: int = 50) -> list[Decision]:
         """Retrieve the most recent decisions for regression checking."""
-        cursor = self._conn.execute(
-            """SELECT pr_number, merged_at, author, decision_type,
-                      entity, file_path, description
-               FROM decisions
-               ORDER BY merged_at DESC
-               LIMIT ?""",
-            (limit,),
-        )
+        with self._lock:
+            cursor = self._conn.execute(
+                """SELECT pr_number, merged_at, author, decision_type,
+                          entity, file_path, description
+                   FROM decisions
+                   ORDER BY merged_at DESC
+                   LIMIT ?""",
+                (limit,),
+            )
+            rows = list(cursor)
         decisions: list[Decision] = []
-        for row in cursor:
+        for row in rows:
             decisions.append(
                 Decision(
                     pr_number=row[0],

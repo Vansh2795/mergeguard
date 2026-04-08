@@ -160,3 +160,69 @@ class TestImportedNames:
         source = "from models import User\nimport os\n"
         result = extract_imports(source, "app.py")
         assert result == ["models", "os"]
+
+
+class TestGoImportScoping:
+    def test_import_block_detected(self):
+        from mergeguard.analysis.dependency import _extract_go_imports
+
+        code = (
+            'package main\n\nimport (\n    "fmt"\n    "os"\n)\n\n'
+            'func main() {\n    msg := "hello/world"\n}\n'
+        )
+        imports = _extract_go_imports(code)
+        assert "fmt" in imports
+        assert "os" in imports
+
+    def test_string_literal_not_detected_as_import(self):
+        from mergeguard.analysis.dependency import _extract_go_imports
+
+        code = (
+            'package main\n\nimport "fmt"\n\nfunc main() {\n'
+            '    msg := "net/http"\n    fmt.Println(msg)\n}\n'
+        )
+        imports = _extract_go_imports(code)
+        assert "fmt" in imports
+        assert "net/http" not in imports
+
+    def test_single_import(self):
+        from mergeguard.analysis.dependency import _extract_go_imports
+
+        code = 'package main\n\nimport "fmt"\n'
+        imports = _extract_go_imports(code)
+        assert imports == ["fmt"]
+
+
+class TestMultiLinePythonImports:
+    def test_multiline_from_import_captures_names(self):
+        from mergeguard.analysis.dependency import _extract_python_imports
+
+        code = (
+            "from mergeguard.models import (\n    PRInfo,\n    Conflict,\n    ConflictReport,\n)\n"
+        )
+        imports = _extract_python_imports(code)
+        module_imports = {mod: names for mod, names in imports}
+        assert "mergeguard.models" in module_imports
+        names = module_imports["mergeguard.models"]
+        assert "PRInfo" in names
+        assert "Conflict" in names
+        assert "ConflictReport" in names
+
+    def test_single_line_still_works(self):
+        from mergeguard.analysis.dependency import _extract_python_imports
+
+        code = "from os.path import join, exists\n"
+        imports = _extract_python_imports(code)
+        module_imports = {mod: names for mod, names in imports}
+        assert "join" in module_imports["os.path"]
+        assert "exists" in module_imports["os.path"]
+
+    def test_multiline_with_aliases(self):
+        from mergeguard.analysis.dependency import _extract_python_imports
+
+        code = "from typing import (\n    Optional as Opt,\n    List,\n)\n"
+        imports = _extract_python_imports(code)
+        module_imports = {mod: names for mod, names in imports}
+        names = module_imports["typing"]
+        assert "Optional" in names
+        assert "List" in names

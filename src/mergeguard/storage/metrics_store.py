@@ -153,16 +153,26 @@ class MetricsStore:
             )
         return [self._row_to_snapshot(row) for row in cursor]
 
-    def get_unresolved(self, repo: str) -> list[MetricsSnapshot]:
-        """Get all currently unresolved conflict snapshots."""
-        cursor = self._conn.execute(
-            """SELECT pr_number, repo, analyzed_at, risk_score, conflict_count,
-                      severity_max, resolved_at, resolution_type
-               FROM metrics_snapshots
-               WHERE repo = ? AND resolved_at IS NULL
-               ORDER BY analyzed_at DESC""",
-            (repo,),
-        )
+    def get_unresolved(self, repo: str, since: datetime | None = None) -> list[MetricsSnapshot]:
+        """Get unresolved conflict snapshots, optionally filtered by time window."""
+        if since is not None:
+            cursor = self._conn.execute(
+                """SELECT pr_number, repo, analyzed_at, risk_score, conflict_count,
+                          severity_max, resolved_at, resolution_type
+                   FROM metrics_snapshots
+                   WHERE repo = ? AND resolved_at IS NULL AND analyzed_at >= ?
+                   ORDER BY analyzed_at DESC""",
+                (repo, since.isoformat()),
+            )
+        else:
+            cursor = self._conn.execute(
+                """SELECT pr_number, repo, analyzed_at, risk_score, conflict_count,
+                          severity_max, resolved_at, resolution_type
+                   FROM metrics_snapshots
+                   WHERE repo = ? AND resolved_at IS NULL
+                   ORDER BY analyzed_at DESC""",
+                (repo,),
+            )
         return [self._row_to_snapshot(row) for row in cursor]
 
     def get_merge_count(self, repo: str, since: datetime) -> int:

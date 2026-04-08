@@ -346,6 +346,7 @@ class TestTransitiveConflictDetection:
         engine._symbol_index = MagicMock()
         engine._config = MagicMock()
         engine._config.max_transitive_per_pair = 5
+        engine._config.max_transitive_depth = 1
         engine._get_file_content_cached = MagicMock(return_value="import models")
         return engine
 
@@ -364,7 +365,7 @@ class TestTransitiveConflictDetection:
     def test_basic_transitive_detected(self):
         """PR1 modifies models.py, PR2 modifies views.py which imports models.
 
-        Expect 1 TRANSITIVE WARNING.
+        Expect 1 TRANSITIVE INFO (no specific symbol overlap).
         """
         engine = self._make_engine()
         target = _make_pr(1, ["src/models.py"])
@@ -383,15 +384,15 @@ class TestTransitiveConflictDetection:
         ]
         other = _make_pr(2, ["src/views.py"])
 
-        # views.py imports models (stored as dotted module name)
-        graph = self._make_graph([("src/views.py", "models")])
+        # views.py imports src.models (stored as dotted module name)
+        graph = self._make_graph([("src/views.py", "src.models")])
 
         with patch("mergeguard.core.engine.build_dependency_graph", return_value=graph):
             result = engine._detect_transitive_conflicts(target, [other], [])
 
         assert len(result) == 1
         assert result[0].conflict_type == ConflictType.TRANSITIVE
-        assert result[0].severity == ConflictSeverity.WARNING
+        assert result[0].severity == ConflictSeverity.INFO
         assert result[0].target_pr == 2
         # Description should reference the upstream file
         assert "src/models.py" in result[0].description
@@ -416,7 +417,7 @@ class TestTransitiveConflictDetection:
         target = _make_pr(1, ["src/models.py"])
         other = _make_pr(2, ["src/views.py"])
 
-        graph = self._make_graph([("src/views.py", "models")])
+        graph = self._make_graph([("src/views.py", "src.models")])
 
         existing = [
             Conflict(
@@ -456,6 +457,7 @@ class TestTransitiveConflictDetection:
         engine = self._make_engine()
         engine._config = MagicMock()
         engine._config.max_transitive_per_pair = 5
+        engine._config.max_transitive_depth = 1
         engine._config.rules = []
         engine._config.secrets.enabled = False
         engine._config.check_regressions = False
@@ -463,7 +465,7 @@ class TestTransitiveConflictDetection:
         target = _make_pr(1, ["src/models.py"])
         other = _make_pr(2, ["src/views.py"])
 
-        graph = self._make_graph([("src/views.py", "models")])
+        graph = self._make_graph([("src/views.py", "src.models")])
 
         with (
             patch("mergeguard.core.engine.build_dependency_graph", return_value=graph),
@@ -499,9 +501,9 @@ class TestTransitiveConflictDetection:
 
         graph = self._make_graph(
             [
-                ("src/a.py", "utils"),
-                ("src/b.py", "utils"),
-                ("src/c.py", "utils"),
+                ("src/a.py", "src.utils"),
+                ("src/b.py", "src.utils"),
+                ("src/c.py", "src.utils"),
             ]
         )
 
@@ -534,8 +536,8 @@ class TestTransitiveConflictDetection:
             ),
         ]
 
-        # views.py imports models with specific names → models has views.py as a dependent
-        graph = self._make_graph([("src/views.py", "models", ["User"])])
+        # views.py imports src.models with specific names → models has views.py as a dependent
+        graph = self._make_graph([("src/views.py", "src.models", ["User"])])
 
         with patch("mergeguard.core.engine.build_dependency_graph", return_value=graph):
             result = engine._detect_transitive_conflicts(target, [other], [])
@@ -572,8 +574,10 @@ class TestTransitiveConflictDetection:
         """A imports B imports C; PR1 modifies C, PR2 modifies A — transitive detected.
 
         Uses consistent keys so BFS can traverse the full chain.
+        Requires depth=2 since this is a 2-hop chain.
         """
         engine = self._make_engine()
+        engine._config.max_transitive_depth = 2
         target = _make_pr(1, ["src/c.py"])
         other = _make_pr(2, ["src/a.py"])
 
@@ -622,10 +626,10 @@ class TestTransitiveConflictDetection:
         ]
         other = _make_pr(2, ["src/views.py"])
 
-        # views.py imports User from models
+        # views.py imports User from src.models
         graph = self._make_graph(
             [
-                ("src/views.py", "models", ["User"]),
+                ("src/views.py", "src.models", ["User"]),
             ]
         )
 
@@ -663,8 +667,8 @@ class TestTransitiveConflictDetection:
         ]
         other = _make_pr(2, ["src/views.py"])
 
-        # views.py imports models but without specific names (bare import edge)
-        graph = self._make_graph([("src/views.py", "models")])
+        # views.py imports src.models but without specific names (bare import edge)
+        graph = self._make_graph([("src/views.py", "src.models")])
 
         with patch("mergeguard.core.engine.build_dependency_graph", return_value=graph):
             result = engine._detect_transitive_conflicts(target, [other], [])
@@ -677,6 +681,64 @@ class TestTransitiveConflictDetection:
         assert "Imports:" not in desc
         # symbol_name should be None (no imported names to cross-reference)
         assert result[0].symbol_name is None
+        # No imported symbol overlap → INFO severity
+        assert result[0].severity == ConflictSeverity.INFO
+
+    def test_transitive_without_symbol_overlap_is_info(self):
+        """When imported symbols don't overlap with changed symbols, severity is INFO."""
+        engine = self._make_engine()
+        target = _make_pr(1, ["src/models.py"])
+        target.changed_symbols = [
+            ChangedSymbol(
+                symbol=Symbol(
+                    name="Admin",
+                    symbol_type=SymbolType.CLASS,
+                    file_path="src/models.py",
+                    start_line=1,
+                    end_line=10,
+                ),
+                change_type="modified_body",
+                diff_lines=(1, 10),
+            ),
+        ]
+        other = _make_pr(2, ["src/views.py"])
+
+        # views.py imports User from src.models — but Admin changed, not User
+        graph = self._make_graph([("src/views.py", "src.models", ["User"])])
+
+        with patch("mergeguard.core.engine.build_dependency_graph", return_value=graph):
+            result = engine._detect_transitive_conflicts(target, [other], [])
+
+        assert len(result) == 1
+        assert result[0].severity == ConflictSeverity.INFO
+
+    def test_transitive_with_symbol_overlap_is_warning(self):
+        """When imported symbols overlap with changed symbols, severity is WARNING."""
+        engine = self._make_engine()
+        target = _make_pr(1, ["src/models.py"])
+        target.changed_symbols = [
+            ChangedSymbol(
+                symbol=Symbol(
+                    name="User",
+                    symbol_type=SymbolType.CLASS,
+                    file_path="src/models.py",
+                    start_line=1,
+                    end_line=10,
+                ),
+                change_type="modified_signature",
+                diff_lines=(1, 10),
+            ),
+        ]
+        other = _make_pr(2, ["src/views.py"])
+
+        # views.py imports User from src.models — and User changed
+        graph = self._make_graph([("src/views.py", "src.models", ["User"])])
+
+        with patch("mergeguard.core.engine.build_dependency_graph", return_value=graph):
+            result = engine._detect_transitive_conflicts(target, [other], [])
+
+        assert len(result) == 1
+        assert result[0].severity == ConflictSeverity.WARNING
 
 
 class TestBuildChangedSymbols:

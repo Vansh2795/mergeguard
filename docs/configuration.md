@@ -219,6 +219,85 @@ When enabled, MergeGuard will:
 - Allow priority override via PR labels (positive score = override blocking)
 - Handle GitHub `merge_group` webhook events to validate merge queue entries
 
+### `policy` (policy engine)
+
+Declarative conditions-and-actions system for automated merge workflow decisions.
+
+```yaml
+policy:
+  enabled: true
+  policies:
+    - name: block-critical-ai-prs
+      conditions:
+        - field: ai_authored
+          operator: eq
+          value: true
+        - field: has_severity
+          operator: contains
+          value: critical
+      actions:
+        - action: block_merge
+          message: "AI-authored PR has critical conflicts"
+        - action: require_reviewers
+          reviewers: ["@platform-team"]
+
+    - name: label-high-risk
+      conditions:
+        - field: risk_score
+          operator: gte
+          value: 80
+      actions:
+        - action: add_labels
+          labels: ["high-risk"]
+        - action: notify_slack
+          webhook_url: "https://hooks.slack.com/services/T.../B.../..."
+```
+
+Condition operators: `gte`, `lte`, `eq`, `gt`, `lt`, `contains`, `matches`
+
+Condition fields: `risk_score`, `conflict_count`, `critical_count`, `warning_count`, `has_severity`, `has_conflict_type`, `affected_teams`, `ai_authored`, `files_changed`, `labels`, `author`, `file_count`, `lines_changed`
+
+Action types: `block_merge`, `require_reviewers`, `add_labels`, `notify_slack`, `notify_teams`, `post_comment`, `set_status`
+
+### `secrets` (secret scanning)
+
+Detect accidentally committed API keys, tokens, and private keys in PR diffs.
+
+```yaml
+secrets:
+  enabled: true                  # Enable secret scanning (default: true)
+  use_builtin_patterns: true     # Use 15 builtin patterns (default: true)
+  patterns:                      # Additional custom patterns
+    - name: "internal-api-key"
+      regex: "INTERNAL_KEY_[A-Za-z0-9]{32}"
+      description: "Internal API key"
+  allowlist:                     # Patterns to ignore (false positive reduction)
+    - "EXAMPLE_KEY_"
+    - "test_token_"
+```
+
+Builtin patterns include: AWS keys, GitHub/GitLab PATs, Slack tokens, Stripe/Twilio/SendGrid keys, private key headers, generic API keys.
+
+### `metrics` (DORA metrics)
+
+Track conflict resolution time, merge frequency, conflict rate, and MTTRC.
+
+```yaml
+metrics:
+  enabled: true                  # Enable metrics recording (default: true)
+  retention_days: 90             # How long to keep metrics data
+  time_windows: [7, 30, 90]     # Time windows for DORA reports (days)
+```
+
+### `notifications` (Slack/Teams webhooks)
+
+```yaml
+notifications:
+  slack_webhook: "https://hooks.slack.com/services/T.../B.../..."
+  teams_webhook: "https://outlook.office.com/webhook/..."
+  notify_on: ["critical", "warning"]  # Severity levels that trigger notifications
+```
+
 ### `server` (webhook server settings)
 
 Configuration for the real-time webhook server (`mergeguard serve`).

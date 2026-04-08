@@ -56,6 +56,18 @@ class GitLabClient:
         """Close the underlying HTTP client."""
         self._http.close()
 
+    def _post(self, url: str, **kwargs: Any) -> httpx.Response:
+        """POST with rate limit awareness."""
+        resp = self._http.post(url, **kwargs)
+        self._check_rate_limit(resp)
+        return resp
+
+    def _put(self, url: str, **kwargs: Any) -> httpx.Response:
+        """PUT with rate limit awareness."""
+        resp = self._http.put(url, **kwargs)
+        self._check_rate_limit(resp)
+        return resp
+
     def __enter__(self) -> GitLabClient:
         return self
 
@@ -162,7 +174,7 @@ class GitLabClient:
             if marker in note.get("body", ""):
                 # Update existing note
                 note_id = note["id"]
-                put_resp = self._http.put(
+                put_resp = self._put(
                     f"{notes_url}/{note_id}",
                     json={"body": f"{marker}\n{body}"},
                 )
@@ -170,7 +182,7 @@ class GitLabClient:
                 return
 
         # Create new note
-        post_resp = self._http.post(notes_url, json={"body": f"{marker}\n{body}"})
+        post_resp = self._post(notes_url, json={"body": f"{marker}\n{body}"})
         post_resp.raise_for_status()
 
     def post_pr_review(
@@ -189,7 +201,7 @@ class GitLabClient:
         for disc in resp.json():
             for note in disc.get("notes", []):
                 if marker in note.get("body", ""):
-                    self._http.put(
+                    self._put(
                         f"{notes_url}/{disc['id']}",
                         json={"resolved": True},
                     )
@@ -212,14 +224,14 @@ class GitLabClient:
                 "new_line": comment.line,
             }
             disc_body = f"{marker}\n{comment.body}"
-            self._http.post(
+            self._post(
                 notes_url,
                 json={"body": disc_body, "position": position},
             ).raise_for_status()
 
         # Post summary as a regular note
         summary_url = f"{self._base_url}/merge_requests/{pr_number}/notes"
-        self._http.post(summary_url, json={"body": f"{marker}\n{body}"}).raise_for_status()
+        self._post(summary_url, json={"body": f"{marker}\n{body}"}).raise_for_status()
 
     def post_commit_status(
         self,
@@ -248,7 +260,7 @@ class GitLabClient:
             payload["target_url"] = target_url
 
         try:
-            resp = self._http.post(url, json=payload)
+            resp = self._post(url, json=payload)
             resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code in (401, 403):
@@ -265,25 +277,30 @@ class GitLabClient:
         resp = self._get(url)
         current_labels: list[str] = resp.json().get("labels", [])
         merged = sorted(set(current_labels) | set(labels))
-        put_resp = self._http.put(url, json={"labels": ",".join(merged)})
+        put_resp = self._put(url, json={"labels": ",".join(merged)})
         put_resp.raise_for_status()
 
     def request_reviewers(self, pr_number: int, reviewers: list[str]) -> None:
         """Request reviewers on a merge request by username."""
         url = f"{self._base_url}/merge_requests/{pr_number}"
+        # Fetch current reviewer IDs to merge with (not replace)
+        mr_resp = self._get(url)
+        current_ids = [r["id"] for r in mr_resp.json().get("reviewers", [])]
         # Look up user IDs by username
-        reviewer_ids: list[int] = []
+        reviewer_ids: list[int] = list(current_ids)
         for username in reviewers:
             username = username.lstrip("@")
             user_url = f"{self._gitlab_url}/api/v4/users"
             resp = self._get(user_url, params={"username": username})
             users = resp.json()
             if users:
-                reviewer_ids.append(users[0]["id"])
+                uid = users[0]["id"]
+                if uid not in reviewer_ids:
+                    reviewer_ids.append(uid)
             else:
                 logger.warning("GitLab user not found: %s", username)
         if reviewer_ids:
-            put_resp = self._http.put(
+            put_resp = self._put(
                 url,
                 json={"reviewer_ids": reviewer_ids},
             )

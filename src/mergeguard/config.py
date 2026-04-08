@@ -55,5 +55,9 @@ def load_config(config_path: str = ".mergeguard.yml") -> MergeGuardConfig:
             logger.warning("Unknown config keys (ignored): %s", ", ".join(unknown_keys))
             for key in unknown_keys:
                 raw.pop(key, None)
-            return MergeGuardConfig(**raw)
+            try:
+                return MergeGuardConfig(**raw)
+            except ValidationError:
+                logger.warning("Config still invalid after stripping unknown keys, using defaults")
+                return MergeGuardConfig()
         raise

@@ -92,10 +92,12 @@ def _format_annotation_body(conflict: Conflict, repo: str, platform: str) -> str
     if conflict.symbol_name:
         lines.append(f"**Symbol:** `{conflict.symbol_name}`")
 
-    lines.append(f"\n{conflict.description}")
-    lines.append(f"\n> {conflict.recommendation}")
+    from mergeguard.output._sanitize import sanitize_markdown
+
+    lines.append(f"\n{sanitize_markdown(conflict.description)}")
+    lines.append(f"\n> {sanitize_markdown(conflict.recommendation)}")
 
     if conflict.fix_suggestion:
-        lines.append(f"\n**Suggested fix:** {conflict.fix_suggestion}")
+        lines.append(f"\n**Suggested fix:** {sanitize_markdown(conflict.fix_suggestion)}")
 
     return "\n".join(lines)

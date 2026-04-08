@@ -5,7 +5,7 @@ All models use Pydantic V2 for validation, serialization, and type safety.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
@@ -253,7 +253,7 @@ class ConflictReport(BaseModel):
     no_conflict_prs: list[int] = Field(default_factory=list)
     affected_teams: list[str] = Field(default_factory=list)  # All teams with conflicts
     analysis_duration_ms: int = 0
-    analyzed_at: datetime = Field(default_factory=lambda: datetime.now(tz=None))
+    analyzed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     stack_group: str | None = None  # StackGroup.group_id if PR is in a stack
     stack_position: int | None = None  # 1-indexed position within the stack
     stack_pr_numbers: list[int] = Field(default_factory=list)  # Full stack in order
@@ -450,7 +450,7 @@ class SecretPattern(BaseModel):
 class SecretsConfig(BaseModel):
     """Configuration for secret scanning in PR diffs."""
 
-    enabled: bool = True
+    enabled: bool = False  # Opt-in only — V1 focuses on conflict detection
     use_builtin_patterns: bool = True
     patterns: list[SecretPattern] = Field(default_factory=list)
     allowlist: list[str] = Field(default_factory=list)
@@ -544,6 +544,7 @@ class MergeGuardConfig(BaseModel):
     rules: list[GuardrailRule] = Field(default_factory=list)
     risk_weights: dict[str, float] | None = None  # Custom risk scoring weights (must sum to ~1.0)
     max_transitive_per_pair: int = 5  # Max transitive conflicts per PR pair
+    max_transitive_depth: int = 1  # BFS depth for transitive dependency traversal
     github_url: str | None = None  # GitHub Enterprise Server URL (e.g., https://github.example.com)
     max_file_size: int = 500_000  # Max file size in bytes (skip larger files)
     max_diff_size: int = 100_000  # Max diff size in bytes (truncate larger diffs)

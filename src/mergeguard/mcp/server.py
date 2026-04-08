@@ -50,11 +50,10 @@ def _create_mcp_client(platform: str, repo: str, timeout: int = 30) -> Any:
     else:
         from mergeguard.integrations.github_client import GitHubClient
 
-        config = load_config()
         return GitHubClient(
             token=token,
             repo_full_name=repo,
-            base_url=config.github_url,
+            base_url=os.environ.get("MERGEGUARD_GITHUB_URL"),
             timeout=timeout,
         )
 

@@ -628,7 +628,7 @@ class TestTransitiveConflictE2E:
             "    return result\n"
         )
         source_views = (
-            "from models import User\n\n"
+            "from src.models import User\n\n"
             "def render_user(user):\n"
             "    return f'User: {user.name}'\n\n"
             "def validate_input(data):\n"
@@ -658,7 +658,8 @@ class TestTransitiveConflictE2E:
         transitive = [c for c in report.conflicts if c.conflict_type == ConflictType.TRANSITIVE]
         assert len(transitive) == 1
         assert transitive[0].target_pr == 201
-        assert transitive[0].severity == ConflictSeverity.WARNING
+        # INFO because symbol-level import resolution doesn't confirm overlap
+        assert transitive[0].severity == ConflictSeverity.INFO
         # Description should reference specific files
         assert "PR #201" in transitive[0].description
         assert "src/models.py" in transitive[0].description
@@ -687,14 +688,14 @@ class TestFindOverlappingRange:
         ranges = [(1, 5), (15, 25), (30, 40)]
         assert _find_overlapping_range(symbol, ranges) == (15, 25)
 
-    def test_falls_back_to_first_range(self):
+    def test_falls_back_to_symbol_range(self):
         symbol = self._make_symbol(50, 60)
         ranges = [(1, 5), (10, 15)]
-        assert _find_overlapping_range(symbol, ranges) == (1, 5)
+        assert _find_overlapping_range(symbol, ranges) == (50, 60)
 
     def test_empty_ranges(self):
         symbol = self._make_symbol(10, 20)
-        assert _find_overlapping_range(symbol, []) == (0, 0)
+        assert _find_overlapping_range(symbol, []) == (10, 20)
 
 
 class TestGuardrailsWiring:

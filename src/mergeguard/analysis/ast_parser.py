@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import TYPE_CHECKING, Any, cast
 
 from tree_sitter_language_pack import get_parser as _get_parser_uncached
 
 from mergeguard.models import Symbol, SymbolType
+
+logger = logging.getLogger(__name__)
 
 # Cache parser instances per language to avoid re-creation per file
 _PARSER_CACHE: dict[str, Any] = {}
@@ -100,7 +103,8 @@ NAME_NODE_TYPES = {
 
 def detect_language(file_path: str) -> str | None:
     """Detect language from file extension."""
-    for ext, lang in EXTENSION_TO_LANGUAGE.items():
+    # Sort by length (longest first) so .tsx matches before .ts, .jsx before .js, etc.
+    for ext, lang in sorted(EXTENSION_TO_LANGUAGE.items(), key=lambda x: len(x[0]), reverse=True):
         if file_path.endswith(ext):
             return lang
     return None
@@ -135,16 +139,19 @@ def extract_symbols(source_code: str, file_path: str) -> list[Symbol]:
     class_types = CLASS_NODE_TYPES.get(language_name, set())
     method_types = METHOD_NODE_TYPES.get(language_name, set())
 
-    _walk_tree(
-        tree.root_node,
-        symbols,
-        file_path,
-        language_name,
-        func_types,
-        class_types,
-        method_types,
-        parent_class=None,
-    )
+    try:
+        _walk_tree(
+            tree.root_node,
+            symbols,
+            file_path,
+            language_name,
+            func_types,
+            class_types,
+            method_types,
+            parent_class=None,
+        )
+    except RecursionError:
+        logger.warning("AST too deeply nested for %s, returning partial results", file_path)
 
     return symbols
 
@@ -656,8 +663,28 @@ def _get_name(node: Node) -> str | None:
 
 
 def _extract_signature(node: Node) -> str | None:
-    """Extract the function/method signature (first line)."""
+    """Extract the full function/method signature including parameters.
+
+    For multi-line signatures like::
+
+        def invoke(
+            self,
+            input: Input,
+            timeout: int = 30,
+        ) -> Output:
+
+    This returns the complete text from ``def`` to ``):``, not just the first line.
+    """
     text = _safe_decode(node.text)
+    # Find the parameters node (covers all text from open to close paren)
+    for child in node.children:
+        if child.type in ("parameters", "formal_parameters", "parameter_list"):
+            # Signature = everything from start of function def to end of params
+            sig_end = child.end_point[0] - node.start_point[0]
+            sig_lines = text.split("\n")[: sig_end + 1]
+            sig = " ".join(line.strip() for line in sig_lines)
+            return sig[:500] if len(sig) > 500 else sig
+    # Fallback: first line only
     first_line = text.split("\n")[0].strip()
     return first_line[:200] if len(first_line) > 200 else first_line
 

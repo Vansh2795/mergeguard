@@ -113,7 +113,7 @@ def compute_dora_metrics(
         for days in time_windows:
             period_start = now - timedelta(days=days)
             snapshots = s.get_snapshots(repo, period_start, now)
-            unresolved = s.get_unresolved(repo)
+            unresolved = s.get_unresolved(repo, since=period_start)
             merge_count = s.get_merge_count(repo, period_start)
 
             # Distinct PRs analyzed in this window

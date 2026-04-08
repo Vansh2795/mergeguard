@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import html as _html
 from collections import defaultdict, deque
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from rich.console import Console
@@ -171,7 +171,7 @@ def build_blast_radius_data(
         file_edges=file_edges,
         stack_groups=stack_groups,
         repo=repo,
-        generated_at=datetime.now(tz=None),
+        generated_at=datetime.now(UTC),
     )
 
 

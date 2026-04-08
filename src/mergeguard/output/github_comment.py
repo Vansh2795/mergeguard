@@ -11,6 +11,7 @@ from mergeguard.models import (
     ConflictSeverity,
     ConflictType,
 )
+from mergeguard.output._sanitize import escape_backticks, sanitize_markdown
 
 SEVERITY_EMOJI = {
     ConflictSeverity.CRITICAL: "\U0001f534",
@@ -241,20 +242,20 @@ def _format_conflict_compact(conflict: Conflict, repo_full_name: str) -> str:
     type_label = TYPE_LABELS[conflict.conflict_type]
 
     lines = [
-        f"{emoji} **{type_label}** — `{conflict.file_path}`",
+        f"{emoji} **{type_label}** — `{escape_backticks(conflict.file_path)}`",
     ]
 
     if conflict.symbol_name:
-        lines.append(f"**Symbol:** `{conflict.symbol_name}`")
+        lines.append(f"**Symbol:** `{escape_backticks(conflict.symbol_name)}`")
 
     if conflict.owners:
         lines.append(f"**Owners:** {' '.join(conflict.owners)}")
 
-    lines.append(f"{conflict.description}")
-    lines.append(f"\U0001f4a1 {conflict.recommendation}")
+    lines.append(sanitize_markdown(conflict.description))
+    lines.append(f"\U0001f4a1 {sanitize_markdown(conflict.recommendation)}")
 
     if conflict.fix_suggestion is not None:
-        lines.append(f"\U0001f527 **Suggested Fix:** {conflict.fix_suggestion}")
+        lines.append(f"\U0001f527 **Suggested Fix:** {sanitize_markdown(conflict.fix_suggestion)}")
 
     return "\n".join(lines)
 

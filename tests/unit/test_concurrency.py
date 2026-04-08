@@ -162,7 +162,9 @@ class TestParallelFetchAndEnrichPR:
         from mergeguard.core.engine import MergeGuardEngine
 
         engine = MergeGuardEngine.__new__(MergeGuardEngine)
-        engine._content_cache = {}
+        from collections import OrderedDict
+
+        engine._content_cache = OrderedDict()
         engine._cache_lock = threading.Lock()
         engine._symbol_index = SymbolIndex()
         engine._config = MergeGuardConfig()

@@ -160,7 +160,9 @@ JS_IMPORT = re.compile(
 )
 JS_NAMED_IMPORT = re.compile(r"""import\s+\{([^}]+)\}\s+from\s+['"](.+?)['"]""", re.MULTILINE)
 
-GO_IMPORT = re.compile(r'"([\w./]+)"')
+GO_IMPORT_BLOCK = re.compile(r"import\s*\(\s*((?:[^)]*\n?)*?)\s*\)", re.MULTILINE)
+GO_IMPORT_SINGLE = re.compile(r'import\s+"([\w./-]+)"')
+GO_IMPORT_PATH = re.compile(r'"([\w./-]+)"')
 
 
 def extract_imports(source_code: str, file_path: str) -> list[str]:
@@ -195,11 +197,26 @@ def extract_imports_with_names(
     return []
 
 
+def _parse_import_names(names_str: str) -> list[str]:
+    """Parse comma-separated import names, handling aliases and whitespace."""
+    names: list[str] = []
+    for name in names_str.split(","):
+        name = name.strip().rstrip(")")
+        if not name or name.startswith("#"):
+            continue
+        if " as " in name:
+            name = name.split(" as ")[0].strip()
+        if name:
+            names.append(name)
+    return names
+
+
 def _extract_python_imports(source_code: str) -> list[tuple[str, list[str]]]:
     """Extract Python imports with specific imported names.
 
     Returns list of (module, imported_names) tuples.
     - ``from X import Y, Z`` → ("X", ["Y", "Z"])
+    - ``from X import (\\n    Y,\\n    Z)`` → ("X", ["Y", "Z"])
     - ``import X`` → ("X", [])
     """
     imports: list[tuple[str, list[str]]] = []
@@ -208,21 +225,18 @@ def _extract_python_imports(source_code: str) -> list[tuple[str, list[str]]]:
     for match in PYTHON_FROM_IMPORT.finditer(source_code):
         module = match.group(1)
         names_str = match.group(2).strip()
-        # Skip multiline imports that start with '('
         if names_str.startswith("("):
-            imports.append((module, []))
-            seen_from_modules.add(module)
-            continue
-        names = []
-        for name in names_str.split(","):
-            name = name.strip()
-            if not name:
-                continue
-            # Handle 'as' aliases: extract the original name
-            if " as " in name:
-                name = name.split(" as ")[0].strip()
-            names.append(name)
-        imports.append((module, names))
+            # Multi-line import: find closing paren in source
+            start_pos = match.end()
+            paren_content = names_str[1:]  # skip opening paren
+            close_idx = source_code.find(")", start_pos)
+            if close_idx != -1:
+                paren_content = names_str[1:] + source_code[start_pos:close_idx]
+            names = _parse_import_names(paren_content)
+            imports.append((module, names))
+        else:
+            names = _parse_import_names(names_str)
+            imports.append((module, names))
         seen_from_modules.add(module)
 
     for match in PYTHON_IMPORT_MODULE.finditer(source_code):
@@ -290,8 +304,16 @@ def build_dependency_graph(
 
 
 def _extract_go_imports(source_code: str) -> list[str]:
-    """Extract Go import targets."""
+    """Extract Go import targets, scoped to import statements only."""
     imports: list[str] = []
-    for match in GO_IMPORT.finditer(source_code):
-        imports.append(match.group(1))
+    # Match import blocks: import ( ... )
+    for match in GO_IMPORT_BLOCK.finditer(source_code):
+        block = match.group(1)
+        for path_match in GO_IMPORT_PATH.finditer(block):
+            imports.append(path_match.group(1))
+    # Match single imports: import "pkg"
+    for match in GO_IMPORT_SINGLE.finditer(source_code):
+        path = match.group(1)
+        if path not in imports:
+            imports.append(path)
     return imports

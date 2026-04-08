@@ -73,8 +73,11 @@ uv run mypy src/
 
 - All data models live in `src/mergeguard/models.py`
 - Use `from __future__ import annotations` in every module
-- Lazy-import optional dependencies (anthropic, mcp)
+- Lazy-import optional dependencies (anthropic, mcp, fastapi)
 - Use Pydantic V2 patterns: `BaseModel`, `Field()`, `model_dump()`
+- Use `httpx` for HTTP (not `requests`)
+- Use `respx` for mocking HTTP in tests
+- Click for CLI commands
 
 ## Reporting Issues
 
@@ -83,3 +86,4 @@ Please report issues at https://github.com/Vansh2795/mergeguard/issues with:
 - Expected behavior
 - Actual behavior
 - Python version and OS
+- MergeGuard version (`mergeguard --version`)

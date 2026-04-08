@@ -17,3 +17,9 @@ class TestProtocolCompliance:
         from mergeguard.integrations.gitlab_client import GitLabClient
 
         assert issubclass(GitLabClient, SCMClient)
+
+    def test_bitbucket_client_satisfies_protocol(self):
+        """BitbucketClient should be recognized as an SCMClient."""
+        from mergeguard.integrations.bitbucket_client import BitbucketClient
+
+        assert issubclass(BitbucketClient, SCMClient)

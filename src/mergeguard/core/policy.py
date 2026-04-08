@@ -10,8 +10,10 @@ from __future__ import annotations
 import fnmatch
 import logging
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
+
+import httpx
 
 from mergeguard.models import (
     AIAttribution,
@@ -196,7 +198,7 @@ def evaluate_policies(
         PolicyEvaluationResult with matched policies and accumulated actions.
     """
     if not config.enabled:
-        return PolicyEvaluationResult(evaluated_at=datetime.now(tz=None))
+        return PolicyEvaluationResult(evaluated_at=datetime.now(UTC))
 
     results: list[PolicyResult] = []
     all_actions: list[PolicyAction] = []
@@ -221,7 +223,7 @@ def evaluate_policies(
     return PolicyEvaluationResult(
         results=results,
         actions=all_actions,
-        evaluated_at=datetime.now(tz=None),
+        evaluated_at=datetime.now(UTC),
     )
 
 
@@ -343,7 +345,7 @@ def execute_policy_actions(
                 result = notify_teams(action.webhook_url, report, repo)
                 entry["success"] = result
 
-        except Exception:
+        except (httpx.HTTPError, ValueError, AttributeError, OSError, RuntimeError):
             logger.warning("Policy action %s failed", action.action.value, exc_info=True)
             entry["error"] = True
 

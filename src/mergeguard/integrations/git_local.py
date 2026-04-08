@@ -65,23 +65,23 @@ class GitLocalClient:
 
     def get_diff(self, base: str, head: str = "HEAD") -> str:
         """Get the unified diff between two refs."""
-        return self._run(["git", "diff", f"{base}...{head}"])
+        return self._run(["git", "diff", "--", f"{base}...{head}"])
 
     def get_file_content(self, path: str, ref: str = "HEAD") -> str | None:
         """Get file content at a specific ref."""
         try:
-            return self._run(["git", "show", f"{ref}:{path}"])
+            return self._run(["git", "show", "--", f"{ref}:{path}"])
         except subprocess.CalledProcessError:
             return None
 
     def get_changed_files(self, base: str, head: str = "HEAD") -> list[str]:
         """Get list of files changed between two refs."""
-        result = self._run(["git", "diff", "--name-only", f"{base}...{head}"])
+        result = self._run(["git", "diff", "--name-only", "--", f"{base}...{head}"])
         return [f for f in result.strip().split("\n") if f]
 
     def get_merge_base(self, branch_a: str, branch_b: str) -> str:
         """Find the merge base (common ancestor) of two branches."""
-        result = self._run(["git", "merge-base", branch_a, branch_b])
+        result = self._run(["git", "merge-base", "--", branch_a, branch_b])
         return result.strip()
 
     def _run(self, cmd: list[str]) -> str:

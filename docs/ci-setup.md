@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: Vansh2795/mergeguard@v0.1
+      - uses: Vansh2795/mergeguard@v0.5
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
@@ -34,7 +34,12 @@ jobs:
 | `anthropic-api-key` | Anthropic API key for LLM-powered analysis | — |
 | `risk-threshold` | Minimum risk score to post a comment | `0` |
 | `fail-on-risk` | Fail the check when risk exceeds threshold | `false` |
-| `max-open-prs` | Maximum open PRs to analyze | `30` |
+| `max-open-prs` | Maximum open PRs to analyze (safety cap) | `200` |
+| `max-pr-age` | Only scan PRs updated within this many days | `30` |
+| `config-path` | Path to config file | `.mergeguard.yml` |
+| `github-url` | GitHub Enterprise Server URL | — |
+| `merge-queue` | Enable merge queue integration (posts commit status) | `false` |
+| `block-severity` | Minimum severity to block merge (critical/warning/info) | `critical` |
 
 ### Action outputs
 
@@ -113,7 +118,7 @@ Upload MergeGuard results as SARIF so conflicts appear in the **Security** tab:
 Fail the CI check when the risk score exceeds a threshold:
 
 ```yaml
-- uses: Vansh2795/mergeguard@v0.1
+- uses: Vansh2795/mergeguard@v0.5
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     risk-threshold: "50"
@@ -135,7 +140,7 @@ fi
 Add an Anthropic API key to enable deeper semantic conflict detection:
 
 ```yaml
-- uses: Vansh2795/mergeguard@v0.1
+- uses: Vansh2795/mergeguard@v0.5
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -146,7 +151,7 @@ Add an Anthropic API key to enable deeper semantic conflict detection:
 For self-hosted GitHub instances, set the `github-url` action input or `MERGEGUARD_GITHUB_URL` environment variable:
 
 ```yaml
-- uses: Vansh2795/mergeguard@v0.1
+- uses: Vansh2795/mergeguard@v0.5
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     github-url: "https://github.example.com"

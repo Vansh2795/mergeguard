@@ -11,18 +11,24 @@ Routes:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import hmac
+import json
 import logging
 import os
+import signal
 import time
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any
 
+import httpx
+
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
+    from mergeguard.core.engine import MergeGuardEngine
     from mergeguard.integrations.protocol import SCMClient
     from mergeguard.models import ConflictReport, MergeGuardConfig
 
@@ -61,9 +67,14 @@ class _RateLimiter:
         self._requests: dict[str, list[float]] = defaultdict(list)
         self._max = max_requests
         self._window = window
+        self._last_prune = 0.0
 
     def is_allowed(self, key: str) -> bool:
         now = time.monotonic()
+        # Prune stale keys periodically
+        if now - self._last_prune > self._window:
+            self._prune(now)
+            self._last_prune = now
         reqs = self._requests[key]
         self._requests[key] = [t for t in reqs if now - t < self._window]
         if len(self._requests[key]) >= self._max:
@@ -71,11 +82,19 @@ class _RateLimiter:
         self._requests[key].append(now)
         return True
 
+    def _prune(self, now: float) -> None:
+        """Remove keys with no recent requests."""
+        stale = [
+            k for k, reqs in self._requests.items() if all(now - t >= self._window for t in reqs)
+        ]
+        for k in stale:
+            del self._requests[k]
+
 
 _rate_limiter = _RateLimiter()
 
 
-class RateLimitMiddleware(BaseHTTPMiddleware):
+class RateLimitMiddleware(BaseHTTPMiddleware):  # type: ignore[misc]
     async def dispatch(self, request: Request, call_next: Any) -> Response:
         if request.url.path.startswith("/webhooks/"):
             client_ip = request.client.host if request.client else "unknown"
@@ -142,7 +161,7 @@ def _handle_merge_group(
     event: MergeGroupEvent,
     cfg: MergeGuardConfig,
     client: SCMClient,
-    engine: Any,
+    engine: MergeGuardEngine,
 ) -> None:
     """Handle a merge_group webhook event (sync — no real awaits)."""
     metrics.merge_groups_analyzed.inc()
@@ -295,7 +314,7 @@ def _run_analysis_sync(event: WebhookEvent | MergeGroupEvent) -> None:
                     review_body = format_review_summary(report, len(review_comments))
                     try:
                         client.post_pr_review(event.pr_number, review_body, review_comments)
-                    except Exception:
+                    except (httpx.HTTPError, OSError, ValueError):
                         logger.warning(
                             "Failed to post inline annotations for %s #%d",
                             event.repo_full_name,
@@ -323,7 +342,7 @@ def _run_analysis_sync(event: WebhookEvent | MergeGroupEvent) -> None:
 
                 try:
                     record_analysis(report, event.repo_full_name)
-                except Exception:
+                except (OSError, ValueError):
                     logger.warning("Failed to record metrics snapshot", exc_info=True)
 
         elif event.action == EventAction.CLOSED:
@@ -346,7 +365,7 @@ def _run_analysis_sync(event: WebhookEvent | MergeGroupEvent) -> None:
                         _dt.now(UTC),
                         resolution_type,
                     )
-                except Exception:
+                except (OSError, ValueError):
                     logger.warning("Failed to record resolution", exc_info=True)
     finally:
         client.close()
@@ -457,6 +476,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     _queue = AnalysisQueue(handler=_handle_analysis)
     await _queue.start()
+
+    # Register SIGTERM handler for graceful shutdown (e.g. Kubernetes)
+    loop = asyncio.get_running_loop()
+    with contextlib.suppress(NotImplementedError):
+        loop.add_signal_handler(signal.SIGTERM, lambda: asyncio.ensure_future(_queue.stop()))
+
     yield
     await _queue.stop()
 
@@ -528,6 +553,12 @@ def _enforce_metrics_token(request: Request) -> None:
         raise HTTPException(status_code=401, detail="Invalid or missing metrics token")
 
 
+def _reject_if_shutting_down() -> None:
+    """Raise 503 if the server is draining."""
+    if _queue and _queue.is_shutting_down:
+        raise HTTPException(status_code=503, detail="Server is shutting down")
+
+
 @app.post("/webhooks/github")
 async def github_webhook(
     request: Request,
@@ -535,6 +566,7 @@ async def github_webhook(
     x_github_event: str | None = Header(None),
 ) -> dict[str, Any]:
     """Receive GitHub webhook events."""
+    _reject_if_shutting_down()
     body = await request.body()
     metrics.webhooks_received.inc()
 
@@ -543,7 +575,7 @@ async def github_webhook(
         metrics.webhooks_invalid.inc()
         raise HTTPException(status_code=401, detail="Invalid signature")
 
-    payload = await request.json()
+    payload = json.loads(body)
     headers = {"x-github-event": x_github_event or ""}
     event = parse_github_event(headers, payload)
 
@@ -566,14 +598,16 @@ async def gitlab_webhook(
     x_gitlab_event: str | None = Header(None),
 ) -> dict[str, Any]:
     """Receive GitLab webhook events."""
+    _reject_if_shutting_down()
     metrics.webhooks_received.inc()
 
+    body = await request.body()
     secret = _get_webhook_secret("gitlab")
     if not verify_gitlab_token(x_gitlab_token, secret):
         metrics.webhooks_invalid.inc()
         raise HTTPException(status_code=401, detail="Invalid token")
 
-    payload = await request.json()
+    payload = json.loads(body)
     headers = {"x-gitlab-event": x_gitlab_event or ""}
     event = parse_gitlab_event(headers, payload)
 
@@ -593,6 +627,7 @@ async def bitbucket_webhook(
     x_event_key: str | None = Header(None),
 ) -> dict[str, Any]:
     """Receive Bitbucket webhook events."""
+    _reject_if_shutting_down()
     body = await request.body()
     metrics.webhooks_received.inc()
 
@@ -601,7 +636,7 @@ async def bitbucket_webhook(
         metrics.webhooks_invalid.inc()
         raise HTTPException(status_code=401, detail="Invalid signature")
 
-    payload = await request.json()
+    payload = json.loads(body)
     headers = {"x-event-key": x_event_key or ""}
     event = parse_bitbucket_event(headers, payload)
 

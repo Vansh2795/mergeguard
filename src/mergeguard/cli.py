@@ -13,6 +13,8 @@ from rich.logging import RichHandler
 from rich.table import Table
 
 if TYPE_CHECKING:
+    import collections.abc
+
     from mergeguard.integrations.protocol import SCMClient
     from mergeguard.models import ConflictReport, PRInfo
 
@@ -27,7 +29,8 @@ def _spinner(msg: str) -> contextlib.AbstractContextManager[Any]:
     """Return a Rich status spinner, or a no-op context manager when --quiet."""
     if _quiet:
         return contextlib.nullcontext()
-    return console.status(msg, spinner="dots")
+    ctx: contextlib.AbstractContextManager[Any] = console.status(msg, spinner="dots")
+    return ctx
 
 
 def _detect_platform_from_remote() -> str:
@@ -68,6 +71,22 @@ def _create_client(
         from mergeguard.integrations.github_client import GitHubClient
 
         return GitHubClient(token, repo, base_url=github_url)
+
+
+@contextlib.contextmanager
+def _managed_client(
+    platform: str,
+    token: str | None,
+    repo: str,
+    gitlab_url: str,
+    github_url: str | None = None,
+) -> collections.abc.Iterator[SCMClient]:
+    """Create an SCM client and ensure it's closed."""
+    client = _create_client(platform, token, repo, gitlab_url, github_url)
+    try:
+        yield client
+    finally:
+        client.close()
 
 
 def _auto_detect_repo_and_pr(
@@ -111,11 +130,19 @@ def _auto_detect_repo_and_pr(
         if platform == "gitlab":
             from mergeguard.integrations.gitlab_client import GitLabClient
 
-            open_prs = GitLabClient(token, repo).get_open_prs()
+            gl_tmp = GitLabClient(token, repo)
+            try:
+                open_prs = gl_tmp.get_open_prs()
+            finally:
+                gl_tmp.close()
         else:
             from mergeguard.integrations.github_client import GitHubClient
 
-            open_prs = GitHubClient(token, repo).get_open_prs()
+            gh_tmp = GitHubClient(token, repo)
+            try:
+                open_prs = gh_tmp.get_open_prs()
+            finally:
+                gh_tmp.close()
         matching = [p for p in open_prs if p.head_branch == branch]
         if not matching:
             raise click.UsageError(
@@ -916,6 +943,8 @@ def watch(
             _time.sleep(interval)
     except KeyboardInterrupt:
         console.print("\n[bold]Watch stopped.[/bold]")
+    finally:
+        client.close()
 
 
 @main.command()
@@ -964,7 +993,7 @@ def history(
     console.print(table)
 
 
-@main.command(name="scan-secrets")
+@main.command(name="scan-secrets", hidden=True)
 @click.option(
     "--repo",
     "-r",

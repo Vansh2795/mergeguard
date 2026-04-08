@@ -31,7 +31,7 @@ BUILTIN_PATTERNS: list[SecretPattern] = [
     ),
     SecretPattern(
         name="Slack Token",
-        pattern=r"xox[baprs]-[0-9a-zA-Z\-]{10,}",
+        pattern=r"xox[baprs]-[0-9a-zA-Z\-]{10,250}",
     ),
     SecretPattern(
         name="Slack Webhook",
@@ -51,7 +51,7 @@ BUILTIN_PATTERNS: list[SecretPattern] = [
     ),
     SecretPattern(
         name="Heroku API Key",
-        pattern=r"[hH][eE][rR][oO][kK][uU].*[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}",
+        pattern=r"[hH][eE][rR][oO][kK][uU].{0,100}[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}",
     ),
     SecretPattern(
         name="Stripe Key",

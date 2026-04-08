@@ -1,6 +1,6 @@
 [project]
 name = "py-mergeguard"
-version = "0.2.0"
+version = "0.5.0"
 description = "Cross-PR intelligence for the agentic coding era"
 readme = "README.md"
 license = { text = "MIT" }
@@ -73,7 +73,10 @@ python_version = "3.12"
 strict = true
 
 [[tool.mypy.overrides]]
-module = ["openai.*", "anthropic.*", "yaml.*", "fastapi.*", "uvicorn.*", "starlette.*"]
+module = [
+    "openai.*", "anthropic.*", "yaml.*", "fastapi.*", "uvicorn.*", "starlette.*",
+    "rich.*", "tree_sitter.*", "tree_sitter_language_pack.*",
+]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
@@ -83,3 +86,16 @@ disallow_untyped_decorators = false
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["mergeguard"]
+omit = ["*/server/webhook.py", "*/mcp/server.py"]
+
+[tool.coverage.report]
+fail_under = 65
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.",
+]

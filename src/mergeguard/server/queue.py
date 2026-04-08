@@ -7,6 +7,7 @@ so a Redis/Celery adapter can be swapped in for production scale.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 from collections import defaultdict
@@ -54,6 +55,7 @@ class AnalysisQueue:
         self._cooldown = cooldown
         self._last_run: dict[str, float] = defaultdict(float)
         self._pending: dict[str, AnalysisTask] = {}  # repo:pr -> latest task
+        self._max_pending = max_size * 10  # Hard cap on pending dict size
         self._worker_task: asyncio.Task | None = None  # type: ignore[type-arg]
         self._shutting_down = False
         self._failure_counts: dict[str, int] = defaultdict(int)
@@ -69,7 +71,8 @@ class AnalysisQueue:
     async def stop(self, drain_timeout: float = 30.0) -> None:
         """Signal shutdown and wait for in-flight work to finish."""
         self._shutting_down = True
-        await self._queue.put(None)  # Sentinel to wake the worker
+        with contextlib.suppress(asyncio.QueueFull):
+            self._queue.put_nowait(None)  # Sentinel to wake the worker
         if self._worker_task is not None:
             try:
                 await asyncio.wait_for(self._worker_task, timeout=drain_timeout)
@@ -90,6 +93,12 @@ class AnalysisQueue:
         else:
             key = f"{event.repo_full_name}:{event.pr_number}"
         task = AnalysisTask(event=event)
+        # Prune stale entries if pending dict grows too large
+        if len(self._pending) >= self._max_pending:
+            cutoff = time.monotonic() - 600  # Remove entries older than 10 minutes
+            stale_keys = [k for k, t in self._pending.items() if t.enqueued_at < cutoff]
+            for k in stale_keys:
+                del self._pending[k]
         self._pending[key] = task
         metrics.queue_depth.inc()
         await self._queue.put(task)
@@ -97,7 +106,12 @@ class AnalysisQueue:
     async def _worker(self) -> None:
         """Process queued analysis tasks."""
         while True:
-            task = await self._queue.get()
+            try:
+                task = await asyncio.wait_for(self._queue.get(), timeout=1.0)
+            except TimeoutError:
+                if self._shutting_down:
+                    break
+                continue
             if task is None:
                 # Sentinel — finish remaining items then exit
                 break

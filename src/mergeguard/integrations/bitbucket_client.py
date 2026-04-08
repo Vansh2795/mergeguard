@@ -10,6 +10,7 @@ import logging
 import re
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
+from urllib.parse import quote as _url_quote
 
 import httpx
 
@@ -48,7 +49,7 @@ class BitbucketClient:
         )
         self._http = httpx.Client(
             transport=httpx.HTTPTransport(retries=3),
-            auth=(username, app_password),
+            auth=httpx.BasicAuth(username, app_password),
             headers={"Accept": "application/json"},
             timeout=30.0,
         )
@@ -81,6 +82,7 @@ class BitbucketClient:
         params: dict[str, str | int] = {
             "state": "OPEN",
             "pagelen": min(max_count, _PAGE_LEN),
+            "sort": "-updated_on",
         }
 
         result: list[PRInfo] = []
@@ -96,7 +98,7 @@ class BitbucketClient:
                 # Apply age filter client-side since Bitbucket's query
                 # language doesn't always support updated_on filtering well
                 if cutoff and info.updated_at < cutoff:
-                    continue
+                    break
                 result.append(info)
 
             # Bitbucket pagination uses "next" URL in the response body
@@ -141,7 +143,7 @@ class BitbucketClient:
             for f in files:
                 if f.patch is None:
                     f.patch = patches.get(f.path)
-        except Exception:
+        except (httpx.HTTPError, OSError, ValueError):
             logger.debug("Failed to fetch diff for patch attachment", exc_info=True)
 
         return files
@@ -158,7 +160,7 @@ class BitbucketClient:
     def get_file_content(self, path: str, ref: str) -> str | None:
         """Fetch raw file content at a specific ref (commit hash or branch)."""
         logger.debug("Fetching content: %s at %s", path, ref)
-        url = f"{self._base_url}/src/{ref}/{path}"
+        url = f"{self._base_url}/src/{_url_quote(ref, safe='')}/{_url_quote(path, safe='/')}"
         try:
             resp = self._http.get(url)
             resp.raise_for_status()
@@ -306,7 +308,7 @@ class BitbucketClient:
                 user_data = user_resp.json()
                 if user_data.get("uuid") not in existing_uuids:
                     new_reviewers.append({"uuid": user_data["uuid"]})
-            except Exception:
+            except (httpx.HTTPError, OSError, KeyError):
                 logger.warning("Bitbucket user not found: %s", username)
 
         put_resp = self._http.put(url, json={"reviewers": new_reviewers})

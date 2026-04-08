@@ -10,13 +10,16 @@ When multiple developers (or AI agents) work on the same codebase simultaneously
 - **Interface conflicts**: One PR changes a function signature while another calls it with the old signature
 - **Behavioral conflicts**: Two PRs modify the same function at different lines, creating incompatible behavior
 - **Duplications**: Two PRs implement the same feature independently
+- **Transitive conflicts**: PR A changes a module that PR B depends on through imports
 - **Regressions**: A PR re-introduces something that was recently removed
+- **Guardrail violations**: PRs violate configured rules (import restrictions, complexity limits, forbidden patterns)
+- **Secret exposure**: Accidentally committed API keys, tokens, or private keys
 
 ## Analysis Pipeline
 
 ### Step 1: Fetch PR Data
 
-MergeGuard connects to the GitHub API and fetches:
+MergeGuard connects to the SCM platform API (GitHub, GitLab, or Bitbucket) and fetches:
 - All open PRs with metadata (title, author, labels, branches)
 - Changed files for each PR (with unified diffs)
 - File contents at the base branch for AST parsing
@@ -92,6 +95,30 @@ If guardrail rules are configured, MergeGuard enforces them:
 - **`max_function_lines`** — Function length limits
 - **`max_cyclomatic_complexity`** — Complexity limits computed via Tree-sitter AST
 
+### Step 5c: Secret Scanning
+
+MergeGuard scans added lines in PR diffs for accidentally committed secrets:
+- 15 builtin regex patterns (AWS keys, GitHub/GitLab PATs, Slack tokens, Stripe/Twilio/SendGrid keys, private key headers, generic API keys)
+- Custom patterns and allowlists configurable via `.mergeguard.yml`
+- Automatic redaction of detected secret values in reports
+- Findings surfaced as CRITICAL conflicts with inline annotations
+
+### Step 5d: Stacked PR Detection
+
+MergeGuard identifies stacked PRs (PRs that build on each other) using three strategies:
+- **Branch chain** — follows `head_branch` → `base_branch` links between PRs
+- **Labels** — groups PRs by labels matching a configurable prefix (e.g., `stack:auth`)
+- **Graphite** — parses `Graphite-base:` trailers in PR descriptions
+
+Intra-stack conflicts are automatically demoted to INFO severity since they're expected.
+
+### Step 5e: Policy Evaluation
+
+If policies are configured, MergeGuard evaluates them against analysis results:
+- 13 field extractors with 6 condition operators
+- 7 action types: block merge, require reviewers, add labels, notify Slack/Teams, post comment, set status
+- Audit trail records actual vs expected values for each condition
+
 ### Step 6: Report
 
 Results are formatted as:
@@ -122,8 +149,8 @@ For unsupported languages, a regex-based fallback extracts function and class de
 ## Data Flow Diagram
 
 ```
-SCM API → Fetch PRs → Parse Diffs → AST Analysis → Same-File Conflicts → Cross-File Conflicts → Transitive Conflicts → Guardrails → Risk Scoring → Report
-  (GitHub/GitLab/Bitbucket)                            (symbol overlap)     (import graph)         (dependency chain)    (rules)
+SCM API → Fetch PRs → Parse Diffs → AST Analysis → Same-File Conflicts → Cross-File Conflicts → Transitive Conflicts → Guardrails → Secret Scan → Stacked PR Detection → Risk Scoring → Policy Evaluation → Report
+  (GitHub/GitLab/Bitbucket)                            (symbol overlap)     (import graph)         (dependency chain)    (rules)        (regex)      (branch/label/graphite)                 (conditions+actions)
 ```
 
 Each stage is independently testable and cacheable for performance.

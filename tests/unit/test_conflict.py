@@ -951,6 +951,18 @@ class TestCommentOnlyChange:
     def test_unknown_extension(self):
         assert _is_comment_only_change("+# comment", "foo.xyz") is False
 
+    def test_context_lines_are_ignored(self):
+        """Context lines (no +/- prefix) should not affect the result."""
+        diff = (
+            "@@ -1,5 +1,5 @@\n def hello():\n"
+            "-    # old comment\n+    # new comment\n     return True\n"
+        )
+        assert _is_comment_only_change(diff, "main.py") is True
+
+    def test_hunk_headers_are_ignored(self):
+        diff = "@@ -1,3 +1,3 @@\n import os\n-# old\n+# new\n"
+        assert _is_comment_only_change(diff, "main.py") is True
+
     def test_comment_only_change_skipped(self):
         """Both PRs change only comments → no behavioral conflict."""
         sym_a = self._make_changed_symbol(

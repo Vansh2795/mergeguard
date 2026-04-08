@@ -15,9 +15,24 @@ from mergeguard.models import ChangedFile, FileChangeStatus, PRInfo
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
+    import collections.abc
+
     from github.PullRequest import PullRequest as GHPullRequest
 
     from mergeguard.integrations.protocol import ReviewComment
+
+
+class _TokenAuth(httpx.Auth):
+    """Auth handler that injects token without exposing it in repr."""
+
+    def __init__(self, token: str) -> None:
+        self._token = token
+
+    def auth_flow(
+        self, request: httpx.Request
+    ) -> collections.abc.Generator[httpx.Request, httpx.Response, None]:
+        request.headers["Authorization"] = f"token {self._token}"
+        yield request
 
 
 class GitHubClient:
@@ -54,10 +69,8 @@ class GitHubClient:
         self._api_base = f"{base_url.rstrip('/')}/api/v3" if base_url else "https://api.github.com"
         self._http = httpx.Client(
             transport=httpx.HTTPTransport(retries=3),
-            headers={
-                "Accept": "application/vnd.github.v3+json",
-                "Authorization": f"token {token}",
-            },
+            auth=_TokenAuth(token),
+            headers={"Accept": "application/vnd.github.v3+json"},
             timeout=float(timeout),
         )
 
@@ -145,7 +158,7 @@ class GitHubClient:
             content = self._repo.get_contents(path, ref=ref)
             if isinstance(content, list):
                 return None  # Directory, not a file
-            return content.decoded_content.decode("utf-8")
+            return str(content.decoded_content.decode("utf-8"))
         except UnicodeDecodeError:
             logger.debug("Binary file (not UTF-8): %s at %s", path, ref)
             return None
@@ -247,7 +260,7 @@ class GitHubClient:
     @property
     def rate_limit_remaining(self) -> int:
         """Current remaining API rate limit."""
-        return self._gh.get_rate_limit().rate.remaining
+        return int(self._gh.get_rate_limit().rate.remaining)
 
     # ── Private helpers ──
 
@@ -279,7 +292,7 @@ class GitHubClient:
         try:
             if pr.head.repo is None or pr.head.repo.full_name != pr.base.repo.full_name:
                 is_fork = True
-        except Exception:
+        except (AttributeError, TypeError):
             is_fork = True  # Conservative: assume fork if we can't tell
 
         now = datetime.now(UTC)
