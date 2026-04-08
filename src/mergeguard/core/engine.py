@@ -1102,6 +1102,39 @@ class MergeGuardEngine:
                     )
                 )
 
+        # Global cap: if transitive conflicts exceed 2x max_per_pair, keep only
+        # the highest-severity ones and add a summary for the rest
+        global_cap = max_per_pair * 2
+        if len(transitive) > global_cap:
+            # Sort: WARNING before INFO, then by target_pr
+            transitive.sort(
+                key=lambda c: (c.severity != ConflictSeverity.WARNING, c.target_pr)
+            )
+            kept = transitive[:global_cap]
+            dropped = transitive[global_cap:]
+            dropped_prs = sorted({c.target_pr for c in dropped})
+            kept.append(
+                Conflict(
+                    conflict_type=ConflictType.TRANSITIVE,
+                    severity=ConflictSeverity.INFO,
+                    source_pr=target_pr.number,
+                    target_pr=dropped_prs[0],
+                    file_path=target_pr.changed_files[0].path,
+                    description=(
+                        f"{len(dropped)} additional transitive conflict(s) across "
+                        f"{len(dropped_prs)} PR(s) omitted. "
+                        f"PRs: {', '.join(f'#{n}' for n in dropped_prs[:5])}"
+                        + (f" and {len(dropped_prs) - 5} more" if len(dropped_prs) > 5 else "")
+                        + "."
+                    ),
+                    recommendation=(
+                        "Consider reviewing the most critical conflicts above. "
+                        "Run with a higher max_transitive_per_pair to see all."
+                    ),
+                )
+            )
+            transitive = kept
+
         return transitive
 
     def _compute_churn_score(self, pr: PRInfo) -> float:
