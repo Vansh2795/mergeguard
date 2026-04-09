@@ -211,31 +211,6 @@ def format_report(
     return "\n".join(lines)
 
 
-def _format_conflict(conflict: Conflict, repo_full_name: str, platform: str = "github") -> str:
-    emoji = SEVERITY_EMOJI[conflict.severity]
-    type_label = TYPE_LABELS[conflict.conflict_type]
-    link = _pr_link(repo_full_name, conflict.target_pr, platform)
-
-    lines = [
-        f"### {emoji} {type_label} with {link}",
-        f"**File:** `{conflict.file_path}`",
-    ]
-
-    if conflict.symbol_name:
-        lines.append(f"**Symbol:** `{conflict.symbol_name}`")
-
-    if conflict.owners:
-        lines.append(f"**Owners:** {' '.join(conflict.owners)}")
-
-    lines.append(f"\n{conflict.description}")
-    lines.append(f"\n\U0001f4a1 **Recommendation:** {conflict.recommendation}")
-
-    if conflict.fix_suggestion is not None:
-        lines.append(f"\n\U0001f527 **Suggested Fix:** {conflict.fix_suggestion}")
-
-    return "\n".join(lines)
-
-
 def _format_conflict_compact(conflict: Conflict, repo_full_name: str) -> str:
     """Format a conflict without a per-conflict PR link (used in grouped output)."""
     emoji = SEVERITY_EMOJI[conflict.severity]

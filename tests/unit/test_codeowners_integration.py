@@ -14,7 +14,7 @@ from mergeguard.models import (
     MergeGuardConfig,
     PRInfo,
 )
-from mergeguard.output.github_comment import _format_conflict, _format_conflict_compact
+from mergeguard.output.github_comment import _format_conflict_compact
 
 # ──────────────────────────────────────────────
 # Helpers
@@ -138,14 +138,14 @@ class TestGitHubCommentOwners:
 
     def test_format_conflict_with_owners(self):
         c = _make_conflict(owners=["@backend-team", "@api-lead"])
-        output = _format_conflict(c, "owner/repo")
+        output = _format_conflict_compact(c, "owner/repo")
         assert "@backend-team" in output
         assert "@api-lead" in output
         assert "**Owners:**" in output
 
     def test_format_conflict_without_owners(self):
         c = _make_conflict()
-        output = _format_conflict(c, "owner/repo")
+        output = _format_conflict_compact(c, "owner/repo")
         assert "Owners" not in output
 
     def test_format_conflict_compact_with_owners(self):

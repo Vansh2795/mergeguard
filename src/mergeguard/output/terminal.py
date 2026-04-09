@@ -147,29 +147,3 @@ def _render_diff_previews(conflict: ConflictReport | object) -> None:
         console.print(
             Panel(syntax, title=f"PR #{conflict.target_pr} diff", border_style="dim", width=80)
         )
-
-
-def display_collision_map(
-    pr_titles: list[tuple[int, str]], overlap_matrix: dict[int, dict[int, int]]
-) -> None:
-    """Display the collision map showing file overlaps between PRs."""
-    table = Table(title="PR Collision Map", show_lines=True)
-    table.add_column("PR", style="bold cyan")
-
-    for num, _ in pr_titles:
-        table.add_column(f"#{num}", justify="center")
-
-    for num_a, title_a in pr_titles:
-        row = [f"#{num_a} {title_a[:30]}"]
-        for num_b, _ in pr_titles:
-            if num_a == num_b:
-                row.append("\u2014")
-            else:
-                count = overlap_matrix.get(num_a, {}).get(num_b, 0)
-                if count > 0:
-                    row.append(f"[red]{count} file(s)[/red]")
-                else:
-                    row.append("[green]\u2713[/green]")
-        table.add_row(*row)
-
-    console.print(table)
