@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import threading
-from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 from conftest import make_test_pr
+
 from mergeguard.analysis.dependency import DependencyGraph, ImportEdge
 from mergeguard.analysis.diff_parser import DiffHunk, FileDiff
 from mergeguard.core.engine import (
@@ -14,17 +14,14 @@ from mergeguard.core.engine import (
     _extract_symbol_diff,
 )
 from mergeguard.models import (
-    ChangedFile,
     ChangedSymbol,
     Conflict,
     ConflictSeverity,
     ConflictType,
     FileChangeStatus,
-    PRInfo,
     Symbol,
     SymbolType,
 )
-
 
 
 class TestModuleSuffixMatching:

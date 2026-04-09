@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import fnmatch
 import logging
-import re as _re
+import re
 import sqlite3
 import threading
 import time
@@ -188,7 +188,7 @@ class MergeGuardEngine:
         self._content_cache: OrderedDict[tuple[str, str], str | None] = OrderedDict()
         self._cache_lock = threading.Lock()
         self._ignore_res = [
-            _re.compile(fnmatch.translate(pat)) for pat in self._config.ignored_paths
+            re.compile(fnmatch.translate(pat)) for pat in self._config.ignored_paths
         ]
         self._codeowners: CodeOwners | None = None  # Lazy-loaded per repo
 

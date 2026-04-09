@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from conftest import make_test_pr
+
 from mergeguard.core.conflict import (
     FileOverlap,
     _get_modified_ranges,
@@ -23,7 +24,6 @@ from mergeguard.models import (
     Symbol,
     SymbolType,
 )
-
 
 
 class TestComputeFileOverlaps:

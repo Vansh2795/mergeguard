@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
-import re as _re
+import re
 from typing import TYPE_CHECKING, Any
 
 import click
@@ -178,7 +178,7 @@ def _auto_detect_repo(repo: str | None) -> str:
 
 
 def _validate_repo(ctx: click.Context, param: click.Parameter, value: str | None) -> str | None:
-    if value is not None and not _re.match(r"^[\w.-]+/[\w.-]+$", value):
+    if value is not None and not re.match(r"^[\w.-]+/[\w.-]+$", value):
         raise click.BadParameter("Must be in 'owner/repo' format")
     return value
 

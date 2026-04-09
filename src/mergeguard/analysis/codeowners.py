@@ -151,14 +151,14 @@ def _pattern_matches(pattern: str, file_path: str) -> bool:
         # e.g., "src/**/*.py" -> regex that matches src/a/b/c/foo.py
         # fnmatch.translate turns * into [^/]* but ** needs to match /
         # Replace ** with a sentinel, translate, then fix the sentinel
-        import re as _re
+        import re
 
         sentinel = "__DOUBLE_STAR__"
         p_sentinel = p.replace("**", sentinel)
         regex = _fnmatch.translate(p_sentinel)
         # fnmatch.translate wraps in (?s:...) and $ — replace sentinel match
         regex = regex.replace(sentinel, ".*")
-        return bool(_re.fullmatch(regex, file_path))
+        return bool(re.fullmatch(regex, file_path))
 
     # If pattern has no slash, it can match at any depth
     if "/" not in p:
