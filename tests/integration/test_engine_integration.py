@@ -74,9 +74,7 @@ class TestEngineSameFileConflict:
         report = engine.analyze_pr(1)
 
         assert report.pr.number == 1
-        hard_conflicts = [
-            c for c in report.conflicts if c.conflict_type == ConflictType.HARD
-        ]
+        hard_conflicts = [c for c in report.conflicts if c.conflict_type == ConflictType.HARD]
         assert len(hard_conflicts) >= 1, (
             f"Expected at least 1 HARD conflict, got {report.conflicts}"
         )

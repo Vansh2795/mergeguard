@@ -322,5 +322,5 @@ class TestContextManager:
 
         # After context exit, the connection should be closed;
         # any attempt to query should raise an error
-        with pytest.raises(Exception):
+        with pytest.raises(Exception):  # noqa: B017
             dl.get_recent_decisions()

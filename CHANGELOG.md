@@ -5,6 +5,50 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-04-08
+
+### Overview
+
+First stable release. MergeGuard detects cross-PR conflicts during development, before they reach your merge queue.
+
+### Changed — Accuracy
+- Fixed transitive conflict explosion: trimmed ambiguous module forms, limited BFS depth to 1, required symbol-level evidence for WARNING severity, added aggregation and global cap
+- Benchmarked against FastAPI: 59-82% reduction in false positives
+- Fixed multi-line Python import parsing for cross-file detection
+- Fixed Go import regex scoping to import blocks only
+- Fixed CODEOWNERS `**` glob matching
+
+### Changed — Scope
+- Secret scanning disabled by default (opt-in via `--secrets` flag)
+- `scan-secrets` command hidden from default CLI help
+- README rewritten with focused cross-PR conflict detection pitch
+
+### Fixed — Security (19 critical/high findings)
+- Git argument injection protection (`--` separators)
+- ReDoS in Heroku/Slack secret patterns (bounded quantifiers)
+- SSRF protection for webhook URLs (connect-time IP validation)
+- XSS in SVG badges (XML escaping)
+- Markdown injection in PR comments (sanitization)
+- LLM prompt injection (XML delimiters around diff content)
+- Token leakage via httpx repr (custom Auth classes)
+- Bitbucket path traversal (URL encoding)
+- GitLab POST/PUT rate limiting helpers
+
+### Fixed — Reliability
+- SQLite thread safety for webhook server
+- Rate limiter crash on non-numeric headers
+- AST RecursionError catch for deeply nested code
+- Config retry fallback to defaults
+- CLI resource leaks (client close on watch/auto-detect)
+- Queue shutdown on full queue (non-blocking sentinel)
+- Webhook rate limiter memory leak (periodic pruning)
+
+### Added — Testing
+- 695+ tests (up from ~600 in v0.5)
+- Benchmark suite for measuring accuracy on real repos
+- Coverage threshold enforced in CI (65%)
+- Smoke tests for all output formatters
+
 ## [0.5.0] - 2026-03-26
 
 ### Added — v0.5: Secret Scanning
