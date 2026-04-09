@@ -50,7 +50,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: Vansh2795/mergeguard@v0.5
+      - uses: Vansh2795/mergeguard@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
@@ -90,9 +90,6 @@ mergeguard watch --repo owner/repo
 
 # Policy enforcement
 mergeguard policy-check --repo owner/repo --pr 42
-
-# Secret scanning
-mergeguard scan-secrets --repo owner/repo --pr 42
 
 # DORA metrics
 mergeguard metrics --repo owner/repo

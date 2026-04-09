@@ -95,7 +95,7 @@ If guardrail rules are configured, MergeGuard enforces them:
 - **`max_function_lines`** — Function length limits
 - **`max_cyclomatic_complexity`** — Complexity limits computed via Tree-sitter AST
 
-### Step 5c: Secret Scanning
+### Step 5c: Secret Scanning (opt-in via `--secrets` flag or `secrets.enabled: true` in config)
 
 MergeGuard scans added lines in PR diffs for accidentally committed secrets:
 - 15 builtin regex patterns (AWS keys, GitHub/GitLab PATs, Slack tokens, Stripe/Twilio/SendGrid keys, private key headers, generic API keys)

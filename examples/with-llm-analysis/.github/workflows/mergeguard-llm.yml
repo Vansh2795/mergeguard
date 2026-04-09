@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Run MergeGuard with LLM analysis
-        uses: Vansh2795/mergeguard@v0.1
+        uses: Vansh2795/mergeguard@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}

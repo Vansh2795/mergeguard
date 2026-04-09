@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: Vansh2795/mergeguard@v0.5
+      - uses: Vansh2795/mergeguard@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
@@ -118,7 +118,7 @@ Upload MergeGuard results as SARIF so conflicts appear in the **Security** tab:
 Fail the CI check when the risk score exceeds a threshold:
 
 ```yaml
-- uses: Vansh2795/mergeguard@v0.5
+- uses: Vansh2795/mergeguard@v1
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     risk-threshold: "50"
@@ -140,7 +140,7 @@ fi
 Add an Anthropic API key to enable deeper semantic conflict detection:
 
 ```yaml
-- uses: Vansh2795/mergeguard@v0.5
+- uses: Vansh2795/mergeguard@v1
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -151,7 +151,7 @@ Add an Anthropic API key to enable deeper semantic conflict detection:
 For self-hosted GitHub instances, set the `github-url` action input or `MERGEGUARD_GITHUB_URL` environment variable:
 
 ```yaml
-- uses: Vansh2795/mergeguard@v0.5
+- uses: Vansh2795/mergeguard@v1
   with:
     github-token: ${{ secrets.GITHUB_TOKEN }}
     github-url: "https://github.example.com"

@@ -192,7 +192,7 @@ uv run pytest -v
 **Network:** None
 **Purpose:** Validate individual functions and classes in isolation.
 
-Currently covers (256 tests total including integration):
+Currently covers (695+ tests total including integration):
 
 | Test file | Count | Covers |
 |-----------|-------|--------|

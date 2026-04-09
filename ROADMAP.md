@@ -51,6 +51,15 @@ Focus: real-time workflows, inline developer experience, and deployment infrastr
 - :white_check_mark: **DORA metrics** — Track conflict resolution time, merge frequency, conflict rate, and MTTRC across configurable time windows
 - :white_check_mark: **Secret scanning** — Detect accidentally committed secrets in PR diffs
 
+## v1.0 — Stable Release (2026-04-08) :white_check_mark:
+
+- Accuracy: Transitive conflict detection overhauled (59-82% false positive reduction)
+- Benchmarked against FastAPI and LangChain with published results
+- 19 critical/high security and reliability fixes
+- Secret scanning demoted to opt-in (focus on conflict detection)
+- README rewritten for clear value proposition
+- 695+ tests, 72% coverage with CI enforcement
+
 ## v0.6 — Next Horizon (Planned)
 
 - :calendar: **Self-hosted runner** — On-prem deployment option

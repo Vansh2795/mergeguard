@@ -261,11 +261,11 @@ Action types: `block_merge`, `require_reviewers`, `add_labels`, `notify_slack`, 
 
 ### `secrets` (secret scanning)
 
-Detect accidentally committed API keys, tokens, and private keys in PR diffs.
+Detect accidentally committed API keys, tokens, and private keys in PR diffs. Secret scanning is opt-in: enable with `--secrets` CLI flag or `secrets.enabled: true` in config.
 
 ```yaml
 secrets:
-  enabled: true                  # Enable secret scanning (default: true)
+  enabled: false                 # Enable secret scanning (default: false, opt-in via --secrets flag)
   use_builtin_patterns: true     # Use 15 builtin patterns (default: true)
   patterns:                      # Additional custom patterns
     - name: "internal-api-key"

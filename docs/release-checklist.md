@@ -1,10 +1,10 @@
-# MergeGuard v0.5.0 Release Checklist
+# MergeGuard v1.0.0 Release Checklist
 
 ---
 
 ## Pre-Release Verification
 
-- [x] All 256 tests pass (`uv run pytest -v`)
+- [x] All 695+ tests pass (`uv run pytest -v`)
 - [x] No import errors (`uv run python -c "import mergeguard"`)
 - [x] CLI commands work (`uv run mergeguard --version`)
 - [x] `uv run mergeguard analyze --help` shows all options
@@ -13,36 +13,26 @@
 
 ## Security Readiness
 
-38/44 audit issues resolved (all critical, high, and medium). 6 low-impact issues intentionally deferred (see `docs/code-audit.md`).
+19 critical/high audit findings resolved in V1 (see CHANGELOG 1.0.0). Key hardening:
 
-Key security features in place:
-
-- Atomic cache writes with symlink rejection (`cache.py`)
-- Token removed from default HTTP headers (`github_client.py`)
-- Specific exception handling — auth/network errors propagate (`github_client.py`)
-- CLI input validation: `--pr` uses `IntRange(min=1)`, `--repo` validates `owner/repo` format (`cli.py`)
-- YAML fallback parser validates keys against model fields (`config.py`)
-- GITHUB_OUTPUT support with restrictive /tmp permissions (`json_report.py`)
-- Binary file detection and file size limits (500KB) in engine (`engine.py`)
-- Diff size limit (50K lines) prevents memory exhaustion (`diff_parser.py`)
-- No secrets in codebase (`.env` files gitignored)
-- Dependencies: httpx, click, pydantic, tree-sitter (all well-maintained)
+- Git argument injection protection (`--` separators)
+- ReDoS in secret patterns (bounded quantifiers)
+- SSRF protection for webhook URLs (connect-time IP validation)
+- XSS in SVG badges (XML escaping)
+- Markdown injection in PR comments (sanitization)
+- LLM prompt injection (XML delimiters around diff content)
+- Token leakage via httpx repr (custom Auth classes)
+- Bitbucket path traversal (URL encoding)
+- SQLite thread safety for webhook server
 
 ---
 
 ## Performance Readiness
 
-Key optimizations in place:
-
-- Content cache with LRU eviction (500 entries max) — eliminates duplicate API calls
+- Content cache with LRU eviction (500 entries max)
 - Parallel PR enrichment (ThreadPoolExecutor, 8 workers, 300s timeout)
-- O(N) collision map via file-to-PR index (was O(N^2))
-- O(1) symbol lookup dicts in conflict detection
-- Pre-compiled fnmatch patterns for ignored paths
-- Combined tree-sitter parse (symbols + call graph in single pass)
-- Jaccard pre-filter before expensive SequenceMatcher
-- Single-lock pattern for reduced lock contention
-- Analysis cache keyed by `(repo, pr_number, head_sha)` — repeated CI runs are free
+- O(N) collision map via file-to-PR index
+- Analysis cache keyed by `(repo, pr_number, head_sha)`
 
 Benchmarks: <15s for 10 PRs, <45s for 30 PRs, ~92 API calls per analysis.
 
@@ -50,44 +40,51 @@ Benchmarks: <15s for 10 PRs, <45s for 30 PRs, ~92 API calls per analysis.
 
 ## Code Quality
 
-- 256 tests (unit + integration + edge cases + concurrency + error recovery)
-- All Pydantic V2 models with strict validation
-- Logging in all key modules (`engine.py`, `github_client.py`, `conflict.py`, `dependency.py`, `diff_parser.py`)
-- Named constants for all scoring parameters (no magic numbers)
-- `_enrich_pr` decomposed into focused helpers
+- 695+ tests (unit + integration + edge cases + concurrency + error recovery)
+- 72% coverage with CI enforcement (65% threshold)
+- Transitive conflict detection overhauled (59-82% false positive reduction)
+- Benchmarked against FastAPI and LangChain with published results
+
+---
+
+## Scope Changes in V1
+
+- Secret scanning demoted to opt-in (`--secrets` flag or `secrets.enabled: true`)
+- `scan-secrets` command hidden from default CLI help
+- README rewritten for clear value proposition
 
 ---
 
 ## Documentation
 
 - [x] `docs/testing-strategy.md` test counts updated
-- [x] `docs/code-audit.md` reflects all fixes
 - [x] `docs/getting-started.md` installation instructions accurate
-- [x] `docs/configuration.md` lists all config options
+- [x] `docs/configuration.md` lists all config options and opt-in secrets
 - [x] `README.md` feature list current
+- [x] `ROADMAP.md` V1 entry added
+- [x] `CHANGELOG.md` V1 section complete
 
 ---
 
 ## Build & Publish
 
-- [x] Version in `pyproject.toml` is correct (`0.1.0`)
-- [x] `uv build` succeeds
-- [x] Package installs cleanly: `pip install dist/py_mergeguard-0.1.0-py3-none-any.whl`
-- [x] Entry point works: `mergeguard --version` shows `0.1.0`
-- [x] `uv publish` to PyPI (published as `py-mergeguard`)
+- [ ] Version in `pyproject.toml` is `1.0.0`
+- [ ] `uv build` succeeds
+- [ ] Package installs cleanly
+- [ ] Entry point works: `mergeguard --version` shows `1.0.0`
+- [ ] `uv publish` to PyPI
 
 ---
 
 ## Post-Release
 
-- [x] Tag release: `git tag v0.1.0 && git push --tags`
-- [x] Create GitHub release with changelog
-- [x] Verify `pip install py-mergeguard` works from PyPI
-- [x] Run smoke test against mlflow/mlflow (PR #21273 analyzed successfully)
+- [ ] Tag release: `git tag v1.0.0 && git push --tags`
+- [ ] Create GitHub release with changelog
+- [ ] Verify `pip install py-mergeguard` works from PyPI
 
 ---
 
-## Known Limitations (v0.5.0)
+## Known Limitations (v1.0.0)
 
 - Bitbucket Cloud does not support labels (no-ops gracefully)
 - Redis queue backend for webhook server is experimental

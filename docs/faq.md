@@ -85,6 +85,8 @@ The MCP (Model Context Protocol) server lets AI agents like Claude query MergeGu
 
 MergeGuard scans only added lines in PR diffs using 15 builtin regex patterns (AWS keys, GitHub PATs, Slack tokens, etc.) plus custom patterns you define. Findings are surfaced as CRITICAL conflicts with inline annotations on the exact lines. Secret values are automatically redacted in all reports.
 
+Note: Secret scanning is opt-in. Enable with `--secrets` flag or `secrets.enabled: true` in `.mergeguard.yml`.
+
 ### What are stacked PRs?
 
 Stacked PRs are PRs that build on each other (PR B is based on PR A's branch). MergeGuard detects stacks via branch chains, labels, or Graphite metadata and automatically demotes intra-stack conflicts to INFO since they're expected.
