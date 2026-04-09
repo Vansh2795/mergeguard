@@ -9,6 +9,7 @@ import pytest
 
 from mergeguard.models import (
     ChangedFile,
+    ChangedSymbol,
     Conflict,
     ConflictReport,
     ConflictSeverity,
@@ -21,6 +22,31 @@ from mergeguard.models import (
     Symbol,
     SymbolType,
 )
+
+
+def make_test_pr(
+    number: int,
+    files: list[str],
+    symbols: list[ChangedSymbol] | None = None,
+) -> PRInfo:
+    """Create a minimal PRInfo for testing with changed files and optional symbols."""
+    pr = PRInfo(
+        number=number,
+        title=f"PR {number}",
+        author="dev",
+        base_branch="main",
+        head_branch=f"branch-{number}",
+        head_sha=f"sha{number}",
+        created_at=datetime(2026, 1, 1),
+        updated_at=datetime(2026, 1, 1),
+    )
+    pr.changed_files = [
+        ChangedFile(path=f, status=FileChangeStatus.MODIFIED, additions=5, deletions=2)
+        for f in files
+    ]
+    if symbols is not None:
+        pr.changed_symbols = symbols
+    return pr
 
 
 @pytest.fixture(autouse=True)

@@ -6,6 +6,7 @@ import threading
 from datetime import datetime
 from unittest.mock import MagicMock, patch
 
+from conftest import make_test_pr
 from mergeguard.analysis.dependency import DependencyGraph, ImportEdge
 from mergeguard.analysis.diff_parser import DiffHunk, FileDiff
 from mergeguard.core.engine import (
@@ -25,20 +26,6 @@ from mergeguard.models import (
 )
 
 
-def _make_pr(number, files):
-    pr = PRInfo(
-        number=number,
-        title=f"PR {number}",
-        author="dev",
-        base_branch="main",
-        head_branch=f"branch-{number}",
-        head_sha=f"sha{number}",
-        created_at=datetime(2026, 1, 1),
-        updated_at=datetime(2026, 1, 1),
-    )
-    pr.changed_files = [ChangedFile(path=f, status=FileChangeStatus.MODIFIED) for f in files]
-    return pr
-
 
 class TestModuleSuffixMatching:
     """P2: _compute_dependency_depth should try all module name suffixes."""
@@ -48,7 +35,7 @@ class TestModuleSuffixMatching:
 
         The prefix doesn't match the import module name.
         """
-        pr = _make_pr(1, ["libs/partners/openai/langchain_openai/chat_models/base.py"])
+        pr = make_test_pr(1, ["libs/partners/openai/langchain_openai/chat_models/base.py"])
 
         # Mock a dependency graph whose _reverse dict uses short module names
         mock_graph = MagicMock()
@@ -78,7 +65,7 @@ class TestModuleSuffixMatching:
 
     def test_full_path_no_match_but_suffix_matches(self):
         """The full dotted path doesn't match, but a suffix does."""
-        pr = _make_pr(1, ["src/mypackage/utils.py"])
+        pr = make_test_pr(1, ["src/mypackage/utils.py"])
 
         mock_graph = MagicMock()
 
@@ -198,7 +185,7 @@ class TestPatternDeviation:
         ]
         engine = self._make_engine(base_symbols)
 
-        pr = _make_pr(1, ["src/core.py"])
+        pr = make_test_pr(1, ["src/core.py"])
         pr.changed_symbols = [
             ChangedSymbol(
                 symbol=Symbol(
@@ -234,7 +221,7 @@ class TestPatternDeviation:
         ]
         engine = self._make_engine(base_symbols)
 
-        pr = _make_pr(1, ["src/core.py"])
+        pr = make_test_pr(1, ["src/core.py"])
         pr.changed_symbols = [
             ChangedSymbol(
                 symbol=Symbol(
@@ -305,7 +292,7 @@ class TestEnrichPRRobustness:
         large_content = "x" * 600_000
         engine._get_file_content_cached = MagicMock(return_value=large_content)
 
-        pr = _make_pr(1, ["src/big.py"])
+        pr = make_test_pr(1, ["src/big.py"])
         pr.changed_files[0].patch = "@@ -1,3 +1,3 @@\n-old\n+new"
         engine._enrich_pr(pr)
         assert "src/big.py" in pr.skipped_files
@@ -316,7 +303,7 @@ class TestEnrichPRRobustness:
         binary_content = "header\x00binary_data"
         engine._get_file_content_cached = MagicMock(return_value=binary_content)
 
-        pr = _make_pr(1, ["src/data.bin"])
+        pr = make_test_pr(1, ["src/data.bin"])
         pr.changed_files[0].patch = "@@ -1,3 +1,3 @@\n-old\n+new"
         engine._enrich_pr(pr)
         assert "src/data.bin" in pr.skipped_files
@@ -326,7 +313,7 @@ class TestEnrichPRRobustness:
         engine = self._make_engine()
         engine._get_file_content_cached = MagicMock(return_value="content")
 
-        pr = _make_pr(1, ["src/removed.py"])
+        pr = make_test_pr(1, ["src/removed.py"])
         pr.changed_files[0].status = FileChangeStatus.REMOVED
         pr.changed_files[0].patch = "@@ -1,3 +0,0 @@\n-old"
         engine._enrich_pr(pr)
@@ -368,7 +355,7 @@ class TestTransitiveConflictDetection:
         Expect 1 TRANSITIVE INFO (no specific symbol overlap).
         """
         engine = self._make_engine()
-        target = _make_pr(1, ["src/models.py"])
+        target = make_test_pr(1, ["src/models.py"])
         target.changed_symbols = [
             ChangedSymbol(
                 symbol=Symbol(
@@ -382,7 +369,7 @@ class TestTransitiveConflictDetection:
                 diff_lines=(1, 10),
             ),
         ]
-        other = _make_pr(2, ["src/views.py"])
+        other = make_test_pr(2, ["src/views.py"])
 
         # views.py imports src.models (stored as dotted module name)
         graph = self._make_graph([("src/views.py", "src.models")])
@@ -401,8 +388,8 @@ class TestTransitiveConflictDetection:
     def test_no_transitive_when_no_dependency(self):
         """Two PRs modify unrelated files — no transitive conflicts."""
         engine = self._make_engine()
-        target = _make_pr(1, ["src/auth.py"])
-        other = _make_pr(2, ["src/logging.py"])
+        target = make_test_pr(1, ["src/auth.py"])
+        other = make_test_pr(2, ["src/logging.py"])
 
         graph = self._make_graph([])
 
@@ -414,8 +401,8 @@ class TestTransitiveConflictDetection:
     def test_skipped_when_direct_conflict_exists(self):
         """PRs already have a HARD conflict — no redundant transitive."""
         engine = self._make_engine()
-        target = _make_pr(1, ["src/models.py"])
-        other = _make_pr(2, ["src/views.py"])
+        target = make_test_pr(1, ["src/models.py"])
+        other = make_test_pr(2, ["src/views.py"])
 
         graph = self._make_graph([("src/views.py", "src.models")])
 
@@ -439,8 +426,8 @@ class TestTransitiveConflictDetection:
     def test_via_module_name_form(self):
         """Import uses dotted module name, file uses path — still detected."""
         engine = self._make_engine()
-        target = _make_pr(1, ["src/mergeguard/core/models.py"])
-        other = _make_pr(2, ["src/views.py"])
+        target = make_test_pr(1, ["src/mergeguard/core/models.py"])
+        other = make_test_pr(2, ["src/views.py"])
 
         # views.py imports "mergeguard.core.models" — the reverse edge is keyed
         # by the dotted name, not the file path
@@ -462,8 +449,8 @@ class TestTransitiveConflictDetection:
         engine._config.secrets.enabled = False
         engine._config.check_regressions = False
 
-        target = _make_pr(1, ["src/models.py"])
-        other = _make_pr(2, ["src/views.py"])
+        target = make_test_pr(1, ["src/models.py"])
+        other = make_test_pr(2, ["src/views.py"])
 
         graph = self._make_graph([("src/views.py", "src.models")])
 
@@ -481,8 +468,8 @@ class TestTransitiveConflictDetection:
     def test_empty_graph(self):
         """No imports — no transitive conflicts."""
         engine = self._make_engine()
-        target = _make_pr(1, ["src/a.py"])
-        other = _make_pr(2, ["src/b.py"])
+        target = make_test_pr(1, ["src/a.py"])
+        other = make_test_pr(2, ["src/b.py"])
 
         graph = DependencyGraph()
 
@@ -494,10 +481,10 @@ class TestTransitiveConflictDetection:
     def test_multiple_dependents(self):
         """One utility file has dependents across 3 PRs — 3 transitive conflicts."""
         engine = self._make_engine()
-        target = _make_pr(1, ["src/utils.py"])
-        pr2 = _make_pr(2, ["src/a.py"])
-        pr3 = _make_pr(3, ["src/b.py"])
-        pr4 = _make_pr(4, ["src/c.py"])
+        target = make_test_pr(1, ["src/utils.py"])
+        pr2 = make_test_pr(2, ["src/a.py"])
+        pr3 = make_test_pr(3, ["src/b.py"])
+        pr4 = make_test_pr(4, ["src/c.py"])
 
         graph = self._make_graph(
             [
@@ -520,8 +507,8 @@ class TestTransitiveConflictDetection:
         Other modifies models.py -- detected via reverse check.
         """
         engine = self._make_engine()
-        target = _make_pr(1, ["src/views.py"])
-        other = _make_pr(2, ["src/models.py"])
+        target = make_test_pr(1, ["src/views.py"])
+        other = make_test_pr(2, ["src/models.py"])
         other.changed_symbols = [
             ChangedSymbol(
                 symbol=Symbol(
@@ -553,8 +540,8 @@ class TestTransitiveConflictDetection:
     def test_no_duplicate_when_both_directions(self):
         """Graph has edges in both directions between PR files — only 1 conflict, not 2."""
         engine = self._make_engine()
-        target = _make_pr(1, ["src/a.py"])
-        other = _make_pr(2, ["src/b.py"])
+        target = make_test_pr(1, ["src/a.py"])
+        other = make_test_pr(2, ["src/b.py"])
 
         # a.py imports b and b imports a — both directions have a dependency
         graph = self._make_graph(
@@ -578,8 +565,8 @@ class TestTransitiveConflictDetection:
         """
         engine = self._make_engine()
         engine._config.max_transitive_depth = 2
-        target = _make_pr(1, ["src/c.py"])
-        other = _make_pr(2, ["src/a.py"])
+        target = make_test_pr(1, ["src/c.py"])
+        other = make_test_pr(2, ["src/a.py"])
 
         # a.py imports src/b.py, b.py imports src/c.py
         # BFS from src/c.py: reverse[src/c.py] = {src/b.py}, reverse[src/b.py] = {src/a.py}
@@ -599,7 +586,7 @@ class TestTransitiveConflictDetection:
     def test_transitive_description_includes_imported_symbols(self):
         """Description cross-references imported names with changed symbols."""
         engine = self._make_engine()
-        target = _make_pr(1, ["src/models.py"])
+        target = make_test_pr(1, ["src/models.py"])
         target.changed_symbols = [
             ChangedSymbol(
                 symbol=Symbol(
@@ -624,7 +611,7 @@ class TestTransitiveConflictDetection:
                 diff_lines=(20, 30),
             ),
         ]
-        other = _make_pr(2, ["src/views.py"])
+        other = make_test_pr(2, ["src/views.py"])
 
         # views.py imports User from src.models
         graph = self._make_graph(
@@ -651,7 +638,7 @@ class TestTransitiveConflictDetection:
     def test_transitive_description_fallback_no_imported_names(self):
         """When graph edge has no imported names, description still lists changed symbols."""
         engine = self._make_engine()
-        target = _make_pr(1, ["src/models.py"])
+        target = make_test_pr(1, ["src/models.py"])
         target.changed_symbols = [
             ChangedSymbol(
                 symbol=Symbol(
@@ -665,7 +652,7 @@ class TestTransitiveConflictDetection:
                 diff_lines=(1, 10),
             ),
         ]
-        other = _make_pr(2, ["src/views.py"])
+        other = make_test_pr(2, ["src/views.py"])
 
         # views.py imports src.models but without specific names (bare import edge)
         graph = self._make_graph([("src/views.py", "src.models")])
@@ -687,7 +674,7 @@ class TestTransitiveConflictDetection:
     def test_transitive_without_symbol_overlap_is_info(self):
         """When imported symbols don't overlap with changed symbols, severity is INFO."""
         engine = self._make_engine()
-        target = _make_pr(1, ["src/models.py"])
+        target = make_test_pr(1, ["src/models.py"])
         target.changed_symbols = [
             ChangedSymbol(
                 symbol=Symbol(
@@ -701,7 +688,7 @@ class TestTransitiveConflictDetection:
                 diff_lines=(1, 10),
             ),
         ]
-        other = _make_pr(2, ["src/views.py"])
+        other = make_test_pr(2, ["src/views.py"])
 
         # views.py imports User from src.models — but Admin changed, not User
         graph = self._make_graph([("src/views.py", "src.models", ["User"])])
@@ -715,7 +702,7 @@ class TestTransitiveConflictDetection:
     def test_transitive_with_symbol_overlap_is_warning(self):
         """When imported symbols overlap with changed symbols, severity is WARNING."""
         engine = self._make_engine()
-        target = _make_pr(1, ["src/models.py"])
+        target = make_test_pr(1, ["src/models.py"])
         target.changed_symbols = [
             ChangedSymbol(
                 symbol=Symbol(
@@ -729,7 +716,7 @@ class TestTransitiveConflictDetection:
                 diff_lines=(1, 10),
             ),
         ]
-        other = _make_pr(2, ["src/views.py"])
+        other = make_test_pr(2, ["src/views.py"])
 
         # views.py imports User from src.models — and User changed
         graph = self._make_graph([("src/views.py", "src.models", ["User"])])
@@ -779,7 +766,7 @@ class TestBuildChangedSymbols:
         ]
         engine._get_file_content_cached = MagicMock(return_value="head content")
 
-        pr = _make_pr(1, ["test.py"])
+        pr = make_test_pr(1, ["test.py"])
         changed_file = pr.changed_files[0]
 
         # Diff adds lines 10-15 in HEAD (where new_func is)
@@ -829,7 +816,7 @@ class TestBuildChangedSymbols:
         ]
         engine._get_file_content_cached = MagicMock(return_value="head content")
 
-        pr = _make_pr(1, ["test.py"])
+        pr = make_test_pr(1, ["test.py"])
         changed_file = pr.changed_files[0]
 
         file_diff = FileDiff(
@@ -876,7 +863,7 @@ class TestBuildChangedSymbols:
         ]
         engine._get_file_content_cached = MagicMock(return_value="head content")
 
-        pr = _make_pr(1, ["test.py"])
+        pr = make_test_pr(1, ["test.py"])
         changed_file = pr.changed_files[0]
 
         file_diff = FileDiff(
@@ -921,7 +908,7 @@ class TestBuildChangedSymbols:
         ]
         engine._get_file_content_cached = MagicMock(return_value="head content")
 
-        pr = _make_pr(1, ["test.py"])
+        pr = make_test_pr(1, ["test.py"])
         changed_file = pr.changed_files[0]
 
         file_diff = FileDiff(
@@ -972,7 +959,7 @@ class TestBuildChangedSymbols:
         ]
         engine._get_file_content_cached = MagicMock(return_value="head content")
 
-        pr = _make_pr(1, ["test.py"])
+        pr = make_test_pr(1, ["test.py"])
         changed_file = pr.changed_files[0]
 
         # Diff adds lines 6-9 in HEAD (new_func insertion)
@@ -1019,7 +1006,7 @@ class TestBuildChangedSymbols:
             {"func": {"helper"}},
         )
 
-        pr = _make_pr(1, ["test.py"])
+        pr = make_test_pr(1, ["test.py"])
         pr.is_fork = True
         changed_file = pr.changed_files[0]
 

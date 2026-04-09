@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from conftest import make_test_pr
 from mergeguard.core.conflict import (
     FileOverlap,
     _get_modified_ranges,
@@ -24,45 +25,30 @@ from mergeguard.models import (
 )
 
 
-def make_pr(number, files, symbols=None):
-    pr = PRInfo(
-        number=number,
-        title=f"PR {number}",
-        author="dev",
-        base_branch="main",
-        head_branch=f"branch-{number}",
-        head_sha=f"sha{number}",
-        created_at=datetime(2026, 1, 1),
-        updated_at=datetime(2026, 1, 1),
-    )
-    pr.changed_files = [ChangedFile(path=f, status=FileChangeStatus.MODIFIED) for f in files]
-    pr.changed_symbols = symbols or []
-    return pr
-
 
 class TestComputeFileOverlaps:
     def test_no_overlap(self):
-        pr_a = make_pr(1, ["a.py", "b.py"])
-        pr_b = make_pr(2, ["c.py", "d.py"])
+        pr_a = make_test_pr(1, ["a.py", "b.py"])
+        pr_b = make_test_pr(2, ["c.py", "d.py"])
         overlaps = compute_file_overlaps(pr_a, [pr_b])
         assert len(overlaps) == 0
 
     def test_single_file_overlap(self):
-        pr_a = make_pr(1, ["a.py", "shared.py"])
-        pr_b = make_pr(2, ["shared.py", "c.py"])
+        pr_a = make_test_pr(1, ["a.py", "shared.py"])
+        pr_b = make_test_pr(2, ["shared.py", "c.py"])
         overlaps = compute_file_overlaps(pr_a, [pr_b])
         assert 2 in overlaps
         assert len(overlaps[2]) == 1
         assert overlaps[2][0].file_path == "shared.py"
 
     def test_skip_same_pr(self):
-        pr = make_pr(1, ["a.py"])
+        pr = make_test_pr(1, ["a.py"])
         overlaps = compute_file_overlaps(pr, [pr])
         assert len(overlaps) == 0
 
     def test_multiple_overlaps(self):
-        pr_a = make_pr(1, ["a.py", "b.py", "c.py"])
-        pr_b = make_pr(2, ["a.py", "b.py", "d.py"])
+        pr_a = make_test_pr(1, ["a.py", "b.py", "c.py"])
+        pr_b = make_test_pr(2, ["a.py", "b.py", "d.py"])
         overlaps = compute_file_overlaps(pr_a, [pr_b])
         assert len(overlaps[2]) == 2
 
@@ -129,8 +115,8 @@ class TestDuplicationConflicts:
             file_path="src/handler.py",
             signature="def process_user_data(user, data)",
         )
-        pr_a = make_pr(1, ["src/utils.py"], symbols=[sym_a])
-        pr_b = make_pr(2, ["src/handler.py"], symbols=[sym_b])
+        pr_a = make_test_pr(1, ["src/utils.py"], symbols=[sym_a])
+        pr_b = make_test_pr(2, ["src/handler.py"], symbols=[sym_b])
 
         # No file overlap needed — duplication is symbol-level
         overlaps = [
@@ -157,8 +143,8 @@ class TestDuplicationConflicts:
             file_path="src/notifier.py",
             signature="def send_email_notification(to, subject, body)",
         )
-        pr_a = make_pr(1, ["src/utils.py"], symbols=[sym_a])
-        pr_b = make_pr(2, ["src/notifier.py"], symbols=[sym_b])
+        pr_a = make_test_pr(1, ["src/utils.py"], symbols=[sym_a])
+        pr_b = make_test_pr(2, ["src/notifier.py"], symbols=[sym_b])
 
         overlaps = [
             FileOverlap(
@@ -175,8 +161,8 @@ class TestDuplicationConflicts:
 
     def test_no_duplication_when_no_symbols(self):
         """No symbols means no duplication conflicts."""
-        pr_a = make_pr(1, ["src/a.py"])
-        pr_b = make_pr(2, ["src/b.py"])
+        pr_a = make_test_pr(1, ["src/a.py"])
+        pr_b = make_test_pr(2, ["src/b.py"])
         overlaps = [
             FileOverlap(
                 file_path="src/shared.py",
@@ -209,7 +195,7 @@ class TestGetModifiedRanges:
         """When multiple symbols are changed in the same file, all ranges should be returned."""
         sym_a = self._make_symbol("func_a", "shared.py", 1, 10, (1, 10))
         sym_b = self._make_symbol("func_b", "shared.py", 20, 30, (20, 30))
-        pr = make_pr(1, ["shared.py"], symbols=[sym_a, sym_b])
+        pr = make_test_pr(1, ["shared.py"], symbols=[sym_a, sym_b])
 
         ranges = _get_modified_ranges(pr, "shared.py")
         assert len(ranges) == 2
@@ -219,14 +205,14 @@ class TestGetModifiedRanges:
     def test_get_modified_ranges_single_symbol(self):
         """Single symbol should still return its range."""
         sym = self._make_symbol("func_a", "file.py", 5, 15, (5, 15))
-        pr = make_pr(1, ["file.py"], symbols=[sym])
+        pr = make_test_pr(1, ["file.py"], symbols=[sym])
 
         ranges = _get_modified_ranges(pr, "file.py")
         assert ranges == [(5, 15)]
 
     def test_get_modified_ranges_no_symbols(self):
         """No matching symbols should fall back to raw diff data."""
-        pr = make_pr(1, ["other.py"])
+        pr = make_test_pr(1, ["other.py"])
         ranges = _get_modified_ranges(pr, "other.py")
         # No patch data either, so empty
         assert ranges == []
@@ -303,8 +289,8 @@ class TestTestFileSeverityDowngrade:
         """Hard conflict with shared symbols in source file -> CRITICAL."""
         sym_a = self._make_changed_symbol("func", "src/core.py")
         sym_b = self._make_changed_symbol("func", "src/core.py")
-        pr_a = make_pr(1, ["src/core.py"], symbols=[sym_a])
-        pr_b = make_pr(2, ["src/core.py"], symbols=[sym_b])
+        pr_a = make_test_pr(1, ["src/core.py"], symbols=[sym_a])
+        pr_b = make_test_pr(2, ["src/core.py"], symbols=[sym_b])
         overlaps = [
             FileOverlap(
                 file_path="src/core.py",
@@ -323,8 +309,8 @@ class TestTestFileSeverityDowngrade:
         """Hard conflict with shared symbols in test file -> WARNING (downgraded from CRITICAL)."""
         sym_a = self._make_changed_symbol("test_func", "tests/test_core.py")
         sym_b = self._make_changed_symbol("test_func", "tests/test_core.py")
-        pr_a = make_pr(1, ["tests/test_core.py"], symbols=[sym_a])
-        pr_b = make_pr(2, ["tests/test_core.py"], symbols=[sym_b])
+        pr_a = make_test_pr(1, ["tests/test_core.py"], symbols=[sym_a])
+        pr_b = make_test_pr(2, ["tests/test_core.py"], symbols=[sym_b])
         overlaps = [
             FileOverlap(
                 file_path="tests/test_core.py",
@@ -341,8 +327,8 @@ class TestTestFileSeverityDowngrade:
 
     def test_hard_no_symbols_source_warning(self):
         """Hard conflict without shared symbols in source file -> WARNING."""
-        pr_a = make_pr(1, ["src/core.py"])
-        pr_b = make_pr(2, ["src/core.py"])
+        pr_a = make_test_pr(1, ["src/core.py"])
+        pr_b = make_test_pr(2, ["src/core.py"])
         overlaps = [
             FileOverlap(
                 file_path="src/core.py",
@@ -359,8 +345,8 @@ class TestTestFileSeverityDowngrade:
 
     def test_hard_no_symbols_test_info(self):
         """Hard conflict without shared symbols in test file -> INFO (downgraded from WARNING)."""
-        pr_a = make_pr(1, ["tests/test_core.py"])
-        pr_b = make_pr(2, ["tests/test_core.py"])
+        pr_a = make_test_pr(1, ["tests/test_core.py"])
+        pr_b = make_test_pr(2, ["tests/test_core.py"])
         overlaps = [
             FileOverlap(
                 file_path="tests/test_core.py",
@@ -385,8 +371,8 @@ class TestTestFileSeverityDowngrade:
         sym_b = self._make_changed_symbol(
             "func", "src/core.py", start=20, end=30, diff_lines=(20, 30)
         )
-        pr_a = make_pr(1, ["src/core.py"], symbols=[sym_a])
-        pr_b = make_pr(2, ["src/core.py"], symbols=[sym_b])
+        pr_a = make_test_pr(1, ["src/core.py"], symbols=[sym_a])
+        pr_b = make_test_pr(2, ["src/core.py"], symbols=[sym_b])
         overlaps = [
             FileOverlap(
                 file_path="src/core.py",
@@ -409,8 +395,8 @@ class TestTestFileSeverityDowngrade:
         sym_b = self._make_changed_symbol(
             "test_func", "tests/test_core.py", start=20, end=30, diff_lines=(20, 30)
         )
-        pr_a = make_pr(1, ["tests/test_core.py"], symbols=[sym_a])
-        pr_b = make_pr(2, ["tests/test_core.py"], symbols=[sym_b])
+        pr_a = make_test_pr(1, ["tests/test_core.py"], symbols=[sym_a])
+        pr_b = make_test_pr(2, ["tests/test_core.py"], symbols=[sym_b])
         overlaps = [
             FileOverlap(
                 file_path="tests/test_core.py",
@@ -472,8 +458,8 @@ class TestCallerCalleeBehavioralConflict:
             end=30,
             diff_lines=(20, 30),
         )
-        pr_a = make_pr(1, ["src/core.py"], symbols=[sym_a])
-        pr_b = make_pr(2, ["src/core.py"], symbols=[sym_b])
+        pr_a = make_test_pr(1, ["src/core.py"], symbols=[sym_a])
+        pr_b = make_test_pr(2, ["src/core.py"], symbols=[sym_b])
         overlaps = [
             FileOverlap(
                 file_path="src/core.py",
@@ -508,8 +494,8 @@ class TestCallerCalleeBehavioralConflict:
             diff_lines=(20, 30),
             change_type="modified_signature",
         )
-        pr_a = make_pr(1, ["src/core.py"], symbols=[sym_a])
-        pr_b = make_pr(2, ["src/core.py"], symbols=[sym_b])
+        pr_a = make_test_pr(1, ["src/core.py"], symbols=[sym_a])
+        pr_b = make_test_pr(2, ["src/core.py"], symbols=[sym_b])
         overlaps = [
             FileOverlap(
                 file_path="src/core.py",
@@ -545,8 +531,8 @@ class TestCallerCalleeBehavioralConflict:
             end=30,
             diff_lines=(20, 30),
         )
-        pr_a = make_pr(1, ["tests/test_core.py"], symbols=[sym_a])
-        pr_b = make_pr(2, ["tests/test_core.py"], symbols=[sym_b])
+        pr_a = make_test_pr(1, ["tests/test_core.py"], symbols=[sym_a])
+        pr_b = make_test_pr(2, ["tests/test_core.py"], symbols=[sym_b])
         overlaps = [
             FileOverlap(
                 file_path="tests/test_core.py",
@@ -583,8 +569,8 @@ class TestCallerCalleeBehavioralConflict:
             diff_lines=(20, 30),
             deps=[],
         )
-        pr_a = make_pr(1, ["src/core.py"], symbols=[sym_a])
-        pr_b = make_pr(2, ["src/core.py"], symbols=[sym_b])
+        pr_a = make_test_pr(1, ["src/core.py"], symbols=[sym_a])
+        pr_b = make_test_pr(2, ["src/core.py"], symbols=[sym_b])
         overlaps = [
             FileOverlap(
                 file_path="src/core.py",
@@ -620,8 +606,8 @@ class TestCallerCalleeBehavioralConflict:
             diff_lines=(20, 30),
             deps=["foo"],
         )
-        pr_a = make_pr(1, ["src/core.py"], symbols=[sym_a])
-        pr_b = make_pr(2, ["src/core.py"], symbols=[sym_b])
+        pr_a = make_test_pr(1, ["src/core.py"], symbols=[sym_a])
+        pr_b = make_test_pr(2, ["src/core.py"], symbols=[sym_b])
         overlaps = [
             FileOverlap(
                 file_path="src/core.py",
@@ -843,8 +829,8 @@ class TestSkipSameFileSameNameDuplication:
         """Two PRs modifying the same function in the same file should not trigger duplication."""
         sym_a = self._make_changed_symbol("_generate", "src/chat/base.py")
         sym_b = self._make_changed_symbol("_generate", "src/chat/base.py")
-        pr_a = make_pr(1, ["src/chat/base.py"], symbols=[sym_a])
-        pr_b = make_pr(2, ["src/chat/base.py"], symbols=[sym_b])
+        pr_a = make_test_pr(1, ["src/chat/base.py"], symbols=[sym_a])
+        pr_b = make_test_pr(2, ["src/chat/base.py"], symbols=[sym_b])
         overlaps = [
             FileOverlap(
                 file_path="src/chat/base.py",
@@ -862,8 +848,8 @@ class TestSkipSameFileSameNameDuplication:
         """Same name in different files should still trigger duplication (when added)."""
         sym_a = self._make_changed_symbol("process_data", "src/a.py", change_type="added")
         sym_b = self._make_changed_symbol("process_data", "src/b.py", change_type="added")
-        pr_a = make_pr(1, ["src/a.py"], symbols=[sym_a])
-        pr_b = make_pr(2, ["src/b.py"], symbols=[sym_b])
+        pr_a = make_test_pr(1, ["src/a.py"], symbols=[sym_a])
+        pr_b = make_test_pr(2, ["src/b.py"], symbols=[sym_b])
         overlaps = [
             FileOverlap(
                 file_path="src/shared.py",
@@ -881,8 +867,8 @@ class TestSkipSameFileSameNameDuplication:
         """Both sides modify existing code in different files -> no duplication."""
         sym_a = self._make_changed_symbol("_generate", "src/a.py", change_type="modified_body")
         sym_b = self._make_changed_symbol("_generate", "src/b.py", change_type="modified_body")
-        pr_a = make_pr(1, ["src/a.py"], symbols=[sym_a])
-        pr_b = make_pr(2, ["src/b.py"], symbols=[sym_b])
+        pr_a = make_test_pr(1, ["src/a.py"], symbols=[sym_a])
+        pr_b = make_test_pr(2, ["src/b.py"], symbols=[sym_b])
         overlaps = [
             FileOverlap(
                 file_path="src/shared.py",
@@ -900,8 +886,8 @@ class TestSkipSameFileSameNameDuplication:
         """One PR adds, the other modifies -> duplication still fires."""
         sym_a = self._make_changed_symbol("process_data", "src/a.py", change_type="added")
         sym_b = self._make_changed_symbol("process_data", "src/b.py", change_type="modified_body")
-        pr_a = make_pr(1, ["src/a.py"], symbols=[sym_a])
-        pr_b = make_pr(2, ["src/b.py"], symbols=[sym_b])
+        pr_a = make_test_pr(1, ["src/a.py"], symbols=[sym_a])
+        pr_b = make_test_pr(2, ["src/b.py"], symbols=[sym_b])
         overlaps = [
             FileOverlap(
                 file_path="src/shared.py",
@@ -979,8 +965,8 @@ class TestCommentOnlyChange:
             start=20,
             end=30,
         )
-        pr_a = make_pr(1, ["src/core.py"], symbols=[sym_a])
-        pr_b = make_pr(2, ["src/core.py"], symbols=[sym_b])
+        pr_a = make_test_pr(1, ["src/core.py"], symbols=[sym_a])
+        pr_b = make_test_pr(2, ["src/core.py"], symbols=[sym_b])
         overlaps = [
             FileOverlap(
                 file_path="src/core.py",
@@ -1014,8 +1000,8 @@ class TestCommentOnlyChange:
             start=20,
             end=30,
         )
-        pr_a = make_pr(1, ["src/core.py"], symbols=[sym_a])
-        pr_b = make_pr(2, ["src/core.py"], symbols=[sym_b])
+        pr_a = make_test_pr(1, ["src/core.py"], symbols=[sym_a])
+        pr_b = make_test_pr(2, ["src/core.py"], symbols=[sym_b])
         overlaps = [
             FileOverlap(
                 file_path="src/core.py",
@@ -1070,8 +1056,8 @@ class TestClassDemotion:
             end=500,
             diff_lines=(60, 70),
         )
-        pr_a = make_pr(1, ["src/core.py"], symbols=[sym_a])
-        pr_b = make_pr(2, ["src/core.py"], symbols=[sym_b])
+        pr_a = make_test_pr(1, ["src/core.py"], symbols=[sym_a])
+        pr_b = make_test_pr(2, ["src/core.py"], symbols=[sym_b])
         overlaps = [
             FileOverlap(
                 file_path="src/core.py",
@@ -1108,8 +1094,8 @@ class TestClassDemotion:
             end=500,
             diff_lines=(300, 310),
         )
-        pr_a = make_pr(1, ["src/core.py"], symbols=[sym_a])
-        pr_b = make_pr(2, ["src/core.py"], symbols=[sym_b])
+        pr_a = make_test_pr(1, ["src/core.py"], symbols=[sym_a])
+        pr_b = make_test_pr(2, ["src/core.py"], symbols=[sym_b])
         overlaps = [
             FileOverlap(
                 file_path="src/core.py",
@@ -1171,8 +1157,8 @@ class TestClassDemotion:
             change_type="modified_body",
             diff_lines=(130, 140),
         )
-        pr_a = make_pr(1, ["src/core.py"], symbols=[cls_a, method_a])
-        pr_b = make_pr(2, ["src/core.py"], symbols=[cls_b, method_b])
+        pr_a = make_test_pr(1, ["src/core.py"], symbols=[cls_a, method_a])
+        pr_b = make_test_pr(2, ["src/core.py"], symbols=[cls_b, method_b])
         overlaps = [
             FileOverlap(
                 file_path="src/core.py",
@@ -1218,8 +1204,8 @@ class TestClassDemotion:
             diff_lines=(130, 140),
         )
         # Only method is shared — class is NOT in either PR's symbols
-        pr_a = make_pr(1, ["src/core.py"], symbols=[method_a])
-        pr_b = make_pr(2, ["src/core.py"], symbols=[method_b])
+        pr_a = make_test_pr(1, ["src/core.py"], symbols=[method_a])
+        pr_b = make_test_pr(2, ["src/core.py"], symbols=[method_b])
         overlaps = [
             FileOverlap(
                 file_path="src/core.py",
@@ -1266,8 +1252,8 @@ class TestConflictLinePopulation:
             change_type="modified_body",
             diff_lines=(18, 28),
         )
-        pr_a = make_pr(1, ["app.py"], symbols=[sym_a])
-        pr_b = make_pr(2, ["app.py"], symbols=[sym_b])
+        pr_a = make_test_pr(1, ["app.py"], symbols=[sym_a])
+        pr_b = make_test_pr(2, ["app.py"], symbols=[sym_b])
         overlaps = [
             FileOverlap(
                 file_path="app.py",
@@ -1285,8 +1271,8 @@ class TestConflictLinePopulation:
 
     def test_hard_conflict_file_level_has_lines(self):
         """File-level HARD conflicts (no shared symbols) use FileOverlap lines."""
-        pr_a = make_pr(1, ["app.py"])
-        pr_b = make_pr(2, ["app.py"])
+        pr_a = make_test_pr(1, ["app.py"])
+        pr_b = make_test_pr(2, ["app.py"])
         overlaps = [
             FileOverlap(
                 file_path="app.py",
@@ -1326,8 +1312,8 @@ class TestConflictLinePopulation:
             change_type="modified_body",
             diff_lines=(15, 20),
         )
-        pr_a = make_pr(1, ["calc.py"], symbols=[sym_a])
-        pr_b = make_pr(2, ["calc.py"], symbols=[sym_b])
+        pr_a = make_test_pr(1, ["calc.py"], symbols=[sym_a])
+        pr_b = make_test_pr(2, ["calc.py"], symbols=[sym_b])
         overlaps = [
             FileOverlap(
                 file_path="calc.py",
@@ -1369,8 +1355,8 @@ class TestConflictLinePopulation:
             change_type="modified_body",
             diff_lines=(45, 50),
         )
-        pr_a = make_pr(1, ["users.py"], symbols=[sig_change])
-        pr_b = make_pr(2, ["profile.py"], symbols=[caller])
+        pr_a = make_test_pr(1, ["users.py"], symbols=[sig_change])
+        pr_b = make_test_pr(2, ["profile.py"], symbols=[caller])
         conflicts = classify_conflicts(pr_a, pr_b, [])
         interface = [c for c in conflicts if c.conflict_type == ConflictType.INTERFACE]
         assert len(interface) == 1
