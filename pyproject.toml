@@ -5,9 +5,11 @@ description = "Cross-PR intelligence for the agentic coding era"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.12"
+authors = [{ name = "Vansh Bajaj", email = "vansh2795@gmail.com" }]
+maintainers = [{ name = "Vansh Bajaj", email = "vansh2795@gmail.com" }]
 keywords = ["code-review", "pull-request", "ai-code", "git", "developer-tools"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Topic :: Software Development :: Quality Assurance",
     "License :: OSI Approved :: MIT License",
@@ -40,6 +42,12 @@ dev = [
     "respx>=0.22",
     "httpx>=0.28.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/Vansh2795/mergeguard"
+Repository = "https://github.com/Vansh2795/mergeguard.git"
+Issues = "https://github.com/Vansh2795/mergeguard/issues"
+Changelog = "https://github.com/Vansh2795/mergeguard/blob/main/CHANGELOG.md"
 
 [project.scripts]
 mergeguard = "mergeguard.cli:main"
