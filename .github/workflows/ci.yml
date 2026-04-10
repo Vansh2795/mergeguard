@@ -26,4 +26,4 @@ jobs:
           python-version: "3.12"
       - run: uv sync --dev
       - run: uv run pytest --cov=mergeguard --cov-report=xml
-      - uses: codecov/codecov-action@v4
+      - uses: codecov/codecov-action@v6
