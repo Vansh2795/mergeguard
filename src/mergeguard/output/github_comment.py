@@ -188,7 +188,7 @@ def format_report(
     lines.append("---")
     lines.append(
         f"<sub>Analysis completed in {report.analysis_duration_ms}ms | "
-        f"[MergeGuard](https://github.com/mergeguard/mergeguard) v0.1</sub>"
+        f"[MergeGuard](https://github.com/Vansh2795/mergeguard)</sub>"
     )
 
     return "\n".join(lines)

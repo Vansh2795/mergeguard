@@ -60,7 +60,7 @@ Focus: real-time workflows, inline developer experience, and deployment infrastr
 - README rewritten for clear value proposition
 - 695+ tests, 72% coverage with CI enforcement
 
-## v0.6 — Next Horizon (Planned)
+## v1.1 — Next Horizon (Planned)
 
 - :calendar: **Self-hosted runner** — On-prem deployment option
 - :calendar: **AI conflict resolution** — LLM-powered merge conflict resolution suggestions

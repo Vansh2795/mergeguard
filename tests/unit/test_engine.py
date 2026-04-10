@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import sys
 import threading
 from unittest.mock import MagicMock, patch
 
+import pytest
 from conftest import make_test_pr
 
 from mergeguard.analysis.dependency import DependencyGraph, ImportEdge
@@ -239,6 +241,7 @@ class TestPatternDeviation:
 class TestCacheSymlinkRejection:
     """Cache should reject symlinked directories."""
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="Symlinks require admin on Windows")
     def test_symlink_cache_dir_raises(self, tmp_path):
         """AnalysisCache should refuse to use a symlinked directory."""
         import pytest

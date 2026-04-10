@@ -13,7 +13,7 @@ When multiple developers (or AI agents) work on the same codebase simultaneously
 - **Transitive conflicts**: PR A changes a module that PR B depends on through imports
 - **Regressions**: A PR re-introduces something that was recently removed
 - **Guardrail violations**: PRs violate configured rules (import restrictions, complexity limits, forbidden patterns)
-- **Secret exposure**: Accidentally committed API keys, tokens, or private keys
+- **Secret exposure** (opt-in): Accidentally committed API keys, tokens, or private keys
 
 ## Analysis Pipeline
 

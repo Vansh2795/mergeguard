@@ -7,6 +7,7 @@ custom dashboards, and programmatic consumption.
 from __future__ import annotations
 
 import os
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -57,9 +58,8 @@ def write_github_action_outputs(report: ConflictReport) -> None:
             ("score", f"{report.risk_score:.0f}"),
             ("conflicts", str(len(report.conflicts))),
         ]:
-            fd = os.open(
-                f"/tmp/mergeguard-{name}.txt", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600
-            )
+            fallback = os.path.join(tempfile.gettempdir(), f"mergeguard-{name}.txt")
+            fd = os.open(fallback, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
             with os.fdopen(fd, "w") as f:
                 f.write(value)
 

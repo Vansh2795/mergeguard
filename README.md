@@ -114,7 +114,7 @@ Tested against real open-source repos. Transitive accuracy improvements reduced 
 - [Configuration](docs/configuration.md)
 - [Architecture](docs/architecture.md)
 - [Benchmark Results](benchmarks/BENCHMARKS.md)
-- [Contributing](docs/contributing.md)
+- [Contributing](CONTRIBUTING.md)
 - [Changelog](CHANGELOG.md)
 
 ## Also Included

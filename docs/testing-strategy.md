@@ -2,7 +2,7 @@
 
 > **Target repo:** `langchain-ai/langchain`
 > **Purpose:** Test MergeGuard against a real, large-scale open-source repository before public launch.
-> **Status:** 256 unit/integration tests pass offline. Live-repo runs verified (langchain PR #35457, mlflow PR #21273 analyzed successfully).
+> **Status:** 695+ unit/integration tests pass offline. Live-repo runs verified (langchain PR #35457, mlflow PR #21273 analyzed successfully).
 
 ---
 
@@ -155,7 +155,7 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 ### Verification
 
 ```bash
-# All 256 existing tests must pass before proceeding
+# All existing tests must pass before proceeding
 uv run pytest -v
 
 # Expected output:
@@ -178,7 +178,7 @@ uv run pytest -v
 # tests/unit/test_symbol_index.py .......                [ 85%]
 # tests/integration/test_engine_e2e.py ..................[ 95%]
 # tests/integration/test_github_client.py ............   [100%]
-# 256 passed in 0.XXs
+# 695 passed in X.XXs
 ```
 
 ---
@@ -400,7 +400,7 @@ class TestLangChainE2E:
 
 | Metric | Target | Status |
 |--------|--------|--------|
-| Unit test pass rate | 100% (256/256) | **Achieved** |
+| Unit test pass rate | 100% (695+) | **Achieved** |
 | Integration fixture pass rate | 100% | All recorded scenarios pass |
 | Live API fetch tests | 3/3 pass | Fetch PRs, files, content |
 | E2E `analyze` completion | Exit code 0 | **Achieved** — langchain PR #35457 |

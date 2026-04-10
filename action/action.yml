@@ -12,6 +12,9 @@ inputs:
   risk-threshold:
     description: "Only comment if risk score exceeds this value (0-100)"
     default: "0"
+  fail-on-risk:
+    description: "Fail the check when risk exceeds threshold"
+    default: "false"
   max-open-prs:
     description: "Maximum number of open PRs to analyze (safety cap)"
     default: "200"
@@ -52,6 +55,7 @@ runs:
     MERGEGUARD_GITHUB_URL: ${{ inputs.github-url }}
     MERGEGUARD_MERGE_QUEUE: ${{ inputs.merge-queue }}
     MERGEGUARD_BLOCK_SEVERITY: ${{ inputs.block-severity }}
+    MERGEGUARD_FAIL_ON_RISK: ${{ inputs.fail-on-risk }}
 
 branding:
   icon: "shield"
