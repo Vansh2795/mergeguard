@@ -20,3 +20,5 @@ coverage.xml
 # Claude Code
 .claude/
 CLAUDE.md
+benchmarks/results/
+benchmarks/fixtures/
