@@ -203,7 +203,8 @@ def run_offline(verify: bool = False) -> None:
                 for c in report.conflicts:
                     types[c.conflict_type.value] = types.get(c.conflict_type.value, 0) + 1
 
-                print(f"  PR #{pr_num}: {n} conflicts, risk={report.risk_score:.0f}, {elapsed:.1f}s")
+                risk = report.risk_score
+                print(f"  PR #{pr_num}: {n} conflicts, risk={risk:.0f}, {elapsed:.1f}s")
                 print(f"    Types: {types}")
 
                 results.append(

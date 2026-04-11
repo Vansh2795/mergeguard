@@ -7,10 +7,12 @@ implementing the SCMClient protocol with zero API calls.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from mergeguard.integrations.protocol import ReviewComment
 from mergeguard.models import ChangedFile, FileChangeStatus, PRInfo
+
+if TYPE_CHECKING:
+    from mergeguard.integrations.protocol import ReviewComment
 
 
 class FileBasedSCMClient:

@@ -8,7 +8,6 @@ import argparse
 import json
 import os
 import sys
-import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -95,7 +94,7 @@ def capture_repo(repo, token, max_prs=10):
                             fixture["file_contents"][key_head] = content_head
 
             # Record baseline: run online analysis
-            print(f"    Running baseline analysis...")
+            print("    Running baseline analysis...")
             try:
                 report = engine.analyze_pr(pr.number)
                 type_counts = {}
@@ -107,7 +106,8 @@ def capture_repo(repo, token, max_prs=10):
                     "risk_score": round(report.risk_score, 1),
                     "conflict_types": type_counts,
                 }
-                print(f"    Baseline: {len(report.conflicts)} conflicts, risk={report.risk_score:.0f}")
+                n = len(report.conflicts)
+                print(f"    Baseline: {n} conflicts, risk={report.risk_score:.0f}")
             except Exception as e:
                 print(f"    Baseline FAILED: {e}")
                 pr_data["baseline"] = None
@@ -117,7 +117,9 @@ def capture_repo(repo, token, max_prs=10):
             # Save progress after each PR (resumable)
             _save_fixture(fixture, repo)
 
-        print(f"\nCapture complete: {len(fixture['prs'])} PRs, {len(fixture['file_contents'])} file contents")
+        n_prs = len(fixture["prs"])
+        n_files = len(fixture["file_contents"])
+        print(f"\nCapture complete: {n_prs} PRs, {n_files} file contents")
         return fixture
     finally:
         client.close()

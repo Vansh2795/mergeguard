@@ -2,18 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from unittest.mock import patch
-
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
 # benchmarks/ is at repo root, not a package in src/
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from benchmarks.file_client import FileBasedSCMClient  # noqa: E402
-
 from mergeguard.models import ConflictType, FileChangeStatus, MergeGuardConfig  # noqa: E402
 
 
@@ -158,8 +155,12 @@ class TestEngineIntegration:
 
         fixture = _make_fixture(
             prs=[
-                _make_pr_data(100, files=[_make_file_data("src/shared.py", patch=patch_a)], head_sha="sha100"),
-                _make_pr_data(101, files=[_make_file_data("src/shared.py", patch=patch_b)], head_sha="sha101"),
+                _make_pr_data(
+                    100, files=[_make_file_data("src/shared.py", patch=patch_a)], head_sha="sha100"
+                ),
+                _make_pr_data(
+                    101, files=[_make_file_data("src/shared.py", patch=patch_b)], head_sha="sha101"
+                ),
             ],
             file_contents={
                 "main:src/shared.py": "def hello():\n    old_line\n    return True\n",
