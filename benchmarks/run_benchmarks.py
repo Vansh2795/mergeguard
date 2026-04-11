@@ -2,12 +2,15 @@
 
 Usage:
     GITHUB_TOKEN=ghp_... python benchmarks/run_benchmarks.py
+    python benchmarks/run_benchmarks.py --offline
+    python benchmarks/run_benchmarks.py --offline --verify-baseline
 
 Writes results to benchmarks/results/
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import sys
@@ -115,7 +118,8 @@ def run_single_repo(repo: str, token: str) -> dict:
         client.close()
 
 
-def main() -> None:
+def run_online() -> None:
+    """Run benchmarks against live GitHub repos. Requires GITHUB_TOKEN."""
     token = os.environ.get("GITHUB_TOKEN")
     if not token:
         print("ERROR: Set GITHUB_TOKEN environment variable")
@@ -150,6 +154,135 @@ def main() -> None:
             prs = r["prs_analyzed"]
             avg = r["avg_analysis_ms"]
             print(f"  {r['repo']}: {prs} PRs, {total} conflicts, avg {avg}ms/PR")
+
+
+def run_offline(verify: bool = False) -> None:
+    """Run benchmarks from captured fixtures. Zero API calls."""
+    from file_client import FileBasedSCMClient  # noqa: PLC0415
+
+    fixtures_dir = Path(__file__).parent / "fixtures"
+    if not fixtures_dir.exists():
+        print("ERROR: No fixtures found. Run capture.py first.")
+        sys.exit(1)
+
+    fixture_files = sorted(fixtures_dir.glob("*.json"))
+    if not fixture_files:
+        print("ERROR: No fixture files in benchmarks/fixtures/")
+        sys.exit(1)
+
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    all_results = []
+    baseline_mismatches: list[str] = []
+
+    for fixture_path in fixture_files:
+        with open(fixture_path) as f:
+            fixture = json.load(f)
+
+        repo = fixture["repo"]
+        print(f"\n{'=' * 60}")
+        print(f"Offline Benchmark: {repo}")
+        print(f"{'=' * 60}")
+        print(f"Fixture: {fixture_path.name} ({len(fixture['prs'])} PRs)")
+
+        client = FileBasedSCMClient(fixture)
+        cfg = load_config()
+        cfg.secrets.enabled = False
+        engine = MergeGuardEngine(config=cfg, client=client)
+
+        results: list[dict] = []
+        for pr_data in fixture["prs"]:
+            pr_num = pr_data["number"]
+            try:
+                start = time.monotonic()
+                report = engine.analyze_pr(pr_num)
+                elapsed = time.monotonic() - start
+
+                n = len(report.conflicts)
+                types: dict[str, int] = {}
+                for c in report.conflicts:
+                    types[c.conflict_type.value] = types.get(c.conflict_type.value, 0) + 1
+
+                print(f"  PR #{pr_num}: {n} conflicts, risk={report.risk_score:.0f}, {elapsed:.1f}s")
+                print(f"    Types: {types}")
+
+                results.append(
+                    {
+                        "pr_number": pr_num,
+                        "conflicts_found": n,
+                        "risk_score": report.risk_score,
+                        "conflict_types": types,
+                        "analysis_ms": int(elapsed * 1000),
+                    }
+                )
+
+                # Verify against baseline if requested
+                if verify and pr_data.get("baseline"):
+                    baseline = pr_data["baseline"]
+                    if n != baseline["conflict_count"]:
+                        msg = f"PR #{pr_num}: offline={n} vs baseline={baseline['conflict_count']}"
+                        print(f"    MISMATCH: {msg}")
+                        baseline_mismatches.append(msg)
+                    else:
+                        print(f"    BASELINE MATCH: {n} conflicts")
+
+            except Exception as e:
+                print(f"  PR #{pr_num}: ERROR -- {e}")
+
+        # Save results for this fixture
+        date = datetime.now(UTC).strftime("%Y-%m-%d")
+        repo_slug = repo.replace("/", "-")
+        output_path = RESULTS_DIR / f"{date}-{repo_slug}-offline.json"
+        repo_result = {
+            "repo": repo,
+            "timestamp": datetime.now(UTC).isoformat(),
+            "mode": "offline",
+            "fixture": fixture_path.name,
+            "prs_analyzed": len(results),
+            "total_conflicts": sum(r["conflicts_found"] for r in results),
+            "results": results,
+        }
+        output_path.write_text(json.dumps(repo_result, indent=2))
+        print(f"\n  Results saved to {output_path}")
+
+        all_results.append(repo_result)
+
+    # Print summary
+    print(f"\n{'=' * 60}")
+    print("OFFLINE BENCHMARK SUMMARY")
+    print(f"{'=' * 60}")
+    for r in all_results:
+        total = sum(pr["conflicts_found"] for pr in r["results"])
+        print(f"  {r['repo']}: {r['prs_analyzed']} PRs, {total} conflicts")
+
+    if verify:
+        print(f"\nBaseline verification: {len(baseline_mismatches)} mismatches")
+        for m in baseline_mismatches:
+            print(f"  {m}")
+        if not baseline_mismatches:
+            print("  All PRs match baseline!")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="MergeGuard benchmark runner",
+    )
+    parser.add_argument(
+        "--offline",
+        action="store_true",
+        help="Run from captured fixtures (no API calls)",
+    )
+    parser.add_argument(
+        "--verify-baseline",
+        action="store_true",
+        help="Compare results against captured baselines (requires --offline)",
+    )
+    args = parser.parse_args()
+
+    if args.offline:
+        run_offline(verify=args.verify_baseline)
+    else:
+        run_online()
 
 
 if __name__ == "__main__":
