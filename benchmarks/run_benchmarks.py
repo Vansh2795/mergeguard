@@ -176,7 +176,7 @@ def run_offline(verify: bool = False) -> None:
     baseline_mismatches: list[str] = []
 
     for fixture_path in fixture_files:
-        with open(fixture_path) as f:
+        with open(fixture_path, encoding="utf-8") as f:
             fixture = json.load(f)
 
         repo = fixture["repo"]

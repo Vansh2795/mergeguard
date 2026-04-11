@@ -40,16 +40,16 @@ def capture_repo(repo, token, max_prs=10):
             "file_contents": {},
         }
 
-        prs = client.get_open_prs(max_count=max_prs, max_age_days=30)
-        print(f"Found {len(prs)} open PRs")
+        # Fetch ALL open PRs (engine compares target against all of them)
+        all_prs = client.get_open_prs(max_count=200, max_age_days=30)
+        print(f"Found {len(all_prs)} open PRs (will baseline {min(max_prs, len(all_prs))})")
 
-        for pr in prs:
-            print(f"\n  Capturing PR #{pr.number}: {pr.title[:50]}...")
-
-            # Get changed files
+        # Pass 1: Capture PR metadata and changed files for ALL PRs
+        print("\n--- Pass 1: Capturing PR metadata and file lists ---")
+        for pr in all_prs:
+            print(f"  PR #{pr.number}: {pr.title[:50]}...")
             files = client.get_pr_files(pr.number)
 
-            # Build PR data dict
             pr_data = {
                 "number": pr.number,
                 "title": pr.title,
@@ -65,7 +65,6 @@ def capture_repo(repo, token, max_prs=10):
                 "changed_files": [],
             }
 
-            # Capture each file's data and content
             for f in files:
                 cf_data = {
                     "path": f.path,
@@ -78,26 +77,48 @@ def capture_repo(repo, token, max_prs=10):
                     cf_data["previous_path"] = f.previous_path
                 pr_data["changed_files"].append(cf_data)
 
-                # Capture file content at base branch
-                if f.status != FileChangeStatus.REMOVED:
-                    key_base = f"{pr.base_branch}:{f.path}"
-                    if key_base not in fixture["file_contents"]:
-                        content = client.get_file_content(f.path, pr.base_branch)
-                        if content:
-                            fixture["file_contents"][key_base] = content
+            fixture["prs"].append(pr_data)
+        _save_fixture(fixture, repo)
 
-                    # Also capture at head SHA for new files
-                    key_head = f"{pr.head_sha}:{f.path}"
-                    if key_head not in fixture["file_contents"]:
-                        content_head = client.get_file_content(f.path, pr.head_sha)
-                        if content_head:
-                            fixture["file_contents"][key_head] = content_head
+        # Pass 2: Capture file contents for ALL files across ALL PRs
+        # The engine needs content for every PR's files (not just the target)
+        print(f"\n--- Pass 2: Capturing file contents ---")
+        content_keys: set[tuple[str, str]] = set()
+        for pr_data in fixture["prs"]:
+            base = pr_data["base_branch"]
+            head = pr_data["head_sha"]
+            for f in pr_data["changed_files"]:
+                if f["status"] != "removed":
+                    content_keys.add((f["path"], base))
+                    content_keys.add((f["path"], head))
 
-            # Record baseline: run online analysis
-            print("    Running baseline analysis...")
+        print(f"  {len(content_keys)} unique (path, ref) pairs to fetch")
+        fetched = 0
+        for path, ref in sorted(content_keys):
+            key = f"{ref}:{path}"
+            if key in fixture["file_contents"]:
+                continue
             try:
-                report = engine.analyze_pr(pr.number)
-                type_counts = {}
+                content = client.get_file_content(path, ref)
+                if content:
+                    fixture["file_contents"][key] = content
+                    fetched += 1
+            except Exception:
+                pass  # Binary files, missing files — skip
+            if fetched % 50 == 0 and fetched > 0:
+                print(f"    Fetched {fetched} files...")
+                _save_fixture(fixture, repo)
+        print(f"  Fetched {fetched} file contents")
+        _save_fixture(fixture, repo)
+
+        # Pass 3: Run baseline online analysis for first max_prs PRs
+        print(f"\n--- Pass 3: Recording baseline analysis (first {max_prs}) ---")
+        for pr_data in fixture["prs"][:max_prs]:
+            pr_num = pr_data["number"]
+            print(f"  PR #{pr_num}: analyzing...")
+            try:
+                report = engine.analyze_pr(pr_num)
+                type_counts: dict[str, int] = {}
                 for c in report.conflicts:
                     t = c.conflict_type.value
                     type_counts[t] = type_counts.get(t, 0) + 1
@@ -107,14 +128,10 @@ def capture_repo(repo, token, max_prs=10):
                     "conflict_types": type_counts,
                 }
                 n = len(report.conflicts)
-                print(f"    Baseline: {n} conflicts, risk={report.risk_score:.0f}")
+                print(f"    {n} conflicts, risk={report.risk_score:.0f}")
             except Exception as e:
-                print(f"    Baseline FAILED: {e}")
+                print(f"    FAILED: {e}")
                 pr_data["baseline"] = None
-
-            fixture["prs"].append(pr_data)
-
-            # Save progress after each PR (resumable)
             _save_fixture(fixture, repo)
 
         n_prs = len(fixture["prs"])
@@ -129,7 +146,7 @@ def _save_fixture(fixture, repo):
     FIXTURES_DIR.mkdir(parents=True, exist_ok=True)
     slug = repo.replace("/", "-")
     path = FIXTURES_DIR / f"{slug}.json"
-    path.write_text(json.dumps(fixture, indent=2, ensure_ascii=False))
+    path.write_text(json.dumps(fixture, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def main():
