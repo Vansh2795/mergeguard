@@ -329,7 +329,7 @@ class ServerConfig(BaseModel):
     """Configuration for the webhook server."""
 
     port: int = 8000
-    host: str = "0.0.0.0"
+    host: str = "127.0.0.1"
     workers: int = 1
     analysis_timeout: int = 300  # seconds
     queue_backend: str = "asyncio"  # "asyncio" | "redis"

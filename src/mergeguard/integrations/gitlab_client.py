@@ -43,6 +43,7 @@ class GitLabClient:
         self._gitlab_url = gitlab_url.rstrip("/")
         self._encoded_project = urllib.parse.quote(project_path, safe="")
         self._base_url = f"{self._gitlab_url}/api/v4/projects/{self._encoded_project}"
+        self._diff_cache: dict[int, list[dict[str, Any]]] = {}
         self._http = httpx.Client(
             transport=httpx.HTTPTransport(retries=3),
             headers={
@@ -330,7 +331,9 @@ class GitLabClient:
         )
 
     def _get_all_diffs(self, mr_iid: int) -> list[dict[str, Any]]:
-        """Fetch all diff entries for an MR, handling pagination."""
+        """Fetch all diff entries for an MR, handling pagination. Results cached per MR."""
+        if mr_iid in self._diff_cache:
+            return self._diff_cache[mr_iid]
         url = f"{self._base_url}/merge_requests/{mr_iid}/diffs"
         params: dict[str, str | int] = {"per_page": _PER_PAGE}
         all_diffs: list[dict[str, Any]] = []
@@ -344,6 +347,7 @@ class GitLabClient:
             else:
                 break
 
+        self._diff_cache[mr_iid] = all_diffs
         return all_diffs
 
     def _mr_to_info(self, mr: dict[str, Any]) -> PRInfo:

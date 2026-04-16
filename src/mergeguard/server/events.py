@@ -66,7 +66,8 @@ def _extract_pr_numbers_from_merge_group(payload: dict[str, Any]) -> list[int]:
     # Extract from head_commit message (e.g., "Merge pull request #42 ...")
     head_commit = merge_group.get("head_commit", {})
     message = head_commit.get("message", "")
-    for match in re.finditer(r"#(\d+)", message):
+    pr_pattern = r"(?:Merge pull request |PR |pull request )#(\d+)"
+    for match in re.finditer(pr_pattern, message, re.IGNORECASE):
         pr_numbers.add(int(match.group(1)))
 
     return sorted(pr_numbers)

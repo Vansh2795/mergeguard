@@ -10,6 +10,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
@@ -24,6 +26,29 @@ _TOKEN_ENV_MAP = {
     "gitlab": "GITLAB_TOKEN",
     "bitbucket": "BITBUCKET_APP_PASSWORD",
 }
+
+
+_REPO_PATTERN = re.compile(r"^[\w.-]+/[\w.-]+$")
+
+
+def _validate_repo(repo: str) -> None:
+    """Validate repo format matches 'owner/repo'."""
+    if not _REPO_PATTERN.match(repo):
+        raise ValueError(f"Invalid repo format: {repo!r}. Expected 'owner/repo'.")
+
+
+_last_call: dict[str, float] = {}
+_MIN_INTERVAL = 2.0
+
+
+def _rate_check(tool_name: str) -> None:
+    """Simple per-tool rate limiter."""
+    now = time.monotonic()
+    last = _last_call.get(tool_name, 0.0)
+    if now - last < _MIN_INTERVAL:
+        wait = _MIN_INTERVAL - (now - last)
+        raise ValueError(f"Rate limited: wait {wait:.1f}s before calling {tool_name}")
+    _last_call[tool_name] = now
 
 
 def _get_mcp_token(platform: str) -> str:
@@ -118,6 +143,8 @@ def create_mcp_server() -> Any:
 
         def _run() -> dict[str, Any]:
             try:
+                _rate_check("check_conflicts")
+                _validate_repo(repo)
                 client = _create_mcp_client(platform, repo)
             except ValueError as exc:
                 return {"status": "error", "summary": str(exc)}
@@ -211,6 +238,8 @@ def create_mcp_server() -> Any:
 
         def _run() -> dict[str, Any]:
             try:
+                _rate_check("get_risk_score")
+                _validate_repo(repo)
                 client = _create_mcp_client(platform, repo)
             except ValueError as exc:
                 return {"status": "error", "summary": str(exc)}
@@ -266,6 +295,8 @@ def create_mcp_server() -> Any:
 
         def _run() -> dict[str, Any]:
             try:
+                _rate_check("suggest_merge_order")
+                _validate_repo(repo)
                 client = _create_mcp_client(platform, repo)
             except ValueError as exc:
                 return {"status": "error", "summary": str(exc)}

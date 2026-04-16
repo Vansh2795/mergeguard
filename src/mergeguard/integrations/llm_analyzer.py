@@ -178,7 +178,7 @@ class LLMAnalyzer:
                 "The 'openai' package is required for OpenAI LLM analysis. "
                 "Install it with: pip install 'mergeguard[llm-openai]'"
             ) from None
-        self._openai_client = OpenAI(api_key=api_key)
+        self._openai_client = OpenAI(api_key=api_key, timeout=60.0)
         self._model = model or _DEFAULT_MODELS["openai"]
 
     def _init_anthropic(self, api_key: str, model: str | None) -> None:
@@ -189,7 +189,7 @@ class LLMAnalyzer:
                 "The 'anthropic' package is required for Anthropic LLM analysis. "
                 "Install it with: pip install 'mergeguard[llm-anthropic]'"
             ) from None
-        self._anthropic_client = Anthropic(api_key=api_key)
+        self._anthropic_client = Anthropic(api_key=api_key, timeout=60.0)
         self._model = model or _DEFAULT_MODELS["anthropic"]
 
     def _llm_call(self, prompt: str, max_tokens: int = 500) -> str:

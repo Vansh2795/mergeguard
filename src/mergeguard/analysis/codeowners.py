@@ -86,7 +86,10 @@ class CodeOwners:
             # Section header: [SectionName] or ^[SectionName]
             if line.startswith("[") or line.startswith("^["):
                 bracket_start = line.index("[")
-                bracket_end = line.index("]", bracket_start)
+                try:
+                    bracket_end = line.index("]", bracket_start)
+                except ValueError:
+                    continue  # Malformed section header — skip
                 current_section = line[bracket_start + 1 : bracket_end]
                 # Optional default owners after the section header
                 remainder = line[bracket_end + 1 :].strip()

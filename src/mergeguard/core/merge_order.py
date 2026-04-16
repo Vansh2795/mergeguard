@@ -176,6 +176,7 @@ def compute_merge_readiness(
     reports: list[ConflictReport],
     block_severity: str = "critical",
     priority_labels: dict[str, int] | None = None,
+    merge_order: list[tuple[int, str]] | None = None,
 ) -> MergeReadiness:
     """Compute whether a PR is ready to merge based on conflict analysis.
 
@@ -222,8 +223,8 @@ def compute_merge_readiness(
         priority_score += priority_labels.get(label, 0)
     priority_override = priority_score > 0 and len(blocking_prs) > 0
 
-    # Get merge order position
-    order = suggest_merge_order(reports)
+    # Get merge order position (use pre-computed if provided)
+    order = merge_order if merge_order is not None else suggest_merge_order(reports)
     suggested_position = 1
     for pos, (pn, _reason) in enumerate(order, start=1):
         if pn == pr_number:

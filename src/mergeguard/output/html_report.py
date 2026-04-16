@@ -219,7 +219,7 @@ def _build_factor_bars(factors: dict[str, float]) -> str:
         width = min(100, max(0, value))
         bars.append(
             f'<div class="factor-bar">'
-            f'<div class="factor-name">{label}</div>'
+            f'<div class="factor-name">{html.escape(label)}</div>'
             f'<div class="factor-track">'
             f'<div class="factor-fill" style="width: {width}%; background: {color};"></div>'
             f"</div>"

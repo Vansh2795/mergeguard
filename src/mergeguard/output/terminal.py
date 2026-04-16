@@ -14,7 +14,7 @@ from rich.syntax import Syntax
 from rich.table import Table
 
 if TYPE_CHECKING:
-    from mergeguard.models import ConflictReport
+    from mergeguard.models import Conflict, ConflictReport
 
 console = Console()
 
@@ -121,12 +121,8 @@ def display_dashboard(reports: list[ConflictReport], repo_name: str) -> None:
     console.print(table)
 
 
-def _render_diff_previews(conflict: ConflictReport | object) -> None:
+def _render_diff_previews(conflict: Conflict) -> None:
     """Render source and target diff previews with syntax highlighting."""
-    from mergeguard.models import Conflict
-
-    if not isinstance(conflict, Conflict):
-        return
     if conflict.source_diff_preview:
         syntax = Syntax(
             conflict.source_diff_preview,
