@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-04-16
+
+### Fixed
+- MCP server: added repo format validation and per-tool rate limiting (M2, M3)
+- HTML report: escape risk factor labels to prevent XSS (M4)
+- Merge group: tighten PR number regex to avoid matching issue refs (M11)
+- Merge order: accept pre-computed order to avoid O(n^2) recomputation (M18)
+- GitLab: cache MR diffs to avoid duplicate API calls (M19)
+- Webhook server: default host to 127.0.0.1 instead of 0.0.0.0 (M20)
+- Terminal output: fix type annotation (L2)
+- LLM clients: add 60s timeout to OpenAI and Anthropic (L15)
+- CODEOWNERS: handle malformed GitLab section headers without crashing (L16)
+- All 20 medium and 19 low code review findings resolved
+
 ## [1.0.0] - 2026-04-08
 
 ### Overview

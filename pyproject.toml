@@ -1,6 +1,6 @@
 [project]
 name = "py-mergeguard"
-version = "1.0.0"
+version = "1.0.1"
 description = "Cross-PR intelligence for the agentic coding era"
 readme = "README.md"
 license = { text = "MIT" }
