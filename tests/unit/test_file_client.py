@@ -174,9 +174,7 @@ class TestEngineIntegration:
         from mergeguard.core.engine import MergeGuardEngine
 
         cfg = MergeGuardConfig(check_regressions=False)
-        engine = MergeGuardEngine(
-            token="fake", repo_full_name="owner/repo", config=cfg
-        )
+        engine = MergeGuardEngine(token="fake", repo_full_name="owner/repo", config=cfg)
         # Replace the real client with our file-based one
         engine._client = client
 
